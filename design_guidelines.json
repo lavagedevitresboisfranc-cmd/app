@@ -1,0 +1,197 @@
+{
+  "theme": "LIGHT",
+  "archetype": "4 (Swiss & High-Contrast)",
+  "design_philosophy": "Clean & minimal approach. Focus on typography, grid structures, generous white space, and stark functional contrast. No decorative shadows, no unnecessary gradients. Everything serves a functional purpose.",
+  "colors": {
+    "background": "#FAFAFA",
+    "surface": "#FFFFFF",
+    "primary": "#000000",
+    "primary_active": "#333333",
+    "border": "#E5E5E5",
+    "border_focus": "#000000",
+    "text_primary": "#0A0A0A",
+    "text_secondary": "#737373",
+    "text_tertiary": "#A3A3A3",
+    "destructive": "#FF3B30",
+    "success": "#34C759"
+  },
+  "typography": {
+    "fontFamily": "System",
+    "h1": {
+      "fontSize": 32,
+      "fontWeight": "800",
+      "letterSpacing": -1.0,
+      "color": "#0A0A0A"
+    },
+    "h2": {
+      "fontSize": 24,
+      "fontWeight": "700",
+      "letterSpacing": -0.5,
+      "color": "#0A0A0A"
+    },
+    "h3": {
+      "fontSize": 18,
+      "fontWeight": "600",
+      "letterSpacing": -0.3,
+      "color": "#0A0A0A"
+    },
+    "body": {
+      "fontSize": 16,
+      "fontWeight": "400",
+      "letterSpacing": 0,
+      "lineHeight": 24,
+      "color": "#0A0A0A"
+    },
+    "body_secondary": {
+      "fontSize": 16,
+      "fontWeight": "400",
+      "letterSpacing": 0,
+      "lineHeight": 24,
+      "color": "#737373"
+    },
+    "caption": {
+      "fontSize": 13,
+      "fontWeight": "600",
+      "letterSpacing": 0.2,
+      "textTransform": "uppercase",
+      "color": "#A3A3A3"
+    }
+  },
+  "spacing": {
+    "xs": 4,
+    "sm": 8,
+    "md": 16,
+    "lg": 24,
+    "xl": 32,
+    "xxl": 48
+  },
+  "layout": {
+    "screen_padding": 24,
+    "border_radius_base": 4,
+    "border_radius_large": 8,
+    "border_width": 1
+  },
+  "components": {
+    "Button": {
+      "primary": {
+        "backgroundColor": "#000000",
+        "borderRadius": 4,
+        "height": 52,
+        "justifyContent": "center",
+        "alignItems": "center",
+        "paddingHorizontal": 24
+      },
+      "primary_text": {
+        "color": "#FFFFFF",
+        "fontSize": 16,
+        "fontWeight": "600",
+        "letterSpacing": 0.5
+      },
+      "secondary": {
+        "backgroundColor": "transparent",
+        "borderWidth": 1,
+        "borderColor": "#E5E5E5",
+        "borderRadius": 4,
+        "height": 52,
+        "justifyContent": "center",
+        "alignItems": "center",
+        "paddingHorizontal": 24
+      },
+      "secondary_text": {
+        "color": "#0A0A0A",
+        "fontSize": 16,
+        "fontWeight": "600"
+      }
+    },
+    "Card": {
+      "container": {
+        "backgroundColor": "#FFFFFF",
+        "borderWidth": 1,
+        "borderColor": "#E5E5E5",
+        "borderRadius": 4,
+        "padding": 16,
+        "marginBottom": 16
+      }
+    },
+    "Input": {
+      "container": {
+        "marginBottom": 24
+      },
+      "label": {
+        "fontSize": 13,
+        "fontWeight": "600",
+        "color": "#737373",
+        "textTransform": "uppercase",
+        "letterSpacing": 0.5,
+        "marginBottom": 8
+      },
+      "field": {
+        "height": 48,
+        "borderBottomWidth": 1,
+        "borderColor": "#E5E5E5",
+        "fontSize": 16,
+        "color": "#0A0A0A",
+        "paddingVertical": 8
+      },
+      "field_focus": {
+        "borderColor": "#000000"
+      }
+    },
+    "Header": {
+      "container": {
+        "backgroundColor": "#FAFAFA",
+        "borderBottomWidth": 1,
+        "borderColor": "#E5E5E5",
+        "height": 60,
+        "justifyContent": "flex-end",
+        "paddingBottom": 12,
+        "paddingHorizontal": 24
+      },
+      "title": {
+        "fontSize": 18,
+        "fontWeight": "700",
+        "letterSpacing": -0.5,
+        "color": "#0A0A0A"
+      }
+    },
+    "Calendar": {
+      "day_header": {
+        "fontSize": 13,
+        "fontWeight": "600",
+        "color": "#737373"
+      },
+      "selected_day": {
+        "backgroundColor": "#000000",
+        "borderRadius": 4
+      },
+      "selected_day_text": {
+        "color": "#FFFFFF",
+        "fontWeight": "700"
+      }
+    }
+  },
+  "icons": {
+    "library": "@expo/vector-icons/Feather",
+    "stroke_width": 2,
+    "size_base": 24
+  },
+  "interactions": {
+    "active_opacity": 0.7
+  },
+  "testing": {
+    "attribute": "testID",
+    "convention": "kebab-case, role-based (e.g., testID='create-appointment-button')"
+  },
+  "instructions_to_main_agent": [
+    "Use pure React Native StyleSheet objects instead of CSS or Tailwind classes. This is an Expo project.",
+    "Do not use elevation or shadows (no shadowColor, shadowOffset, etc.). Apply the strict Swiss design language—rely on 1px borders (#E5E5E5) and sharp geometries (borderRadius: 4) to separate elements.",
+    "For the calendar UI, you can use standard React Native components or a library like 'react-native-calendars'. Ensure it's styled minimally with black accents for selected dates.",
+    "Ensure generous screen padding (24px) to create high-end breathing room on mobile.",
+    "Always use the testID prop on interactive elements (e.g., testID='add-button').",
+    "No auth or complex states needed. Focus on purely offline/API-connected CRUD functionality."
+  ],
+  "media": {
+    "empty_state_icon": "calendar",
+    "note": "Rely entirely on typography and Feather icons. Imagery should not be used as it clutters the Swiss aesthetic."
+  }
+}
