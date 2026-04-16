@@ -131,8 +131,18 @@ export default function RequestsScreen() {
         <Text style={styles.agoText}>{timeAgo(item.created_at)}</Text>
       </View>
 
-      {item.message ? (
-        <Text style={styles.cardMessage} numberOfLines={2}>{item.message}</Text>
+      {item.customer_phone ? (
+        <View style={styles.cardExtraRow}>
+          <Feather name="phone" size={13} color="#737373" />
+          <Text style={styles.cardExtraText}>{item.customer_phone}</Text>
+        </View>
+      ) : null}
+
+      {item.customer_address ? (
+        <View style={styles.cardExtraRow}>
+          <Feather name="map-pin" size={13} color="#737373" />
+          <Text style={styles.cardExtraText} numberOfLines={1}>{item.customer_address}</Text>
+        </View>
       ) : null}
 
       {item.status === 'alternative_offered' && item.suggested_date && (
@@ -333,11 +343,16 @@ const styles = StyleSheet.create({
     color: '#A3A3A3',
     marginLeft: 'auto',
   },
-  cardMessage: {
+  cardExtraRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    gap: 6,
+  },
+  cardExtraText: {
     fontSize: 14,
     color: '#737373',
-    lineHeight: 20,
-    marginTop: 10,
+    flex: 1,
   },
   suggestedRow: {
     flexDirection: 'row',
