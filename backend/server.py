@@ -5,11 +5,13 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import asyncio
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import uuid
 from datetime import datetime, timezone
+import resend
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -18,6 +20,10 @@ load_dotenv(ROOT_DIR / '.env')
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
+
+# Resend email config
+resend.api_key = os.environ.get('RESEND_API_KEY', '')
+NOTIFY_EMAIL = os.environ.get('NOTIFY_EMAIL', '')
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -170,6 +176,40 @@ async def create_request(data: RequestCreate):
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.appointment_requests.insert_one(request_doc)
+
+    # Send email notification
+    if NOTIFY_EMAIL and resend.api_key:
+        try:
+            html = f"""
+            <div style="font-family:-apple-system,sans-serif;max-width:500px;margin:0 auto;padding:20px;">
+                <h2 style="color:#0A0A0A;margin-bottom:4px;">Nouvelle demande de rendez-vous</h2>
+                <hr style="border:none;border-top:1px solid #E5E5E5;margin:16px 0;">
+                <table style="width:100%;border-collapse:collapse;">
+                    <tr><td style="padding:8px 0;color:#737373;font-size:13px;font-weight:600;">NOM</td></tr>
+                    <tr><td style="padding:0 0 12px;font-size:16px;color:#0A0A0A;">{request_doc['customer_name']}</td></tr>
+                    <tr><td style="padding:8px 0;color:#737373;font-size:13px;font-weight:600;">COURRIEL</td></tr>
+                    <tr><td style="padding:0 0 12px;font-size:16px;color:#0A0A0A;">{request_doc['customer_email']}</td></tr>
+                    <tr><td style="padding:8px 0;color:#737373;font-size:13px;font-weight:600;">TÉLÉPHONE</td></tr>
+                    <tr><td style="padding:0 0 12px;font-size:16px;color:#0A0A0A;">{request_doc['customer_phone']}</td></tr>
+                    <tr><td style="padding:8px 0;color:#737373;font-size:13px;font-weight:600;">ADRESSE</td></tr>
+                    <tr><td style="padding:0 0 12px;font-size:16px;color:#0A0A0A;">{request_doc['customer_address']}</td></tr>
+                    <tr><td style="padding:8px 0;color:#737373;font-size:13px;font-weight:600;">DATE ET HEURE</td></tr>
+                    <tr><td style="padding:0 0 12px;font-size:16px;color:#0A0A0A;">{request_doc['preferred_date']} à {request_doc['preferred_time']}</td></tr>
+                </table>
+                <hr style="border:none;border-top:1px solid #E5E5E5;margin:16px 0;">
+                <p style="color:#A3A3A3;font-size:13px;">Ouvrez votre app pour accepter ou proposer un autre horaire.</p>
+            </div>
+            """
+            await asyncio.to_thread(resend.Emails.send, {
+                "from": "onboarding@resend.dev",
+                "to": [NOTIFY_EMAIL],
+                "subject": f"Nouveau RDV — {request_doc['customer_name']}",
+                "html": html,
+            })
+            logger.info(f"Email notification sent to {NOTIFY_EMAIL}")
+        except Exception as e:
+            logger.error(f"Failed to send email notification: {e}")
+
     return RequestResponse(**{k: v for k, v in request_doc.items() if k != "_id"})
 
 @api_router.get("/requests", response_model=List[RequestResponse])
