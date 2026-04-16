@@ -29,6 +29,8 @@ interface AppointmentRequest {
   id: string;
   customer_name: string;
   customer_email: string;
+  customer_phone: string;
+  customer_address: string;
   preferred_date: string;
   preferred_time: string;
   message: string;
@@ -232,6 +234,30 @@ export default function RequestDetailScreen() {
               </View>
             </View>
           </View>
+
+          {request.customer_phone ? (
+            <View style={styles.infoCard}>
+              <View style={styles.infoRow}>
+                <Feather name="phone" size={18} color="#737373" />
+                <View style={styles.infoContent}>
+                  <Text style={styles.infoLabel}>TÉLÉPHONE</Text>
+                  <Text style={styles.infoValue} testID="request-phone">{request.customer_phone}</Text>
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {request.customer_address ? (
+            <View style={styles.infoCard}>
+              <View style={styles.infoRow}>
+                <Feather name="map-pin" size={18} color="#737373" />
+                <View style={styles.infoContent}>
+                  <Text style={styles.infoLabel}>ADRESSE</Text>
+                  <Text style={styles.infoValue} testID="request-address">{request.customer_address}</Text>
+                </View>
+              </View>
+            </View>
+          ) : null}
 
           <View style={styles.infoCard}>
             <View style={styles.infoRow}>

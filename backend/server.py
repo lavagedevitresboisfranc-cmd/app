@@ -58,6 +58,8 @@ class AppointmentResponse(BaseModel):
 class RequestCreate(BaseModel):
     customer_name: str
     customer_email: str
+    customer_phone: Optional[str] = ""
+    customer_address: Optional[str] = ""
     preferred_date: str  # YYYY-MM-DD
     preferred_time: str  # HH:MM
     message: Optional[str] = ""
@@ -71,6 +73,8 @@ class RequestResponse(BaseModel):
     id: str
     customer_name: str
     customer_email: str
+    customer_phone: str
+    customer_address: str
     preferred_date: str
     preferred_time: str
     message: str
@@ -154,6 +158,8 @@ async def create_request(data: RequestCreate):
         "id": str(uuid.uuid4()),
         "customer_name": data.customer_name,
         "customer_email": data.customer_email,
+        "customer_phone": data.customer_phone or "",
+        "customer_address": data.customer_address or "",
         "preferred_date": data.preferred_date,
         "preferred_time": data.preferred_time,
         "message": data.message or "",
@@ -256,6 +262,8 @@ async def seed_requests():
             "id": str(uuid.uuid4()),
             "customer_name": "Emma Johnson",
             "customer_email": "emma@example.com",
+            "customer_phone": "514-555-1234",
+            "customer_address": "123 Rue Principale, Bois-Franc",
             "preferred_date": today,
             "preferred_time": "10:00",
             "message": "I'd like to discuss a new marketing strategy for Q3.",
@@ -269,6 +277,8 @@ async def seed_requests():
             "id": str(uuid.uuid4()),
             "customer_name": "Frank Miller",
             "customer_email": "frank@company.org",
+            "customer_phone": "514-555-5678",
+            "customer_address": "456 Boulevard des Sources",
             "preferred_date": today,
             "preferred_time": "13:00",
             "message": "Need help with tax planning for the new fiscal year.",
@@ -282,6 +292,8 @@ async def seed_requests():
             "id": str(uuid.uuid4()),
             "customer_name": "Grace Lee",
             "customer_email": "grace.lee@startup.io",
+            "customer_phone": "438-555-9012",
+            "customer_address": "789 Avenue Sainte-Croix",
             "preferred_date": today,
             "preferred_time": "15:30",
             "message": "Looking for consulting on our product launch timeline.",

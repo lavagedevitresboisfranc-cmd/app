@@ -18,6 +18,8 @@ interface AppointmentRequest {
   id: string;
   customer_name: string;
   customer_email: string;
+  customer_phone: string;
+  customer_address: string;
   preferred_date: string;
   preferred_time: string;
   message: string;
