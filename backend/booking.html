@@ -202,11 +202,6 @@
                     <p class="error-msg" id="time-error">Veuillez sélectionner une heure</p>
                 </div>
 
-                <div class="field">
-                    <label for="message">Message / Détails</label>
-                    <textarea id="message" placeholder="Décrivez brièvement votre besoin (nombre de fenêtres, type de service, etc.)" rows="3"></textarea>
-                </div>
-
                 <button type="submit" class="submit-btn" id="submit-btn">Envoyer la Demande</button>
                 <p class="error-msg" id="form-error"></p>
             </form>
@@ -238,8 +233,7 @@
         const times = [
             '08:00','08:30','09:00','09:30','10:00','10:30',
             '11:00','11:30','12:00','12:30','13:00','13:30',
-            '14:00','14:30','15:00','15:30','16:00','16:30',
-            '17:00','17:30','18:00'
+            '14:00','14:30','15:00','15:30','16:00'
         ];
         let selectedTime = '';
 
@@ -281,7 +275,7 @@
                 customer_address: document.getElementById('address').value.trim(),
                 preferred_date: document.getElementById('date').value,
                 preferred_time: selectedTime,
-                message: document.getElementById('message').value.trim()
+                message: ""
             };
 
             try {
