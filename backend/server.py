@@ -33,6 +33,9 @@ api_router = APIRouter(prefix="/api")
 class AppointmentCreate(BaseModel):
     title: str
     client_name: str
+    client_email: Optional[str] = ""
+    client_phone: Optional[str] = ""
+    client_address: Optional[str] = ""
     date: str  # YYYY-MM-DD
     time_slot: str  # HH:MM
     duration_minutes: int = 30
@@ -42,6 +45,9 @@ class AppointmentCreate(BaseModel):
 class AppointmentUpdate(BaseModel):
     title: Optional[str] = None
     client_name: Optional[str] = None
+    client_email: Optional[str] = None
+    client_phone: Optional[str] = None
+    client_address: Optional[str] = None
     date: Optional[str] = None
     time_slot: Optional[str] = None
     duration_minutes: Optional[int] = None
@@ -52,6 +58,9 @@ class AppointmentResponse(BaseModel):
     id: str
     title: str
     client_name: str
+    client_email: str = ""
+    client_phone: str = ""
+    client_address: str = ""
     date: str
     time_slot: str
     duration_minutes: int
@@ -110,6 +119,9 @@ async def create_appointment(data: AppointmentCreate):
         "id": str(uuid.uuid4()),
         "title": data.title,
         "client_name": data.client_name,
+        "client_email": data.client_email or "",
+        "client_phone": data.client_phone or "",
+        "client_address": data.client_address or "",
         "date": data.date,
         "time_slot": data.time_slot,
         "duration_minutes": data.duration_minutes,
@@ -241,10 +253,13 @@ async def accept_request(request_id: str):
         "id": str(uuid.uuid4()),
         "title": f"Meeting with {req['customer_name']}",
         "client_name": req["customer_name"],
+        "client_email": req.get("customer_email", ""),
+        "client_phone": req.get("customer_phone", ""),
+        "client_address": req.get("customer_address", ""),
         "date": req["preferred_date"],
         "time_slot": req["preferred_time"],
         "duration_minutes": 30,
-        "notes": req["message"],
+        "notes": req.get("message", ""),
         "status": "upcoming",
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -360,6 +375,9 @@ async def seed_appointments():
             "id": str(uuid.uuid4()),
             "title": "Strategy Review",
             "client_name": "Alice Martin",
+            "client_email": "alice@example.com",
+            "client_phone": "514-555-0001",
+            "client_address": "100 Rue Principale, Bois-Franc",
             "date": today,
             "time_slot": "09:00",
             "duration_minutes": 60,
@@ -371,6 +389,9 @@ async def seed_appointments():
             "id": str(uuid.uuid4()),
             "title": "Project Kickoff",
             "client_name": "Bob Chen",
+            "client_email": "bob@company.com",
+            "client_phone": "514-555-0002",
+            "client_address": "200 Boulevard des Sources",
             "date": today,
             "time_slot": "11:00",
             "duration_minutes": 45,
@@ -382,21 +403,13 @@ async def seed_appointments():
             "id": str(uuid.uuid4()),
             "title": "Budget Planning",
             "client_name": "Carol Davis",
+            "client_email": "carol@firm.ca",
+            "client_phone": "438-555-0003",
+            "client_address": "300 Avenue Sainte-Croix",
             "date": today,
             "time_slot": "14:00",
             "duration_minutes": 30,
             "notes": "Annual budget discussion",
-            "status": "upcoming",
-            "created_at": now.isoformat(),
-        },
-        {
-            "id": str(uuid.uuid4()),
-            "title": "Team Sync",
-            "client_name": "David Wilson",
-            "date": today,
-            "time_slot": "16:00",
-            "duration_minutes": 30,
-            "notes": "",
             "status": "upcoming",
             "created_at": now.isoformat(),
         },

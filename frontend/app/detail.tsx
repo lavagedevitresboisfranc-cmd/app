@@ -7,6 +7,7 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -18,6 +19,9 @@ interface Appointment {
   id: string;
   title: string;
   client_name: string;
+  client_email: string;
+  client_phone: string;
+  client_address: string;
   date: string;
   time_slot: string;
   duration_minutes: number;
@@ -179,6 +183,55 @@ export default function DetailScreen() {
             </View>
           </View>
         </View>
+
+        {appointment.client_email ? (
+          <View style={styles.infoCard}>
+            <View style={styles.infoRow}>
+              <Feather name="mail" size={18} color="#737373" />
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>COURRIEL</Text>
+                <Text style={styles.infoValue} testID="detail-email">{appointment.client_email}</Text>
+              </View>
+            </View>
+          </View>
+        ) : null}
+
+        {appointment.client_phone ? (
+          <View style={styles.infoCard}>
+            <View style={styles.infoRow}>
+              <Feather name="phone" size={18} color="#737373" />
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>TÉLÉPHONE</Text>
+                <Text style={styles.infoValue} testID="detail-phone">{appointment.client_phone}</Text>
+              </View>
+            </View>
+          </View>
+        ) : null}
+
+        {appointment.client_address ? (
+          <TouchableOpacity
+            testID="detail-address-link"
+            activeOpacity={0.7}
+            onPress={() => {
+              const address = encodeURIComponent(appointment.client_address);
+              Alert.alert('Ouvrir avec', 'Choisissez votre app de navigation', [
+                { text: 'Waze', onPress: () => Linking.openURL(`https://waze.com/ul?q=${address}&navigate=yes`) },
+                { text: 'Google Maps', onPress: () => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${address}`) },
+                { text: 'Annuler', style: 'cancel' },
+              ]);
+            }}
+            style={styles.infoCard}
+          >
+            <View style={styles.infoRow}>
+              <Feather name="map-pin" size={18} color="#737373" />
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>ADRESSE</Text>
+                <Text style={[styles.infoValue, { textDecorationLine: 'underline' }]} testID="detail-address">{appointment.client_address}</Text>
+              </View>
+              <Feather name="navigation" size={18} color="#000000" />
+            </View>
+          </TouchableOpacity>
+        ) : null}
 
         <View style={styles.infoCard}>
           <View style={styles.infoRow}>
