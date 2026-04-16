@@ -319,15 +319,15 @@ export default function CalendarScreen() {
     <SafeAreaView style={styles.safeArea} testID="calendar-screen">
       <View style={styles.header}>
         <Text style={styles.headerTitle}>BrightCalendar</Text>
-        <View style={styles.legendRow}>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#34C759' }]} />
-            <Text style={styles.legendLabel}>Confirmé</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#FF3B30' }]} />
-            <Text style={styles.legendLabel}>En attente</Text>
-          </View>
+      </View>
+      <View style={styles.legendBar}>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#34C759' }]} />
+          <Text style={styles.legendLabel}>Confirmé</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#FF3B30' }]} />
+          <Text style={styles.legendLabel}>En attente</Text>
         </View>
       </View>
 
@@ -485,12 +485,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FAFAFA',
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     paddingHorizontal: 24,
     paddingTop: 8,
-    paddingBottom: 12,
+    paddingBottom: 4,
     backgroundColor: '#FAFAFA',
   },
   headerTitle: {
@@ -499,14 +496,16 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
     color: '#0A0A0A',
   },
-  legendRow: {
+  legendBar: {
     flexDirection: 'row',
-    gap: 12,
+    paddingHorizontal: 24,
+    paddingBottom: 12,
+    gap: 16,
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
   },
   legendDot: {
     width: 8,
@@ -514,7 +513,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   legendLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
     color: '#737373',
   },
