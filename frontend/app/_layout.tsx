@@ -60,6 +60,21 @@ export default function RootLayout() {
             href: null,
           }}
         />
+        <Tabs.Screen
+          name="requests"
+          options={{
+            title: 'Requests',
+            tabBarIcon: ({ color, size }) => (
+              <Feather name="inbox" size={size} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="request-detail"
+          options={{
+            href: null,
+          }}
+        />
       </Tabs>
     </View>
   );
