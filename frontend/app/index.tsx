@@ -318,7 +318,7 @@ export default function CalendarScreen() {
   return (
     <SafeAreaView style={styles.safeArea} testID="calendar-screen">
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Rendez-vous</Text>
+        <Text style={styles.headerTitle}>BrightCalendar</Text>
         <View style={styles.legendRow}>
           <View style={styles.legendItem}>
             <View style={[styles.legendDot, { backgroundColor: '#34C759' }]} />
