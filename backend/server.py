@@ -1,4 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -78,6 +79,14 @@ class RequestResponse(BaseModel):
     suggested_time: Optional[str] = None
     suggested_note: Optional[str] = None
     created_at: str
+
+# --- Booking Page (for customers) ---
+
+@api_router.get("/booking", response_class=HTMLResponse)
+async def booking_page():
+    """Public booking page for customers to request appointments"""
+    html_path = ROOT_DIR / "booking.html"
+    return HTMLResponse(content=html_path.read_text())
 
 # --- Routes ---
 

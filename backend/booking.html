@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book an Appointment</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #FAFAFA;
+            color: #0A0A0A;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            padding: 40px 20px;
+        }
+        .container {
+            width: 100%;
+            max-width: 480px;
+        }
+        h1 {
+            font-size: 32px;
+            font-weight: 800;
+            letter-spacing: -1px;
+            margin-bottom: 8px;
+        }
+        .subtitle {
+            font-size: 16px;
+            color: #737373;
+            margin-bottom: 36px;
+            line-height: 1.5;
+        }
+        .field {
+            margin-bottom: 24px;
+        }
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #737373;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        input, textarea, select {
+            width: 100%;
+            font-size: 16px;
+            color: #0A0A0A;
+            background: #FFFFFF;
+            border: none;
+            border-bottom: 1px solid #E5E5E5;
+            padding: 12px 0;
+            outline: none;
+            font-family: inherit;
+            transition: border-color 0.2s;
+        }
+        input:focus, textarea:focus, select:focus {
+            border-color: #000000;
+        }
+        input::placeholder, textarea::placeholder {
+            color: #A3A3A3;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        .row {
+            display: flex;
+            gap: 16px;
+        }
+        .row .field {
+            flex: 1;
+        }
+        .time-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .time-btn {
+            padding: 10px 14px;
+            border: 1px solid #E5E5E5;
+            border-radius: 4px;
+            background: #FFFFFF;
+            font-size: 14px;
+            font-weight: 500;
+            color: #0A0A0A;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .time-btn:hover {
+            border-color: #000;
+        }
+        .time-btn.active {
+            background: #000000;
+            border-color: #000000;
+            color: #FFFFFF;
+        }
+        .submit-btn {
+            width: 100%;
+            padding: 16px;
+            background: #000000;
+            color: #FFFFFF;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 12px;
+            transition: background 0.2s;
+        }
+        .submit-btn:hover {
+            background: #333333;
+        }
+        .submit-btn:disabled {
+            background: #A3A3A3;
+            cursor: not-allowed;
+        }
+        .success-box {
+            display: none;
+            text-align: center;
+            padding: 48px 24px;
+        }
+        .success-box .icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            background: #000;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin: 0 auto 20px;
+        }
+        .success-box h2 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .success-box p {
+            font-size: 16px;
+            color: #737373;
+            line-height: 1.5;
+        }
+        .success-box .another-btn {
+            display: inline-block;
+            margin-top: 24px;
+            padding: 12px 24px;
+            border: 1px solid #E5E5E5;
+            border-radius: 4px;
+            font-size: 15px;
+            font-weight: 600;
+            color: #0A0A0A;
+            text-decoration: none;
+            cursor: pointer;
+            background: none;
+        }
+        .error-msg {
+            color: #FF3B30;
+            font-size: 14px;
+            margin-top: 8px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Form -->
+        <div id="form-section">
+            <h1>Book an Appointment</h1>
+            <p class="subtitle">Fill in the form below and we'll get back to you shortly.</p>
+
+            <form id="booking-form">
+                <div class="field">
+                    <label for="name">Your Name</label>
+                    <input type="text" id="name" placeholder="e.g. John Doe" required>
+                </div>
+
+                <div class="field">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" placeholder="e.g. john@example.com" required>
+                </div>
+
+                <div class="field">
+                    <label for="date">Preferred Date</label>
+                    <input type="date" id="date" required>
+                </div>
+
+                <div class="field">
+                    <label>Preferred Time</label>
+                    <div class="time-grid" id="time-grid"></div>
+                    <input type="hidden" id="time" required>
+                    <p class="error-msg" id="time-error">Please select a time</p>
+                </div>
+
+                <div class="field">
+                    <label for="message">Reason / Message</label>
+                    <textarea id="message" placeholder="Tell us briefly what you'd like to discuss..." rows="3"></textarea>
+                </div>
+
+                <button type="submit" class="submit-btn" id="submit-btn">Request Appointment</button>
+                <p class="error-msg" id="form-error"></p>
+            </form>
+        </div>
+
+        <!-- Success -->
+        <div class="success-box" id="success-section">
+            <div class="icon">&#10003;</div>
+            <h2>Request Sent!</h2>
+            <p>Thank you! We've received your appointment request and will get back to you soon.</p>
+            <button class="another-btn" onclick="resetForm()">Book another appointment</button>
+        </div>
+    </div>
+
+    <script>
+        // Set min date to today
+        const dateInput = document.getElementById('date');
+        const today = new Date().toISOString().split('T')[0];
+        dateInput.min = today;
+        dateInput.value = today;
+
+        // Generate time slots
+        const timeGrid = document.getElementById('time-grid');
+        const times = [
+            '08:00','08:30','09:00','09:30','10:00','10:30',
+            '11:00','11:30','12:00','12:30','13:00','13:30',
+            '14:00','14:30','15:00','15:30','16:00','16:30',
+            '17:00','17:30','18:00'
+        ];
+        let selectedTime = '';
+
+        times.forEach(t => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'time-btn';
+            btn.textContent = t;
+            btn.onclick = () => {
+                document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                selectedTime = t;
+                document.getElementById('time').value = t;
+                document.getElementById('time-error').style.display = 'none';
+            };
+            timeGrid.appendChild(btn);
+        });
+
+        // Form submit
+        document.getElementById('booking-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            if (!selectedTime) {
+                document.getElementById('time-error').style.display = 'block';
+                return;
+            }
+
+            const btn = document.getElementById('submit-btn');
+            btn.disabled = true;
+            btn.textContent = 'Sending...';
+
+            const body = {
+                customer_name: document.getElementById('name').value.trim(),
+                customer_email: document.getElementById('email').value.trim(),
+                preferred_date: document.getElementById('date').value,
+                preferred_time: selectedTime,
+                message: document.getElementById('message').value.trim()
+            };
+
+            try {
+                const res = await fetch('/api/requests', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+
+                if (res.ok) {
+                    document.getElementById('form-section').style.display = 'none';
+                    document.getElementById('success-section').style.display = 'block';
+                } else {
+                    throw new Error('Failed');
+                }
+            } catch (err) {
+                document.getElementById('form-error').textContent = 'Something went wrong. Please try again.';
+                document.getElementById('form-error').style.display = 'block';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Request Appointment';
+            }
+        });
+
+        function resetForm() {
+            document.getElementById('form-section').style.display = 'block';
+            document.getElementById('success-section').style.display = 'none';
+            document.getElementById('booking-form').reset();
+            document.getElementById('date').value = today;
+            document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
+            selectedTime = '';
+        }
+    </script>
+</body>
+</html>
