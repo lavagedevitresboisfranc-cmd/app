@@ -7,6 +7,7 @@ import {
   FlatList,
   ActivityIndicator,
   RefreshControl,
+  SectionList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Calendar } from 'react-native-calendars';
@@ -26,15 +27,57 @@ interface Appointment {
   status: string;
 }
 
+type ViewMode = 'today' | 'week' | 'month';
+
+const getDaysOfWeek = (baseDate: string) => {
+  const d = new Date(baseDate + 'T00:00:00');
+  const day = d.getDay();
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - ((day + 6) % 7));
+  const days: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const dd = new Date(monday);
+    dd.setDate(monday.getDate() + i);
+    days.push(dd.toISOString().split('T')[0]);
+  }
+  return days;
+};
+
+const formatDayLabel = (dateStr: string) => {
+  const d = new Date(dateStr + 'T00:00:00');
+  const today = new Date().toISOString().split('T')[0];
+  const dayName = d.toLocaleDateString('fr-CA', { weekday: 'long' });
+  const label = d.toLocaleDateString('fr-CA', { day: 'numeric', month: 'long' });
+  const capitalized = dayName.charAt(0).toUpperCase() + dayName.slice(1);
+  if (dateStr === today) return `Aujourd'hui — ${label}`;
+  return `${capitalized} — ${label}`;
+};
+
+const formatDateShort = (dateStr: string) => {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('fr-CA', { weekday: 'long', day: 'numeric', month: 'long' });
+};
+
+const formatWeekRange = (days: string[]) => {
+  const start = new Date(days[0] + 'T00:00:00');
+  const end = new Date(days[6] + 'T00:00:00');
+  const s = start.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
+  const e = end.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
+  return `${s} — ${e}`;
+};
+
 export default function CalendarScreen() {
   const router = useRouter();
   const today = new Date().toISOString().split('T')[0];
+  const [viewMode, setViewMode] = useState<ViewMode>('today');
   const [selectedDate, setSelectedDate] = useState(today);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [weekAppointments, setWeekAppointments] = useState<Record<string, Appointment[]>>({});
+  const [weekBase, setWeekBase] = useState(today);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchAppointments = useCallback(async (date: string) => {
+  const fetchDayAppointments = useCallback(async (date: string) => {
     setLoading(true);
     try {
       const res = await fetch(`${API_URL}/api/appointments?date=${date}`);
@@ -47,31 +90,62 @@ export default function CalendarScreen() {
     }
   }, []);
 
+  const fetchWeekAppointments = useCallback(async (base: string) => {
+    setLoading(true);
+    try {
+      const days = getDaysOfWeek(base);
+      const results: Record<string, Appointment[]> = {};
+      await Promise.all(
+        days.map(async (day) => {
+          const res = await fetch(`${API_URL}/api/appointments?date=${day}`);
+          const data = await res.json();
+          if (data.length > 0) results[day] = data;
+        })
+      );
+      setWeekAppointments(results);
+    } catch (e) {
+      console.error('Failed to fetch week appointments', e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      fetchAppointments(selectedDate);
-    }, [selectedDate])
+      if (viewMode === 'today') {
+        fetchDayAppointments(today);
+      } else if (viewMode === 'week') {
+        fetchWeekAppointments(weekBase);
+      } else {
+        fetchDayAppointments(selectedDate);
+      }
+    }, [viewMode, selectedDate, weekBase])
   );
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchAppointments(selectedDate);
+    if (viewMode === 'today') {
+      await fetchDayAppointments(today);
+    } else if (viewMode === 'week') {
+      await fetchWeekAppointments(weekBase);
+    } else {
+      await fetchDayAppointments(selectedDate);
+    }
     setRefreshing(false);
   };
 
-  const onDayPress = (day: { dateString: string }) => {
-    setSelectedDate(day.dateString);
+  const changeWeek = (offset: number) => {
+    const d = new Date(weekBase + 'T00:00:00');
+    d.setDate(d.getDate() + offset * 7);
+    const newBase = d.toISOString().split('T')[0];
+    setWeekBase(newBase);
+    fetchWeekAppointments(newBase);
   };
 
   const getStatusColor = (status: string) => {
     if (status === 'completed') return '#34C759';
     if (status === 'cancelled') return '#FF3B30';
     return '#000000';
-  };
-
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr + 'T00:00:00');
-    return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   };
 
   const renderAppointment = ({ item }: { item: Appointment }) => (
@@ -98,83 +172,174 @@ export default function CalendarScreen() {
     </TouchableOpacity>
   );
 
+  const views: { key: ViewMode; label: string }[] = [
+    { key: 'today', label: "Aujourd'hui" },
+    { key: 'week', label: 'Semaine' },
+    { key: 'month', label: 'Mois' },
+  ];
+
+  // Week sections
+  const weekDays = getDaysOfWeek(weekBase);
+  const weekSections = weekDays
+    .filter((day) => weekAppointments[day] && weekAppointments[day].length > 0)
+    .map((day) => ({
+      title: formatDayLabel(day),
+      data: weekAppointments[day],
+    }));
+
   const markedDates: Record<string, any> = {
-    [selectedDate]: {
-      selected: true,
-      selectedColor: '#000000',
-    },
+    [selectedDate]: { selected: true, selectedColor: '#000000' },
   };
 
   return (
     <SafeAreaView style={styles.safeArea} testID="calendar-screen">
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Appointments</Text>
-        <TouchableOpacity
-          testID="today-button"
-          onPress={() => setSelectedDate(today)}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.todayBtn}>Today</Text>
-        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Rendez-vous</Text>
       </View>
 
-      <FlatList
-        testID="appointments-list"
-        data={appointments}
-        keyExtractor={(item) => item.id}
-        renderItem={renderAppointment}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#000" />
-        }
-        ListHeaderComponent={
-          <View>
-            <Calendar
-              key={selectedDate}
-              current={selectedDate}
-              onDayPress={onDayPress}
-              markedDates={markedDates}
-              theme={{
-                backgroundColor: '#FAFAFA',
-                calendarBackground: '#FAFAFA',
-                textSectionTitleColor: '#737373',
-                selectedDayBackgroundColor: '#000000',
-                selectedDayTextColor: '#FFFFFF',
-                todayTextColor: '#000000',
-                todayBackgroundColor: '#E5E5E5',
-                dayTextColor: '#0A0A0A',
-                textDisabledColor: '#A3A3A3',
-                arrowColor: '#000000',
-                monthTextColor: '#0A0A0A',
-                textMonthFontWeight: '700',
-                textMonthFontSize: 18,
-                textDayFontSize: 15,
-                textDayHeaderFontSize: 13,
-                textDayFontWeight: '500',
-                textDayHeaderFontWeight: '600',
-              }}
-              style={styles.calendar}
-            />
-            <View style={styles.dateHeader}>
-              <Text style={styles.dateTitle}>{formatDate(selectedDate)}</Text>
-              <Text style={styles.countText}>
-                {appointments.length} appointment{appointments.length !== 1 ? 's' : ''}
-              </Text>
+      {/* View Toggle */}
+      <View style={styles.toggleRow}>
+        {views.map((v) => (
+          <TouchableOpacity
+            key={v.key}
+            testID={`view-${v.key}`}
+            style={[styles.toggleBtn, viewMode === v.key && styles.toggleBtnActive]}
+            activeOpacity={0.7}
+            onPress={() => setViewMode(v.key)}
+          >
+            <Text style={[styles.toggleText, viewMode === v.key && styles.toggleTextActive]}>
+              {v.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* TODAY VIEW */}
+      {viewMode === 'today' && (
+        <FlatList
+          testID="today-list"
+          data={appointments}
+          keyExtractor={(item) => item.id}
+          renderItem={renderAppointment}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#000" />}
+          ListHeaderComponent={
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>{formatDayLabel(today)}</Text>
+              <Text style={styles.countText}>{appointments.length} rdv</Text>
             </View>
-          </View>
-        }
-        ListEmptyComponent={
-          loading ? (
-            <ActivityIndicator testID="loading-indicator" size="small" color="#000" style={{ marginTop: 32 }} />
-          ) : (
-            <View style={styles.emptyState} testID="empty-state">
-              <Feather name="calendar" size={48} color="#E5E5E5" />
-              <Text style={styles.emptyTitle}>No appointments</Text>
-              <Text style={styles.emptySubtitle}>Tap "New" to create one</Text>
+          }
+          ListEmptyComponent={
+            loading ? (
+              <ActivityIndicator size="small" color="#000" style={{ marginTop: 32 }} />
+            ) : (
+              <View style={styles.emptyState}>
+                <Feather name="coffee" size={48} color="#E5E5E5" />
+                <Text style={styles.emptyTitle}>Aucun rendez-vous aujourd'hui</Text>
+              </View>
+            )
+          }
+          contentContainerStyle={styles.listContent}
+        />
+      )}
+
+      {/* WEEK VIEW */}
+      {viewMode === 'week' && (
+        <SectionList
+          testID="week-list"
+          sections={weekSections}
+          keyExtractor={(item) => item.id}
+          renderItem={renderAppointment}
+          renderSectionHeader={({ section }) => (
+            <View style={styles.weekDayHeader}>
+              <Text style={styles.weekDayTitle}>{section.title}</Text>
+              <Text style={styles.weekDayCount}>{section.data.length} rdv</Text>
             </View>
-          )
-        }
-        contentContainerStyle={styles.listContent}
-      />
+          )}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#000" />}
+          ListHeaderComponent={
+            <View style={styles.weekNav}>
+              <TouchableOpacity testID="week-prev" onPress={() => changeWeek(-1)} activeOpacity={0.7} style={styles.weekArrow}>
+                <Feather name="chevron-left" size={20} color="#0A0A0A" />
+              </TouchableOpacity>
+              <Text style={styles.weekRangeText}>{formatWeekRange(weekDays)}</Text>
+              <TouchableOpacity testID="week-next" onPress={() => changeWeek(1)} activeOpacity={0.7} style={styles.weekArrow}>
+                <Feather name="chevron-right" size={20} color="#0A0A0A" />
+              </TouchableOpacity>
+            </View>
+          }
+          ListEmptyComponent={
+            loading ? (
+              <ActivityIndicator size="small" color="#000" style={{ marginTop: 32 }} />
+            ) : (
+              <View style={styles.emptyState}>
+                <Feather name="calendar" size={48} color="#E5E5E5" />
+                <Text style={styles.emptyTitle}>Aucun rendez-vous cette semaine</Text>
+              </View>
+            )
+          }
+          contentContainerStyle={styles.listContent}
+          stickySectionHeadersEnabled={false}
+        />
+      )}
+
+      {/* MONTH VIEW */}
+      {viewMode === 'month' && (
+        <FlatList
+          testID="month-list"
+          data={appointments}
+          keyExtractor={(item) => item.id}
+          renderItem={renderAppointment}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#000" />}
+          ListHeaderComponent={
+            <View>
+              <Calendar
+                key={selectedDate}
+                current={selectedDate}
+                onDayPress={(day: { dateString: string }) => {
+                  setSelectedDate(day.dateString);
+                  fetchDayAppointments(day.dateString);
+                }}
+                markedDates={markedDates}
+                theme={{
+                  backgroundColor: '#FAFAFA',
+                  calendarBackground: '#FAFAFA',
+                  textSectionTitleColor: '#737373',
+                  selectedDayBackgroundColor: '#000000',
+                  selectedDayTextColor: '#FFFFFF',
+                  todayTextColor: '#000000',
+                  todayBackgroundColor: '#E5E5E5',
+                  dayTextColor: '#0A0A0A',
+                  textDisabledColor: '#A3A3A3',
+                  arrowColor: '#000000',
+                  monthTextColor: '#0A0A0A',
+                  textMonthFontWeight: '700',
+                  textMonthFontSize: 18,
+                  textDayFontSize: 15,
+                  textDayHeaderFontSize: 13,
+                  textDayFontWeight: '500',
+                  textDayHeaderFontWeight: '600',
+                }}
+                style={styles.calendar}
+              />
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>{formatDateShort(selectedDate)}</Text>
+                <Text style={styles.countText}>{appointments.length} rdv</Text>
+              </View>
+            </View>
+          }
+          ListEmptyComponent={
+            loading ? (
+              <ActivityIndicator size="small" color="#000" style={{ marginTop: 32 }} />
+            ) : (
+              <View style={styles.emptyState}>
+                <Feather name="calendar" size={48} color="#E5E5E5" />
+                <Text style={styles.emptyTitle}>Aucun rendez-vous</Text>
+              </View>
+            )
+          }
+          contentContainerStyle={styles.listContent}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -185,14 +350,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FAFAFA',
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     paddingHorizontal: 24,
     paddingTop: 8,
     paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderColor: '#E5E5E5',
     backgroundColor: '#FAFAFA',
   },
   headerTitle: {
@@ -201,21 +361,36 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
     color: '#0A0A0A',
   },
-  todayBtn: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#000000',
+  toggleRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 24,
+    paddingBottom: 12,
+    gap: 8,
+    borderBottomWidth: 1,
+    borderColor: '#E5E5E5',
+  },
+  toggleBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 4,
     borderWidth: 1,
     borderColor: '#E5E5E5',
-    borderRadius: 4,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
   },
-  calendar: {
-    marginBottom: 8,
+  toggleBtnActive: {
+    backgroundColor: '#000000',
+    borderColor: '#000000',
   },
-  dateHeader: {
+  toggleText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#737373',
+  },
+  toggleTextActive: {
+    color: '#FFFFFF',
+  },
+  sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'baseline',
@@ -223,8 +398,8 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 12,
   },
-  dateTitle: {
-    fontSize: 18,
+  sectionTitle: {
+    fontSize: 17,
     fontWeight: '600',
     letterSpacing: -0.3,
     color: '#0A0A0A',
@@ -232,6 +407,50 @@ const styles = StyleSheet.create({
   countText: {
     fontSize: 14,
     color: '#737373',
+    fontWeight: '500',
+  },
+  calendar: {
+    marginBottom: 8,
+  },
+  weekNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+  },
+  weekArrow: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    borderRadius: 4,
+  },
+  weekRangeText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0A0A0A',
+  },
+  weekDayHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 10,
+    borderTopWidth: 1,
+    borderColor: '#E5E5E5',
+  },
+  weekDayTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0A0A0A',
+  },
+  weekDayCount: {
+    fontSize: 13,
+    color: '#A3A3A3',
     fontWeight: '500',
   },
   listContent: {
@@ -310,10 +529,5 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0A0A0A',
     marginTop: 16,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#A3A3A3',
-    marginTop: 4,
   },
 });
