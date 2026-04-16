@@ -7,6 +7,8 @@ import {
   FlatList,
   ActivityIndicator,
   RefreshControl,
+  Alert,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -139,10 +141,23 @@ export default function RequestsScreen() {
       ) : null}
 
       {item.customer_address ? (
-        <View style={styles.cardExtraRow}>
+        <TouchableOpacity
+          style={styles.cardExtraRow}
+          activeOpacity={0.7}
+          onPress={(e) => {
+            e.stopPropagation();
+            const address = encodeURIComponent(item.customer_address);
+            Alert.alert('Ouvrir avec', 'Choisissez votre app de navigation', [
+              { text: 'Waze', onPress: () => Linking.openURL(`https://waze.com/ul?q=${address}&navigate=yes`) },
+              { text: 'Google Maps', onPress: () => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${address}`) },
+              { text: 'Annuler', style: 'cancel' },
+            ]);
+          }}
+        >
           <Feather name="map-pin" size={13} color="#737373" />
-          <Text style={styles.cardExtraText} numberOfLines={1}>{item.customer_address}</Text>
-        </View>
+          <Text style={[styles.cardExtraText, { textDecorationLine: 'underline' }]} numberOfLines={1}>{item.customer_address}</Text>
+          <Feather name="navigation" size={13} color="#000000" />
+        </TouchableOpacity>
       ) : null}
 
       {item.status === 'alternative_offered' && item.suggested_date && (
