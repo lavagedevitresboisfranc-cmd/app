@@ -129,6 +129,7 @@ export default function CalendarScreen() {
         ListHeaderComponent={
           <View>
             <Calendar
+              key={selectedDate}
               current={selectedDate}
               onDayPress={onDayPress}
               markedDates={markedDates}
