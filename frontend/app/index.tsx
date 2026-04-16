@@ -27,6 +27,29 @@ interface Appointment {
   status: string;
 }
 
+interface PendingRequest {
+  id: string;
+  customer_name: string;
+  customer_email: string;
+  customer_phone: string;
+  customer_address: string;
+  preferred_date: string;
+  preferred_time: string;
+  message: string;
+  status: string;
+}
+
+// Unified item for list display
+interface CalendarItem {
+  id: string;
+  type: 'appointment' | 'request';
+  name: string;
+  date: string;
+  time: string;
+  duration?: number;
+  status: string;
+}
+
 type ViewMode = 'today' | 'week' | 'month';
 
 const getDaysOfWeek = (baseDate: string) => {
@@ -71,40 +94,138 @@ export default function CalendarScreen() {
   const today = new Date().toISOString().split('T')[0];
   const [viewMode, setViewMode] = useState<ViewMode>('today');
   const [selectedDate, setSelectedDate] = useState(today);
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [weekAppointments, setWeekAppointments] = useState<Record<string, Appointment[]>>({});
+  const [dayItems, setDayItems] = useState<CalendarItem[]>([]);
+  const [weekItems, setWeekItems] = useState<Record<string, CalendarItem[]>>({});
   const [weekBase, setWeekBase] = useState(today);
+  const [markedDates, setMarkedDates] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchDayAppointments = useCallback(async (date: string) => {
+  // Fetch appointments + pending requests for a single day
+  const fetchDayItems = useCallback(async (date: string) => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/appointments?date=${date}`);
-      const data = await res.json();
-      setAppointments(data);
+      const [apptRes, reqRes] = await Promise.all([
+        fetch(`${API_URL}/api/appointments?date=${date}`),
+        fetch(`${API_URL}/api/requests?status=pending`),
+      ]);
+      const appts: Appointment[] = await apptRes.json();
+      const reqs: PendingRequest[] = await reqRes.json();
+
+      const items: CalendarItem[] = [
+        ...appts.map((a) => ({
+          id: a.id,
+          type: 'appointment' as const,
+          name: a.client_name,
+          date: a.date,
+          time: a.time_slot,
+          duration: a.duration_minutes,
+          status: a.status,
+        })),
+        ...reqs
+          .filter((r) => r.preferred_date === date)
+          .map((r) => ({
+            id: r.id,
+            type: 'request' as const,
+            name: r.customer_name,
+            date: r.preferred_date,
+            time: r.preferred_time,
+            status: 'pending',
+          })),
+      ].sort((a, b) => a.time.localeCompare(b.time));
+
+      setDayItems(items);
     } catch (e) {
-      console.error('Failed to fetch appointments', e);
+      console.error('Failed to fetch day items', e);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  const fetchWeekAppointments = useCallback(async (base: string) => {
+  // Fetch all marked dates for calendar dots
+  const fetchMarkedDates = useCallback(async (selected: string) => {
+    try {
+      const [apptRes, reqRes] = await Promise.all([
+        fetch(`${API_URL}/api/appointments`),
+        fetch(`${API_URL}/api/requests?status=pending`),
+      ]);
+      const appts: Appointment[] = await apptRes.json();
+      const reqs: PendingRequest[] = await reqRes.json();
+
+      const marks: Record<string, any> = {};
+
+      // Green dots for appointments
+      appts.forEach((a) => {
+        if (!marks[a.date]) marks[a.date] = { dots: [] };
+        const hasGreen = marks[a.date].dots.some((d: any) => d.color === '#34C759');
+        if (!hasGreen) marks[a.date].dots.push({ key: 'appt', color: '#34C759' });
+      });
+
+      // Red dots for pending requests
+      reqs.forEach((r) => {
+        const d = r.preferred_date;
+        if (!marks[d]) marks[d] = { dots: [] };
+        const hasRed = marks[d].dots.some((dd: any) => dd.color === '#FF3B30');
+        if (!hasRed) marks[d].dots.push({ key: 'req', color: '#FF3B30' });
+      });
+
+      // Add selected marker
+      if (marks[selected]) {
+        marks[selected] = { ...marks[selected], selected: true, selectedColor: '#000000' };
+      } else {
+        marks[selected] = { selected: true, selectedColor: '#000000', dots: [] };
+      }
+
+      setMarkedDates(marks);
+    } catch (e) {
+      console.error('Failed to fetch marked dates', e);
+    }
+  }, []);
+
+  // Fetch week items
+  const fetchWeekItems = useCallback(async (base: string) => {
     setLoading(true);
     try {
       const days = getDaysOfWeek(base);
-      const results: Record<string, Appointment[]> = {};
+      const [reqRes] = await Promise.all([
+        fetch(`${API_URL}/api/requests?status=pending`),
+      ]);
+      const reqs: PendingRequest[] = await reqRes.json();
+
+      const results: Record<string, CalendarItem[]> = {};
       await Promise.all(
         days.map(async (day) => {
-          const res = await fetch(`${API_URL}/api/appointments?date=${day}`);
-          const data = await res.json();
-          if (data.length > 0) results[day] = data;
+          const apptRes = await fetch(`${API_URL}/api/appointments?date=${day}`);
+          const appts: Appointment[] = await apptRes.json();
+
+          const dayReqs = reqs.filter((r) => r.preferred_date === day);
+
+          const items: CalendarItem[] = [
+            ...appts.map((a) => ({
+              id: a.id,
+              type: 'appointment' as const,
+              name: a.client_name,
+              date: a.date,
+              time: a.time_slot,
+              duration: a.duration_minutes,
+              status: a.status,
+            })),
+            ...dayReqs.map((r) => ({
+              id: r.id,
+              type: 'request' as const,
+              name: r.customer_name,
+              date: r.preferred_date,
+              time: r.preferred_time,
+              status: 'pending',
+            })),
+          ].sort((a, b) => a.time.localeCompare(b.time));
+
+          if (items.length > 0) results[day] = items;
         })
       );
-      setWeekAppointments(results);
+      setWeekItems(results);
     } catch (e) {
-      console.error('Failed to fetch week appointments', e);
+      console.error('Failed to fetch week items', e);
     } finally {
       setLoading(false);
     }
@@ -113,11 +234,12 @@ export default function CalendarScreen() {
   useFocusEffect(
     useCallback(() => {
       if (viewMode === 'today') {
-        fetchDayAppointments(today);
+        fetchDayItems(today);
       } else if (viewMode === 'week') {
-        fetchWeekAppointments(weekBase);
+        fetchWeekItems(weekBase);
       } else {
-        fetchDayAppointments(selectedDate);
+        fetchDayItems(selectedDate);
+        fetchMarkedDates(selectedDate);
       }
     }, [viewMode, selectedDate, weekBase])
   );
@@ -125,11 +247,12 @@ export default function CalendarScreen() {
   const onRefresh = async () => {
     setRefreshing(true);
     if (viewMode === 'today') {
-      await fetchDayAppointments(today);
+      await fetchDayItems(today);
     } else if (viewMode === 'week') {
-      await fetchWeekAppointments(weekBase);
+      await fetchWeekItems(weekBase);
     } else {
-      await fetchDayAppointments(selectedDate);
+      await fetchDayItems(selectedDate);
+      await fetchMarkedDates(selectedDate);
     }
     setRefreshing(false);
   };
@@ -139,38 +262,44 @@ export default function CalendarScreen() {
     d.setDate(d.getDate() + offset * 7);
     const newBase = d.toISOString().split('T')[0];
     setWeekBase(newBase);
-    fetchWeekAppointments(newBase);
+    fetchWeekItems(newBase);
   };
 
-  const getStatusColor = (status: string) => {
-    if (status === 'completed') return '#34C759';
-    if (status === 'cancelled') return '#FF3B30';
-    return '#000000';
-  };
+  const renderItem = ({ item }: { item: CalendarItem }) => {
+    const isRequest = item.type === 'request';
+    const accentColor = isRequest ? '#FF3B30' : '#34C759';
 
-  const renderAppointment = ({ item }: { item: Appointment }) => (
-    <TouchableOpacity
-      testID={`appointment-card-${item.id}`}
-      style={styles.card}
-      activeOpacity={0.7}
-      onPress={() => router.push({ pathname: '/detail', params: { id: item.id } })}
-    >
-      <View style={styles.cardLeft}>
-        <Text style={styles.timeText}>{item.time_slot}</Text>
-        <Text style={styles.durationText}>{item.duration_minutes}m</Text>
-      </View>
-      <View style={styles.cardDivider} />
-      <View style={styles.cardRight}>
-        <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
-        <Text style={styles.cardClient} numberOfLines={1}>{item.client_name}</Text>
-        <View style={styles.statusRow}>
-          <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />
-          <Text style={styles.statusText}>{item.status}</Text>
+    return (
+      <TouchableOpacity
+        testID={`calendar-item-${item.id}`}
+        style={[styles.card, { borderLeftWidth: 4, borderLeftColor: accentColor }]}
+        activeOpacity={0.7}
+        onPress={() => {
+          if (isRequest) {
+            router.push({ pathname: '/request-detail', params: { id: item.id } });
+          } else {
+            router.push({ pathname: '/detail', params: { id: item.id } });
+          }
+        }}
+      >
+        <View style={styles.cardLeft}>
+          <Text style={styles.timeText}>{item.time}</Text>
+          {item.duration ? <Text style={styles.durationText}>{item.duration}m</Text> : null}
         </View>
-      </View>
-      <Feather name="chevron-right" size={20} color="#A3A3A3" />
-    </TouchableOpacity>
-  );
+        <View style={styles.cardDivider} />
+        <View style={styles.cardRight}>
+          <Text style={styles.cardTitle} numberOfLines={1}>{item.name}</Text>
+          <View style={styles.statusRow}>
+            <View style={[styles.statusDot, { backgroundColor: accentColor }]} />
+            <Text style={[styles.statusText, { color: accentColor }]}>
+              {isRequest ? 'En attente' : item.status === 'upcoming' ? 'Confirmé' : item.status}
+            </Text>
+          </View>
+        </View>
+        <Feather name="chevron-right" size={20} color="#A3A3A3" />
+      </TouchableOpacity>
+    );
+  };
 
   const views: { key: ViewMode; label: string }[] = [
     { key: 'today', label: "Aujourd'hui" },
@@ -178,26 +307,30 @@ export default function CalendarScreen() {
     { key: 'month', label: 'Mois' },
   ];
 
-  // Week sections
   const weekDays = getDaysOfWeek(weekBase);
   const weekSections = weekDays
-    .filter((day) => weekAppointments[day] && weekAppointments[day].length > 0)
+    .filter((day) => weekItems[day] && weekItems[day].length > 0)
     .map((day) => ({
       title: formatDayLabel(day),
-      data: weekAppointments[day],
+      data: weekItems[day],
     }));
-
-  const markedDates: Record<string, any> = {
-    [selectedDate]: { selected: true, selectedColor: '#000000' },
-  };
 
   return (
     <SafeAreaView style={styles.safeArea} testID="calendar-screen">
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Rendez-vous</Text>
+        <View style={styles.legendRow}>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#34C759' }]} />
+            <Text style={styles.legendLabel}>Confirmé</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#FF3B30' }]} />
+            <Text style={styles.legendLabel}>En attente</Text>
+          </View>
+        </View>
       </View>
 
-      {/* View Toggle */}
       <View style={styles.toggleRow}>
         {views.map((v) => (
           <TouchableOpacity
@@ -218,14 +351,14 @@ export default function CalendarScreen() {
       {viewMode === 'today' && (
         <FlatList
           testID="today-list"
-          data={appointments}
+          data={dayItems}
           keyExtractor={(item) => item.id}
-          renderItem={renderAppointment}
+          renderItem={renderItem}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#000" />}
           ListHeaderComponent={
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>{formatDayLabel(today)}</Text>
-              <Text style={styles.countText}>{appointments.length} rdv</Text>
+              <Text style={styles.countText}>{dayItems.length}</Text>
             </View>
           }
           ListEmptyComponent={
@@ -248,11 +381,11 @@ export default function CalendarScreen() {
           testID="week-list"
           sections={weekSections}
           keyExtractor={(item) => item.id}
-          renderItem={renderAppointment}
+          renderItem={renderItem}
           renderSectionHeader={({ section }) => (
             <View style={styles.weekDayHeader}>
               <Text style={styles.weekDayTitle}>{section.title}</Text>
-              <Text style={styles.weekDayCount}>{section.data.length} rdv</Text>
+              <Text style={styles.weekDayCount}>{section.data.length}</Text>
             </View>
           )}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#000" />}
@@ -286,9 +419,9 @@ export default function CalendarScreen() {
       {viewMode === 'month' && (
         <FlatList
           testID="month-list"
-          data={appointments}
+          data={dayItems}
           keyExtractor={(item) => item.id}
-          renderItem={renderAppointment}
+          renderItem={renderItem}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#000" />}
           ListHeaderComponent={
             <View>
@@ -297,9 +430,11 @@ export default function CalendarScreen() {
                 current={selectedDate}
                 onDayPress={(day: { dateString: string }) => {
                   setSelectedDate(day.dateString);
-                  fetchDayAppointments(day.dateString);
+                  fetchDayItems(day.dateString);
+                  fetchMarkedDates(day.dateString);
                 }}
                 markedDates={markedDates}
+                markingType="multi-dot"
                 theme={{
                   backgroundColor: '#FAFAFA',
                   calendarBackground: '#FAFAFA',
@@ -323,7 +458,7 @@ export default function CalendarScreen() {
               />
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>{formatDateShort(selectedDate)}</Text>
-                <Text style={styles.countText}>{appointments.length} rdv</Text>
+                <Text style={styles.countText}>{dayItems.length}</Text>
               </View>
             </View>
           }
@@ -350,6 +485,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FAFAFA',
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 24,
     paddingTop: 8,
     paddingBottom: 12,
@@ -360,6 +498,25 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -1,
     color: '#0A0A0A',
+  },
+  legendRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  legendLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#737373',
   },
   toggleRow: {
     flexDirection: 'row',
