@@ -446,7 +446,18 @@ export default function CalendarScreen() {
           <Feather name="menu" size={24} color="#0A0A0A" />
         </TouchableOpacity>
         <View style={styles.logoRow}>
-          <Image source={{ uri: LOGO_URL }} style={{ width: 140, height: 40 }} resizeMode="contain" />
+          <View style={styles.logoIcon}>
+            <View style={styles.logoWindowGrid}>
+              <View style={[styles.logoPane, { backgroundColor: '#0891B2' }]} />
+              <View style={[styles.logoPane, { backgroundColor: '#06B6D4' }]} />
+              <View style={[styles.logoPane, { backgroundColor: '#06B6D4' }]} />
+              <View style={[styles.logoPane, { backgroundColor: '#22D3EE' }]} />
+            </View>
+            <View style={styles.logoSparkle}>
+              <Text style={styles.logoSparkleText}>✦</Text>
+            </View>
+          </View>
+          <Text style={styles.headerTitle}>Bright<Text style={styles.headerTitleAccent}>Calendar</Text></Text>
         </View>
         <TouchableOpacity testID="add-btn" onPress={() => router.push('/create')} style={styles.hamburgerBtn} activeOpacity={0.7}>
           <Feather name="plus" size={24} color="#0891B2" />
