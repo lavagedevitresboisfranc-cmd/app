@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
   RefreshControl,
   SectionList,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Calendar } from 'react-native-calendars';
@@ -101,6 +103,16 @@ export default function CalendarScreen() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [allItems, setAllItems] = useState<CalendarItem[]>([]);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const menuItems = [
+    { icon: 'calendar' as const, label: 'Calendrier', route: '/' },
+    { icon: 'list' as const, label: 'Tous les RDV', route: '/appointments' },
+    { icon: 'plus-circle' as const, label: 'Nouveau RDV', route: '/create' },
+    { icon: 'inbox' as const, label: 'Demandes', route: '/requests' },
+    { icon: 'bar-chart-2' as const, label: 'Statistiques', route: '/stats' },
+    { icon: 'users' as const, label: 'Clients', route: '/client-history' },
+  ];
 
   // Fetch ALL upcoming appointments + pending requests
   const fetchAllItems = useCallback(async () => {
@@ -391,7 +403,53 @@ export default function CalendarScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} testID="calendar-screen">
+      {/* Hamburger Menu Modal */}
+      <Modal
+        visible={menuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuOpen(false)}
+      >
+        <Pressable style={styles.menuOverlay} onPress={() => setMenuOpen(false)}>
+          <View style={styles.menuDrawer}>
+            {/* Logo in menu */}
+            <View style={styles.menuLogoRow}>
+              <View style={styles.menuLogoIcon}>
+                <View style={styles.logoWindowGrid}>
+                  <View style={[styles.logoPane, { backgroundColor: '#0891B2' }]} />
+                  <View style={[styles.logoPane, { backgroundColor: '#06B6D4' }]} />
+                  <View style={[styles.logoPane, { backgroundColor: '#06B6D4' }]} />
+                  <View style={[styles.logoPane, { backgroundColor: '#22D3EE' }]} />
+                </View>
+              </View>
+              <Text style={styles.menuLogoText}>Bright<Text style={{ color: '#0891B2' }}>Calendar</Text></Text>
+            </View>
+
+            {menuItems.map((item) => (
+              <TouchableOpacity
+                key={item.route}
+                testID={`menu-${item.label}`}
+                style={styles.menuItem}
+                activeOpacity={0.7}
+                onPress={() => {
+                  setMenuOpen(false);
+                  if (item.route === '/') return;
+                  router.push(item.route as any);
+                }}
+              >
+                <Feather name={item.icon} size={22} color="#0A0A0A" />
+                <Text style={styles.menuItemText}>{item.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Header with hamburger */}
       <View style={styles.header}>
+        <TouchableOpacity testID="hamburger-menu" onPress={() => setMenuOpen(true)} style={styles.hamburgerBtn} activeOpacity={0.7}>
+          <Feather name="menu" size={24} color="#0A0A0A" />
+        </TouchableOpacity>
         <View style={styles.logoRow}>
           <View style={styles.logoIcon}>
             <View style={styles.logoWindowGrid}>
@@ -406,6 +464,9 @@ export default function CalendarScreen() {
           </View>
           <Text style={styles.headerTitle}>Bright<Text style={styles.headerTitleAccent}>Calendar</Text></Text>
         </View>
+        <TouchableOpacity testID="add-btn" onPress={() => router.push('/create')} style={styles.hamburgerBtn} activeOpacity={0.7}>
+          <Feather name="plus" size={24} color="#0891B2" />
+        </TouchableOpacity>
       </View>
       <View style={styles.legendBar}>
         <View style={styles.legendItem}>
@@ -575,10 +636,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#FAFAFA',
   },
   header: {
-    paddingHorizontal: 24,
-    paddingTop: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingTop: 4,
     paddingBottom: 4,
     backgroundColor: '#FAFAFA',
+  },
+  hamburgerBtn: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   logoRow: {
     flexDirection: 'row',
@@ -838,5 +908,53 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#A3A3A3',
     marginBottom: 2,
+  },
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    flexDirection: 'row',
+  },
+  menuDrawer: {
+    width: 280,
+    backgroundColor: '#FFFFFF',
+    paddingTop: 60,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    shadowColor: '#000',
+    shadowOffset: { width: 2, height: 0 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  menuLogoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 32,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderColor: '#E5E5E5',
+  },
+  menuLogoIcon: {
+    width: 32,
+    height: 32,
+  },
+  menuLogoText: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0A0A0A',
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderColor: '#F5F5F5',
+  },
+  menuItemText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0A0A0A',
   },
 });

@@ -1,5 +1,4 @@
-import { Tabs } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, StyleSheet } from 'react-native';
 
@@ -7,90 +6,16 @@ export default function RootLayout() {
   return (
     <View style={styles.container}>
       <StatusBar style="dark" />
-      <Tabs
-        screenOptions={{
-          headerShown: false,
-          tabBarStyle: {
-            backgroundColor: '#FFFFFF',
-            borderTopWidth: 1,
-            borderTopColor: '#E5E5E5',
-            height: 56,
-            paddingBottom: 6,
-            paddingTop: 6,
-          },
-          tabBarActiveTintColor: '#0891B2',
-          tabBarInactiveTintColor: '#A3A3A3',
-          tabBarLabelStyle: {
-            fontSize: 12,
-            fontWeight: '600',
-            letterSpacing: 0.3,
-          },
-        }}
-      >
-        <Tabs.Screen
-          name="index"
-          options={{
-            title: 'Calendar',
-            tabBarIcon: ({ color, size }) => (
-              <Feather name="calendar" size={size} color={color} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="appointments"
-          options={{
-            title: 'All',
-            tabBarIcon: ({ color, size }) => (
-              <Feather name="list" size={size} color={color} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="create"
-          options={{
-            title: 'New',
-            tabBarIcon: ({ color, size }) => (
-              <Feather name="plus-circle" size={size} color={color} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="detail"
-          options={{
-            href: null,
-          }}
-        />
-        <Tabs.Screen
-          name="requests"
-          options={{
-            title: 'Requests',
-            tabBarIcon: ({ color, size }) => (
-              <Feather name="inbox" size={size} color={color} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="stats"
-          options={{
-            title: 'Stats',
-            tabBarIcon: ({ color, size }) => (
-              <Feather name="bar-chart-2" size={size} color={color} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="request-detail"
-          options={{
-            href: null,
-          }}
-        />
-        <Tabs.Screen
-          name="client-history"
-          options={{
-            href: null,
-          }}
-        />
-      </Tabs>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="appointments" />
+        <Stack.Screen name="create" />
+        <Stack.Screen name="detail" />
+        <Stack.Screen name="requests" />
+        <Stack.Screen name="request-detail" />
+        <Stack.Screen name="stats" />
+        <Stack.Screen name="client-history" />
+      </Stack>
     </View>
   );
 }
