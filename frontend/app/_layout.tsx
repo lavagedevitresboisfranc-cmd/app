@@ -18,7 +18,7 @@ export default function RootLayout() {
             paddingBottom: 6,
             paddingTop: 6,
           },
-          tabBarActiveTintColor: '#000000',
+          tabBarActiveTintColor: '#0891B2',
           tabBarInactiveTintColor: '#A3A3A3',
           tabBarLabelStyle: {
             fontSize: 12,

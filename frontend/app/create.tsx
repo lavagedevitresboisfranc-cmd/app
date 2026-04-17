@@ -31,6 +31,9 @@ export default function CreateScreen() {
     editId?: string;
     editTitle?: string;
     editClient?: string;
+    editEmail?: string;
+    editPhone?: string;
+    editAddress?: string;
     editDate?: string;
     editTime?: string;
     editDuration?: string;
@@ -42,6 +45,9 @@ export default function CreateScreen() {
 
   const [title, setTitle] = useState(params.editTitle || '');
   const [clientName, setClientName] = useState(params.editClient || '');
+  const [clientEmail, setClientEmail] = useState(params.editEmail || '');
+  const [clientPhone, setClientPhone] = useState(params.editPhone || '');
+  const [clientAddress, setClientAddress] = useState(params.editAddress || '');
   const [date, setDate] = useState(params.editDate || new Date().toISOString().split('T')[0]);
   const [timeSlot, setTimeSlot] = useState(params.editTime || '');
   const [duration, setDuration] = useState(Number(params.editDuration) || 30);
@@ -69,6 +75,9 @@ export default function CreateScreen() {
       const body = {
         title: title.trim(),
         client_name: clientName.trim(),
+        client_email: clientEmail.trim(),
+        client_phone: clientPhone.trim(),
+        client_address: clientAddress.trim(),
         date,
         time_slot: timeSlot,
         duration_minutes: duration,
@@ -125,7 +134,7 @@ export default function CreateScreen() {
           >
             <Feather name="x" size={24} color="#0A0A0A" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>{isEditing ? 'Edit' : 'New Appointment'}</Text>
+          <Text style={styles.headerTitle}>{isEditing ? 'Modifier' : 'Nouveau Rendez-vous'}</Text>
           <TouchableOpacity
             testID="save-button"
             onPress={handleSave}
@@ -140,26 +149,68 @@ export default function CreateScreen() {
         <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
           {/* Title */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.label}>TITLE</Text>
+            <Text style={styles.label}>TITRE</Text>
             <TextInput
               testID="title-input"
               style={styles.input}
               value={title}
               onChangeText={setTitle}
-              placeholder="e.g. Strategy Review"
+              placeholder="ex. Lavage de vitres"
               placeholderTextColor="#A3A3A3"
             />
           </View>
 
           {/* Client */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.label}>CLIENT NAME</Text>
+            <Text style={styles.label}>NOM DU CLIENT</Text>
             <TextInput
               testID="client-input"
               style={styles.input}
               value={clientName}
               onChangeText={setClientName}
-              placeholder="e.g. Alice Martin"
+              placeholder="ex. Alice Martin"
+              placeholderTextColor="#A3A3A3"
+            />
+          </View>
+
+          {/* Phone */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>TÉLÉPHONE</Text>
+            <TextInput
+              testID="phone-input"
+              style={styles.input}
+              value={clientPhone}
+              onChangeText={setClientPhone}
+              placeholder="ex. 514-555-1234"
+              placeholderTextColor="#A3A3A3"
+              keyboardType="phone-pad"
+            />
+          </View>
+
+          {/* Email */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>COURRIEL</Text>
+            <TextInput
+              testID="email-input"
+              style={styles.input}
+              value={clientEmail}
+              onChangeText={setClientEmail}
+              placeholder="ex. alice@exemple.com"
+              placeholderTextColor="#A3A3A3"
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+          </View>
+
+          {/* Address */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>ADRESSE</Text>
+            <TextInput
+              testID="address-input"
+              style={styles.input}
+              value={clientAddress}
+              onChangeText={setClientAddress}
+              placeholder="ex. 123 Rue Principale, Bois-Franc"
               placeholderTextColor="#A3A3A3"
             />
           </View>
@@ -279,7 +330,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   saveBtn: {
-    backgroundColor: '#000000',
+    backgroundColor: '#0891B2',
     borderRadius: 4,
     paddingHorizontal: 20,
     paddingVertical: 10,
