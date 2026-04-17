@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { Calendar } from 'react-native-calendars';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
