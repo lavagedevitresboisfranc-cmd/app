@@ -23,7 +23,7 @@ const TIME_SLOTS = [
   '14:00', '14:30', '15:00', '15:30', '16:00',
 ];
 
-const DURATIONS = [15, 30, 45, 60, 90, 120];
+const DURATIONS = [30, 90, 120, 180, 210];
 
 export default function CreateScreen() {
   const router = useRouter();
