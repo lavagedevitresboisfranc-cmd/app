@@ -450,7 +450,3 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
 });
-ive: {
-    color: '#FFFFFF',
-  },
-});

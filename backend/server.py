@@ -310,6 +310,119 @@ async def get_pending_count():
     count = await db.appointment_requests.count_documents({"status": "pending"})
     return {"count": count}
 
+
+# --- Statistics & Client History ---
+
+@api_router.get("/stats")
+async def get_stats():
+    """Dashboard statistics"""
+    now = datetime.now(timezone.utc)
+    today = now.strftime("%Y-%m-%d")
+    
+    # Current month range
+    month_start = now.strftime("%Y-%m-01")
+    month_end = now.strftime("%Y-%m-31")
+    
+    # Total appointments
+    total_appointments = await db.appointments.count_documents({})
+    
+    # This month appointments
+    month_appointments = await db.appointments.count_documents({
+        "date": {"$gte": month_start, "$lte": month_end}
+    })
+    
+    # Today appointments
+    today_appointments = await db.appointments.count_documents({"date": today})
+    
+    # Total revenue (all time)
+    pipeline_revenue = [
+        {"$group": {"_id": None, "total": {"$sum": "$price"}}}
+    ]
+    revenue_result = await db.appointments.aggregate(pipeline_revenue).to_list(1)
+    total_revenue = revenue_result[0]["total"] if revenue_result else 0
+    
+    # Month revenue
+    pipeline_month_rev = [
+        {"$match": {"date": {"$gte": month_start, "$lte": month_end}}},
+        {"$group": {"_id": None, "total": {"$sum": "$price"}}}
+    ]
+    month_rev_result = await db.appointments.aggregate(pipeline_month_rev).to_list(1)
+    month_revenue = month_rev_result[0]["total"] if month_rev_result else 0
+    
+    # Pending requests
+    pending_requests = await db.appointment_requests.count_documents({"status": "pending"})
+    total_requests = await db.appointment_requests.count_documents({})
+    accepted_requests = await db.appointment_requests.count_documents({"status": "accepted"})
+    acceptance_rate = round((accepted_requests / total_requests * 100), 1) if total_requests > 0 else 0
+    
+    # Top clients (by appointment count)
+    pipeline_clients = [
+        {"$group": {"_id": "$client_name", "count": {"$sum": 1}, "total_spent": {"$sum": "$price"}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 10}
+    ]
+    top_clients = await db.appointments.aggregate(pipeline_clients).to_list(10)
+    
+    # Completed vs upcoming
+    completed = await db.appointments.count_documents({"status": "completed"})
+    upcoming = await db.appointments.count_documents({"status": "upcoming"})
+    cancelled = await db.appointments.count_documents({"status": "cancelled"})
+    
+    return {
+        "total_appointments": total_appointments,
+        "month_appointments": month_appointments,
+        "today_appointments": today_appointments,
+        "total_revenue": total_revenue,
+        "month_revenue": month_revenue,
+        "pending_requests": pending_requests,
+        "acceptance_rate": acceptance_rate,
+        "completed": completed,
+        "upcoming": upcoming,
+        "cancelled": cancelled,
+        "top_clients": [
+            {"name": c["_id"], "count": c["count"], "total_spent": c.get("total_spent", 0)}
+            for c in top_clients if c["_id"]
+        ],
+    }
+
+@api_router.get("/clients")
+async def get_clients():
+    """List all unique clients with stats"""
+    pipeline = [
+        {"$group": {
+            "_id": "$client_name",
+            "count": {"$sum": 1},
+            "total_spent": {"$sum": "$price"},
+            "last_visit": {"$max": "$date"},
+            "email": {"$first": "$client_email"},
+            "phone": {"$first": "$client_phone"},
+            "address": {"$first": "$client_address"},
+        }},
+        {"$sort": {"last_visit": -1}},
+    ]
+    clients = await db.appointments.aggregate(pipeline).to_list(500)
+    return [
+        {
+            "name": c["_id"],
+            "count": c["count"],
+            "total_spent": c.get("total_spent", 0),
+            "last_visit": c.get("last_visit", ""),
+            "email": c.get("email", ""),
+            "phone": c.get("phone", ""),
+            "address": c.get("address", ""),
+        }
+        for c in clients if c["_id"]
+    ]
+
+@api_router.get("/clients/{client_name}/history")
+async def get_client_history(client_name: str):
+    """Get all appointments for a specific client"""
+    appointments = await db.appointments.find(
+        {"client_name": client_name}, {"_id": 0}
+    ).sort("date", -1).to_list(500)
+    return [AppointmentResponse(**a) for a in appointments]
+
+
 @api_router.post("/requests/seed")
 async def seed_requests():
     """Seed sample requests for testing"""

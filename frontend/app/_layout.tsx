@@ -70,7 +70,22 @@ export default function RootLayout() {
           }}
         />
         <Tabs.Screen
+          name="stats"
+          options={{
+            title: 'Stats',
+            tabBarIcon: ({ color, size }) => (
+              <Feather name="bar-chart-2" size={size} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
           name="request-detail"
+          options={{
+            href: null,
+          }}
+        />
+        <Tabs.Screen
+          name="client-history"
           options={{
             href: null,
           }}
