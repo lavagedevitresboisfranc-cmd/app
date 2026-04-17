@@ -8,6 +8,7 @@ import {
   Alert,
   ActivityIndicator,
   Linking,
+  Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -58,6 +59,46 @@ export default function DetailScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleShare = async () => {
+    if (!appointment) return;
+    try {
+      const res = await fetch(`${API_URL}/api/share/appointment/${appointment.id}`);
+      const data = await res.json();
+      await Share.share({ message: data.text });
+    } catch (e) {
+      Alert.alert('Erreur', 'Impossible de partager');
+    }
+  };
+
+  const handleRecurrence = () => {
+    if (!appointment) return;
+    Alert.alert(
+      'Récurrence',
+      'Créer des rendez-vous récurrents pour ce client?',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Tous les 3 mois (x4)', onPress: () => createRecurrence(3, 4) },
+        { text: 'Tous les 6 mois (x2)', onPress: () => createRecurrence(6, 2) },
+      ]
+    );
+  };
+
+  const createRecurrence = async (months: number, count: number) => {
+    try {
+      const res = await fetch(`${API_URL}/api/appointments/recurrence`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appointment_id: appointment!.id, interval_months: months, occurrences: count }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        Alert.alert('Créés!', data.message);
+      } else {
+        Alert.alert('Erreur', data.detail || 'Échec');
+      }
+    } catch { Alert.alert('Erreur', 'Erreur réseau'); }
   };
 
   const handlePrint = () => {
@@ -329,6 +370,31 @@ export default function DetailScreen() {
                 <Text style={[styles.actionBtnText, { color: '#000000' }]}>Reopen</Text>
               </TouchableOpacity>
             )}
+          </View>
+        </View>
+
+        {/* Quick Actions */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>OUTILS</Text>
+          <View style={styles.statusActions}>
+            <TouchableOpacity
+              testID="share-button"
+              style={[styles.actionBtn, { borderColor: '#0891B2' }]}
+              activeOpacity={0.7}
+              onPress={handleShare}
+            >
+              <Feather name="share" size={18} color="#0891B2" />
+              <Text style={[styles.actionBtnText, { color: '#0891B2' }]}>Partager</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="recurrence-button"
+              style={[styles.actionBtn, { borderColor: '#0891B2' }]}
+              activeOpacity={0.7}
+              onPress={handleRecurrence}
+            >
+              <Feather name="repeat" size={18} color="#0891B2" />
+              <Text style={[styles.actionBtnText, { color: '#0891B2' }]}>Récurrence</Text>
+            </TouchableOpacity>
           </View>
         </View>
 

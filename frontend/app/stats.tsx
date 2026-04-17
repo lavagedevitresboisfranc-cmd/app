@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Linking,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -183,10 +184,33 @@ export default function StatsScreen() {
           activeOpacity={0.7}
           onPress={() => Linking.openURL(`${API_URL}/api/backup/export`)}
         >
-          <Feather name="download-cloud" size={18} color="#0891B2" />
+          <Feather name="printer" size={18} color="#0891B2" />
           <View style={styles.exportInfo}>
-            <Text style={styles.exportTitle}>Backup complet (JSON)</Text>
+            <Text style={styles.exportTitle}>Imprimer backup</Text>
             <Text style={styles.exportSub}>Tous les rdv + demandes</Text>
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          testID="email-backup"
+          style={styles.exportBtn}
+          activeOpacity={0.7}
+          onPress={async () => {
+            try {
+              const res = await fetch(`${API_URL}/api/backup/email`, { method: 'POST' });
+              const data = await res.json();
+              if (res.ok) {
+                Alert.alert('Backup envoyé!', data.message);
+              } else {
+                Alert.alert('Erreur', data.detail || 'Échec du backup');
+              }
+            } catch { Alert.alert('Erreur', 'Erreur réseau'); }
+          }}
+        >
+          <Feather name="mail" size={18} color="#0891B2" />
+          <View style={styles.exportInfo}>
+            <Text style={styles.exportTitle}>Backup par courriel</Text>
+            <Text style={styles.exportSub}>Recevoir une copie par email</Text>
           </View>
         </TouchableOpacity>
 

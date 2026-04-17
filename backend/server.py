@@ -433,16 +433,64 @@ async def get_client_history(client_name: str):
 
 @api_router.get("/backup/export")
 async def export_backup():
-    """Export all data as JSON for backup"""
-    appointments = await db.appointments.find({}, {"_id": 0}).to_list(10000)
-    requests = await db.appointment_requests.find({}, {"_id": 0}).to_list(10000)
-    return {
-        "exported_at": datetime.now(timezone.utc).isoformat(),
-        "appointments_count": len(appointments),
-        "requests_count": len(requests),
-        "appointments": appointments,
-        "requests": requests,
-    }
+    """Export all data as readable HTML page"""
+    from fastapi.responses import HTMLResponse
+    appointments = await db.appointments.find({}, {"_id": 0}).sort("date", -1).to_list(10000)
+    requests = await db.appointment_requests.find({}, {"_id": 0}).sort("created_at", -1).to_list(10000)
+
+    appt_rows = ""
+    for a in appointments:
+        appt_rows += f"""<tr>
+            <td>{a.get('date','')}</td><td>{a.get('time_slot','')}</td>
+            <td>{a.get('client_name','')}</td><td>{a.get('client_phone','')}</td>
+            <td>{a.get('client_email','')}</td><td>{a.get('client_address','')}</td>
+            <td>{a.get('duration_minutes','')}m</td><td>{a.get('price',0):.2f} $</td>
+            <td>{a.get('status','')}</td><td>{a.get('notes','')}</td>
+        </tr>"""
+
+    req_rows = ""
+    for r in requests:
+        req_rows += f"""<tr>
+            <td>{r.get('preferred_date','')}</td><td>{r.get('preferred_time','')}</td>
+            <td>{r.get('customer_name','')}</td><td>{r.get('customer_phone','')}</td>
+            <td>{r.get('customer_email','')}</td><td>{r.get('customer_address','')}</td>
+            <td>{r.get('status','')}</td><td>{r.get('message','')}</td>
+        </tr>"""
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Backup BrightCalendar - {now}</title>
+<style>
+body{{font-family:-apple-system,sans-serif;max-width:1200px;margin:20px auto;padding:20px;color:#0A0A0A;font-size:13px;}}
+h1{{font-size:24px;margin-bottom:2px;}}
+.brand{{color:#0891B2;margin-bottom:20px;}}
+h2{{font-size:18px;margin-top:30px;border-bottom:2px solid #0891B2;padding-bottom:6px;}}
+table{{width:100%;border-collapse:collapse;margin-top:10px;}}
+th{{background:#0891B2;color:white;padding:8px 6px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:0.3px;}}
+td{{padding:7px 6px;border-bottom:1px solid #E5E5E5;}}
+tr:hover{{background:#F5F5F5;}}
+.count{{color:#737373;font-size:14px;}}
+@media print{{body{{margin:0;font-size:11px;}} th{{background:#333;}} }}
+</style></head><body>
+<h1>Backup BrightCalendar</h1>
+<div class="brand">{now}</div>
+
+<h2>Rendez-vous <span class="count">({len(appointments)})</span></h2>
+<table>
+<tr><th>Date</th><th>Heure</th><th>Client</th><th>Tél.</th><th>Courriel</th><th>Adresse</th><th>Durée</th><th>Prix</th><th>Statut</th><th>Notes</th></tr>
+{appt_rows}
+</table>
+
+<h2>Demandes <span class="count">({len(requests)})</span></h2>
+<table>
+<tr><th>Date</th><th>Heure</th><th>Client</th><th>Tél.</th><th>Courriel</th><th>Adresse</th><th>Statut</th><th>Message</th></tr>
+{req_rows}
+</table>
+
+<script>window.onload=function(){{window.print();}}</script>
+</body></html>"""
+    return HTMLResponse(content=html)
 
 @api_router.get("/backup/clients-csv")
 async def export_clients_csv():
@@ -522,6 +570,140 @@ td{{padding:10px 0;vertical-align:top;}}
 <script>window.onload=function(){{window.print();}}</script>
 </body></html>"""
     return HTMLResponse(content=html)
+
+
+# --- Backup by Email ---
+
+@api_router.post("/backup/email")
+async def backup_by_email():
+    """Send full backup to owner's email"""
+    appointments = await db.appointments.find({}, {"_id": 0}).sort("date", -1).to_list(10000)
+    requests_data = await db.appointment_requests.find({}, {"_id": 0}).sort("created_at", -1).to_list(10000)
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+
+    # Build HTML email
+    appt_rows = ""
+    for a in appointments:
+        appt_rows += f"<tr><td>{a.get('date','')}</td><td>{a.get('time_slot','')}</td><td>{a.get('client_name','')}</td><td>{a.get('client_phone','')}</td><td>{a.get('client_email','')}</td><td>{a.get('client_address','')}</td><td>{a.get('price',0):.2f}$</td><td>{a.get('status','')}</td></tr>"
+
+    req_rows = ""
+    for r in requests_data:
+        req_rows += f"<tr><td>{r.get('preferred_date','')}</td><td>{r.get('preferred_time','')}</td><td>{r.get('customer_name','')}</td><td>{r.get('customer_phone','')}</td><td>{r.get('customer_email','')}</td><td>{r.get('status','')}</td></tr>"
+
+    html = f"""<div style="font-family:sans-serif;max-width:800px;margin:0 auto;font-size:13px;">
+    <h1 style="color:#0891B2;">Backup BrightCalendar</h1>
+    <p>{now} — {len(appointments)} rdv, {len(requests_data)} demandes</p>
+    <h2>Rendez-vous ({len(appointments)})</h2>
+    <table style="width:100%;border-collapse:collapse;"><tr style="background:#0891B2;color:white;"><th style="padding:6px;">Date</th><th style="padding:6px;">Heure</th><th style="padding:6px;">Client</th><th style="padding:6px;">Tél</th><th style="padding:6px;">Email</th><th style="padding:6px;">Adresse</th><th style="padding:6px;">Prix</th><th style="padding:6px;">Statut</th></tr>{appt_rows}</table>
+    <h2>Demandes ({len(requests_data)})</h2>
+    <table style="width:100%;border-collapse:collapse;"><tr style="background:#0891B2;color:white;"><th style="padding:6px;">Date</th><th style="padding:6px;">Heure</th><th style="padding:6px;">Client</th><th style="padding:6px;">Tél</th><th style="padding:6px;">Email</th><th style="padding:6px;">Statut</th></tr>{req_rows}</table>
+    </div>"""
+
+    if NOTIFY_EMAIL and resend.api_key:
+        try:
+            await asyncio.to_thread(resend.Emails.send, {
+                "from": "onboarding@resend.dev",
+                "to": [NOTIFY_EMAIL],
+                "subject": f"Backup BrightCalendar — {now}",
+                "html": html,
+            })
+            return {"message": f"Backup envoyé à {NOTIFY_EMAIL}"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Erreur envoi: {str(e)}")
+    else:
+        raise HTTPException(status_code=400, detail="Email non configuré")
+
+# --- Price Estimation ---
+
+class PriceEstimate(BaseModel):
+    num_windows: int = 0
+    window_type: str = "standard"  # standard, large, skylight
+
+@api_router.post("/estimate")
+async def estimate_price(data: PriceEstimate):
+    """Calculate price estimate based on number of windows"""
+    rates = {
+        "standard": 8.0,
+        "large": 15.0,
+        "skylight": 25.0,
+    }
+    rate = rates.get(data.window_type, 8.0)
+    total = data.num_windows * rate
+    return {
+        "num_windows": data.num_windows,
+        "window_type": data.window_type,
+        "rate_per_window": rate,
+        "estimated_total": round(total, 2),
+    }
+
+# --- Share Appointment ---
+
+@api_router.get("/share/appointment/{appointment_id}")
+async def share_appointment(appointment_id: str):
+    """Generate shareable text for an appointment"""
+    appt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if not appt:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+
+    text = f"""Rendez-vous confirmé — BrightCalendar
+
+Client: {appt.get('client_name','')}
+Date: {appt.get('date','')}
+Heure: {appt.get('time_slot','')}
+Durée: {appt.get('duration_minutes','')} min
+Adresse: {appt.get('client_address','')}
+"""
+    if appt.get('price', 0) > 0:
+        text += f"Prix: {appt['price']:.2f} $\n"
+
+    return {"text": text.strip()}
+
+# --- Recurrence ---
+
+class RecurrenceCreate(BaseModel):
+    appointment_id: str
+    interval_months: int = 3  # every X months
+    occurrences: int = 4  # how many times
+
+@api_router.post("/appointments/recurrence")
+async def create_recurring(data: RecurrenceCreate):
+    """Create recurring appointments from an existing appointment"""
+    original = await db.appointments.find_one({"id": data.appointment_id}, {"_id": 0})
+    if not original:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+
+    created = []
+    base_date = datetime.strptime(original["date"], "%Y-%m-%d")
+
+    for i in range(1, data.occurrences + 1):
+        new_date = base_date
+        # Add months
+        month = base_date.month + (data.interval_months * i)
+        year = base_date.year + (month - 1) // 12
+        month = ((month - 1) % 12) + 1
+        day = min(base_date.day, 28)  # safe day
+        new_date = datetime(year, month, day)
+
+        new_appt = {
+            "id": str(uuid.uuid4()),
+            "title": original["title"],
+            "client_name": original["client_name"],
+            "client_email": original.get("client_email", ""),
+            "client_phone": original.get("client_phone", ""),
+            "client_address": original.get("client_address", ""),
+            "date": new_date.strftime("%Y-%m-%d"),
+            "time_slot": original["time_slot"],
+            "duration_minutes": original["duration_minutes"],
+            "price": original.get("price", 0),
+            "notes": f"Récurrence #{i} — {original.get('notes', '')}",
+            "status": "upcoming",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.appointments.insert_one(new_appt)
+        created.append({"id": new_appt["id"], "date": new_appt["date"]})
+
+    return {"message": f"{len(created)} rendez-vous créés", "appointments": created}
+
 
 
 async def seed_requests():
