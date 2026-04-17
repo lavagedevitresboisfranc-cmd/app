@@ -674,10 +674,10 @@ const styles = StyleSheet.create({
   },
   cardLeft: {
     alignItems: 'center',
-    width: 50,
+    minWidth: 55,
   },
   timeText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: '#0A0A0A',
   },
