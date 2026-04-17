@@ -562,45 +562,110 @@ async def generate_invoice(appointment_id: str):
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>Facture {invoice_num}</title>
 <style>
-body{{font-family:-apple-system,sans-serif;max-width:700px;margin:40px auto;padding:30px;color:#0A0A0A;font-size:14px;}}
-.header{{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:30px;}}
-.company{{display:flex;align-items:center;gap:12px;}}.company img{{width:120px;height:120px;border-radius:8px;}}
-.company-info{{font-size:13px;color:#737373;line-height:1.6;}}
-.company-name{{font-size:18px;font-weight:800;color:#0A0A0A;}}
-.invoice-title{{font-size:28px;font-weight:800;color:#0891B2;text-align:right;}}
-.invoice-num{{font-size:14px;color:#737373;text-align:right;}}
-.section{{margin:20px 0;}}.section-title{{font-size:12px;font-weight:600;color:#737373;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;}}
-table{{width:100%;border-collapse:collapse;}}
-.info td{{padding:4px 0;}}
-.items th{{background:#0891B2;color:white;padding:10px;text-align:left;font-size:12px;text-transform:uppercase;}}
-.items td{{padding:10px;border-bottom:1px solid #E5E5E5;}}
-.grand-total td{{font-size:22px;font-weight:800;color:#0891B2;border-top:2px solid #0891B2;padding:14px 10px;}}
-.footer{{margin-top:40px;text-align:center;color:#A3A3A3;font-size:12px;}}
-@media print{{body{{margin:0;}}}}
+*{{box-sizing:border-box;}}
+body{{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;max-width:780px;margin:0 auto;padding:40px 36px;color:#1F2937;font-size:14px;background:#FFFFFF;}}
+.top-banner{{background:linear-gradient(135deg,#0891B2 0%,#06B6D4 100%);height:8px;border-radius:4px;margin-bottom:28px;}}
+.header{{display:flex;justify-content:space-between;align-items:center;gap:24px;margin-bottom:36px;padding-bottom:28px;border-bottom:2px solid #F3F4F6;}}
+.brand{{display:flex;align-items:center;gap:18px;flex:1;}}
+.brand img{{width:180px;height:180px;border-radius:16px;object-fit:cover;box-shadow:0 4px 12px rgba(0,0,0,0.08);}}
+.brand-info{{display:flex;flex-direction:column;gap:4px;}}
+.company-name{{font-size:16px;font-weight:700;color:#111827;line-height:1.3;}}
+.company-tagline{{font-size:11px;color:#6B7280;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;}}
+.company-contact{{font-size:12px;color:#6B7280;line-height:1.7;}}
+.company-contact strong{{color:#0891B2;font-weight:600;}}
+.invoice-block{{text-align:right;flex-shrink:0;}}
+.invoice-title{{font-size:32px;font-weight:800;color:#0891B2;letter-spacing:-1px;line-height:1;}}
+.invoice-meta{{font-size:12px;color:#6B7280;margin-top:10px;line-height:1.6;}}
+.invoice-meta strong{{color:#111827;font-weight:600;}}
+.greeting{{font-size:15px;color:#374151;margin-bottom:24px;line-height:1.6;}}
+.greeting .name{{font-weight:700;color:#0891B2;}}
+.card{{background:#F9FAFB;border-radius:12px;padding:20px 24px;margin-bottom:20px;border-left:4px solid #0891B2;}}
+.card-title{{font-size:11px;font-weight:700;color:#6B7280;text-transform:uppercase;letter-spacing:1.2px;margin-bottom:12px;}}
+.client-grid{{display:grid;grid-template-columns:auto 1fr;gap:8px 20px;}}
+.client-grid .lbl{{color:#9CA3AF;font-size:13px;}}
+.client-grid .val{{color:#111827;font-weight:500;font-size:14px;}}
+.service-table{{width:100%;border-collapse:collapse;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04);}}
+.service-table thead th{{background:#0891B2;color:#FFF;padding:14px 18px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;}}
+.service-table thead th:last-child{{text-align:right;}}
+.service-table tbody td{{padding:18px;background:#FFFFFF;border-bottom:1px solid #F3F4F6;font-size:14px;}}
+.service-table tbody td:last-child{{text-align:right;font-weight:600;}}
+.total-row td{{background:#F0F9FF!important;padding:20px 18px!important;font-size:20px!important;font-weight:800;color:#0891B2;border-bottom:none!important;}}
+.notes-card{{background:#FFFBEB;border-left-color:#F59E0B;}}
+.notes-card .card-title{{color:#92400E;}}
+.notes-card p{{color:#78350F;line-height:1.6;margin:0;}}
+.thankyou{{text-align:center;padding:30px 20px;margin-top:32px;background:#F0F9FF;border-radius:16px;}}
+.thankyou h3{{color:#0891B2;font-size:18px;margin:0 0 8px 0;font-weight:700;}}
+.thankyou p{{color:#374151;font-size:13px;margin:0;line-height:1.6;}}
+.footer{{margin-top:36px;padding-top:20px;border-top:1px solid #F3F4F6;text-align:center;color:#9CA3AF;font-size:11px;line-height:1.7;}}
+.footer strong{{color:#0891B2;}}
+@media print{{body{{padding:20px;}}.top-banner{{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}}}
 </style></head><body>
+
+<div class="top-banner"></div>
+
 <div class="header">
-<div class="company">
-<img src="https://customer-assets.emergentagent.com/job_booking-hub-406/artifacts/kwu8xdcw_logo.jpg" alt="Logo" />
-<div>
-<div class="company-name">Lavage de Vitres Bois-Franc</div>
-<div class="company-info">
-514-570-9802<br>
-lavagedevitreboisfranc@live.com<br>
-Lavagedevitre.org
-</div></div></div>
-<div><div class="invoice-title">FACTURE</div><div class="invoice-num">#{invoice_num}</div><div class="invoice-num">{appt.get('date','')}</div></div>
+  <div class="brand">
+    <img src="https://customer-assets.emergentagent.com/job_booking-hub-406/artifacts/kwu8xdcw_logo.jpg" alt="Logo" />
+    <div class="brand-info">
+      <div class="company-tagline">Lavage professionnel</div>
+      <div class="company-name">Lavage de Vitres<br>Bois-Franc</div>
+      <div class="company-contact" style="margin-top:10px;">
+        <strong>☎</strong> 514-570-9802<br>
+        <strong>✉</strong> lavagedevitreboisfranc@live.com<br>
+        <strong>🌐</strong> Lavagedevitre.org
+      </div>
+    </div>
+  </div>
+  <div class="invoice-block">
+    <div class="invoice-title">FACTURE</div>
+    <div class="invoice-meta">
+      <strong>N°</strong> {invoice_num}<br>
+      <strong>Date:</strong> {appt.get('date','')}
+    </div>
+  </div>
 </div>
-<div class="section"><div class="section-title">Client</div>
-<table class="info"><tr><td style="width:100px;color:#737373;">Nom</td><td><strong>{appt.get('client_name','')}</strong></td></tr>
-<tr><td style="color:#737373;">Courriel</td><td>{appt.get('client_email','')}</td></tr>
-<tr><td style="color:#737373;">Téléphone</td><td>{appt.get('client_phone','')}</td></tr>
-<tr><td style="color:#737373;">Adresse</td><td>{appt.get('client_address','')}</td></tr></table></div>
-<div class="section"><div class="section-title">Service</div>
-<table class="items"><tr><th>Description</th><th>Date</th><th style="text-align:right;">Prix</th></tr>
-<tr><td>{appt.get('title','Service')}</td><td>{appt.get('date','')}</td><td style="text-align:right;">{price:.2f} $</td></tr>
-<tr class="grand-total"><td colspan="2" style="text-align:right;">TOTAL</td><td style="text-align:right;">{price:.2f} $</td></tr></table></div>
-{"<div class='section'><div class='section-title'>Notes</div><p>" + appt.get('notes','') + "</p></div>" if appt.get('notes') else ""}
-<div class="footer">Merci pour votre confiance! — Lavage de Vitres Bois-Franc | 514-570-9802 | Lavagedevitre.org</div>
+
+<div class="greeting">
+  Bonjour <span class="name">{appt.get('client_name','')}</span>, voici le détail de votre service. Merci de nous faire confiance pour l'entretien de vos fenêtres! ✨
+</div>
+
+<div class="card">
+  <div class="card-title">👤 Informations client</div>
+  <div class="client-grid">
+    <span class="lbl">Nom</span><span class="val">{appt.get('client_name','')}</span>
+    <span class="lbl">Courriel</span><span class="val">{appt.get('client_email','') or '—'}</span>
+    <span class="lbl">Téléphone</span><span class="val">{appt.get('client_phone','') or '—'}</span>
+    <span class="lbl">Adresse</span><span class="val">{appt.get('client_address','') or '—'}</span>
+  </div>
+</div>
+
+<table class="service-table">
+  <thead><tr><th>Description du service</th><th>Date</th><th>Prix</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>{appt.get('title','Service')}</strong></td>
+      <td>{appt.get('date','')}</td>
+      <td>{price:.2f} $</td>
+    </tr>
+    <tr class="total-row">
+      <td colspan="2" style="text-align:right;">TOTAL À PAYER</td>
+      <td>{price:.2f} $</td>
+    </tr>
+  </tbody>
+</table>
+
+{"<div class='card notes-card'><div class='card-title'>📝 Notes</div><p>" + appt.get('notes','') + "</p></div>" if appt.get('notes') else ""}
+
+<div class="thankyou">
+  <h3>Merci pour votre confiance! 💙</h3>
+  <p>Nous espérons vous revoir bientôt. N'hésitez pas à nous contacter pour toute question.</p>
+</div>
+
+<div class="footer">
+  <strong>Lavage de Vitres Bois-Franc</strong> · 514-570-9802 · Lavagedevitre.org<br>
+  Service de lavage de vitres résidentiel et commercial
+</div>
+
 <script>window.onload=function(){{window.print();}}</script>
 </body></html>"""
     return HTMLResponse(content=html)
