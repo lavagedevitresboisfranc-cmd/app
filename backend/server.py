@@ -514,7 +514,16 @@ async def delete_employee(employee_id: str):
 
 @api_router.put("/appointments/{appointment_id}/assign")
 async def assign_employee(appointment_id: str, employee_id: str):
-    """Assign an employee to an appointment"""
+    """Assign an employee to an appointment (or pass 'none' to unassign)"""
+    if employee_id == "none":
+        result = await db.appointments.update_one(
+            {"id": appointment_id},
+            {"$unset": {"assigned_to": "", "assigned_id": "", "assigned_color": ""}}
+        )
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="RDV non trouvé")
+        appt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+        return AppointmentResponse(**appt)
     emp = await db.employees.find_one({"id": employee_id}, {"_id": 0})
     if not emp:
         raise HTTPException(status_code=404, detail="Employé non trouvé")
@@ -555,7 +564,7 @@ async def generate_invoice(appointment_id: str):
 <style>
 body{{font-family:-apple-system,sans-serif;max-width:700px;margin:40px auto;padding:30px;color:#0A0A0A;font-size:14px;}}
 .header{{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:30px;}}
-.company{{display:flex;align-items:center;gap:12px;}}.company img{{width:69px;height:69px;border-radius:8px;}}
+.company{{display:flex;align-items:center;gap:12px;}}.company img{{width:79px;height:79px;border-radius:8px;}}
 .company-info{{font-size:13px;color:#737373;line-height:1.6;}}
 .company-name{{font-size:18px;font-weight:800;color:#0A0A0A;}}
 .invoice-title{{font-size:28px;font-weight:800;color:#0891B2;text-align:right;}}

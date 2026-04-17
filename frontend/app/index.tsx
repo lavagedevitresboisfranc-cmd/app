@@ -16,8 +16,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Calendar } from 'react-native-calendars';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+const CACHE_KEY_ALL = 'brightcalendar_cache_all';
+const CACHE_KEY_DAY = 'brightcalendar_cache_day_';
+const CACHE_TS_KEY = 'brightcalendar_cache_ts';
 
 interface Appointment {
   id: string;
@@ -106,6 +110,7 @@ export default function CalendarScreen() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [allItems, setAllItems] = useState<CalendarItem[]>([]);
+  const [isOffline, setIsOffline] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   const menuItems = [
@@ -116,6 +121,7 @@ export default function CalendarScreen() {
     { icon: 'bar-chart-2' as const, label: 'Statistiques', route: '/stats' },
     { icon: 'dollar-sign' as const, label: 'Estimation', route: '/estimate' },
     { icon: 'users' as const, label: 'Employés', route: '/employees' },
+    { icon: 'star' as const, label: 'Avis clients', route: '/reviews' },
     { icon: 'user' as const, label: 'Clients', route: '/client-history' },
   ];
 
@@ -139,8 +145,22 @@ export default function CalendarScreen() {
         })),
       ].sort((a, b) => a.date === b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date));
       setAllItems(items);
+      setIsOffline(false);
+      // Cache
+      try {
+        await AsyncStorage.setItem(CACHE_KEY_ALL, JSON.stringify(items));
+        await AsyncStorage.setItem(CACHE_TS_KEY, new Date().toISOString());
+      } catch {}
     } catch (e) {
-      console.error('Failed to fetch all items', e);
+      console.error('Failed to fetch all items, loading cache', e);
+      // Offline fallback
+      try {
+        const cached = await AsyncStorage.getItem(CACHE_KEY_ALL);
+        if (cached) {
+          setAllItems(JSON.parse(cached));
+          setIsOffline(true);
+        }
+      } catch {}
     }
   }, []);
 
@@ -178,8 +198,13 @@ export default function CalendarScreen() {
       ].sort((a, b) => a.time.localeCompare(b.time));
 
       setDayItems(items);
+      try { await AsyncStorage.setItem(CACHE_KEY_DAY + date, JSON.stringify(items)); } catch {}
     } catch (e) {
-      console.error('Failed to fetch day items', e);
+      console.error('Failed to fetch day items, loading cache', e);
+      try {
+        const cached = await AsyncStorage.getItem(CACHE_KEY_DAY + date);
+        if (cached) { setDayItems(JSON.parse(cached)); setIsOffline(true); }
+      } catch {}
     } finally {
       setLoading(false);
     }
@@ -476,6 +501,12 @@ export default function CalendarScreen() {
           <Feather name="plus" size={24} color="#0891B2" />
         </TouchableOpacity>
       </View>
+      {isOffline && (
+        <View style={styles.offlineBar}>
+          <Feather name="wifi-off" size={14} color="#FFF" />
+          <Text style={styles.offlineText}>Mode hors ligne — données en cache</Text>
+        </View>
+      )}
       <View style={styles.legendBar}>
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: '#34C759' }]} />
@@ -700,6 +731,11 @@ const styles = StyleSheet.create({
   headerTitleAccent: {
     color: '#0891B2',
   },
+  offlineBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: '#F59E0B', paddingVertical: 6, paddingHorizontal: 12,
+  },
+  offlineText: { color: '#FFF', fontSize: 12, fontWeight: '700' },
   legendBar: {
     flexDirection: 'row',
     paddingHorizontal: 24,

@@ -16,6 +16,7 @@ const menuItems = [
   { icon: 'bar-chart-2' as const, label: 'Statistiques', route: '/stats' },
   { icon: 'dollar-sign' as const, label: 'Estimation', route: '/estimate' },
   { icon: 'users' as const, label: 'Employés', route: '/employees' },
+  { icon: 'star' as const, label: 'Avis clients', route: '/reviews' },
   { icon: 'user' as const, label: 'Clients', route: '/client-history' },
 ];
 

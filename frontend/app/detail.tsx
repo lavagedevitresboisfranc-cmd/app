@@ -33,7 +33,12 @@ interface Appointment {
   notes: string;
   status: string;
   created_at: string;
+  assigned_to?: string;
+  assigned_id?: string;
+  assigned_color?: string;
 }
+
+interface Employee { id: string; name: string; color: string; }
 
 export default function DetailScreen() {
   const router = useRouter();
@@ -42,6 +47,7 @@ export default function DetailScreen() {
   const [loading, setLoading] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingUri, setRecordingUri] = useState<string | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const audioPlayer = useAudioPlayer(recordingUri);
 
@@ -49,9 +55,71 @@ export default function DetailScreen() {
     useCallback(() => {
       if (id) {
         fetchAppointment();
+        fetchEmployees();
       }
     }, [id])
   );
+
+  const fetchEmployees = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/employees`);
+      if (res.ok) setEmployees(await res.json());
+    } catch {}
+  };
+
+  const handleAssignEmployee = () => {
+    if (!appointment) return;
+    if (employees.length === 0) {
+      Alert.alert('Aucun employé', 'Créez d\'abord des employés dans le menu Employés.');
+      return;
+    }
+    const buttons: any[] = employees.map(e => ({
+      text: e.name,
+      onPress: () => assignEmployee(e.id),
+    }));
+    if (appointment.assigned_id) {
+      buttons.push({ text: 'Retirer assignation', style: 'destructive', onPress: () => assignEmployee('') });
+    }
+    buttons.push({ text: 'Annuler', style: 'cancel' });
+    Alert.alert('Assigner à un employé', `${appointment.client_name} — ${appointment.date}`, buttons);
+  };
+
+  const assignEmployee = async (employeeId: string) => {
+    if (!appointment) return;
+    try {
+      if (!employeeId) {
+        // Unassign: use PUT with empty
+        await fetch(`${API_URL}/api/appointments/${appointment.id}/assign?employee_id=none`, { method: 'PUT' });
+        fetchAppointment();
+        return;
+      }
+      const res = await fetch(`${API_URL}/api/appointments/${appointment.id}/assign?employee_id=${employeeId}`, { method: 'PUT' });
+      if (res.ok) {
+        Alert.alert('Assigné!', 'Employé assigné avec succès.');
+        fetchAppointment();
+      } else {
+        Alert.alert('Erreur', 'Échec de l\'assignation');
+      }
+    } catch { Alert.alert('Erreur', 'Erreur réseau'); }
+  };
+
+  const handleEmailInvoice = async () => {
+    if (!appointment) return;
+    const email = (appointment.client_email || '').trim();
+    if (!email) {
+      Alert.alert('Courriel manquant', 'Ce client n\'a pas de courriel.');
+      return;
+    }
+    const invoiceUrl = `${API_URL}/api/invoice/${appointment.id}`;
+    const subject = `Facture — ${appointment.title || 'Service'} — ${appointment.date}`;
+    const body = `Bonjour ${appointment.client_name || ''},\n\nVeuillez trouver votre facture ci-jointe:\n${invoiceUrl}\n\nMerci pour votre confiance!`;
+    const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    try {
+      const can = await Linking.canOpenURL(url);
+      if (can) { await Linking.openURL(url); }
+      else { Alert.alert('Erreur', 'Aucune app courriel disponible'); }
+    } catch { Alert.alert('Erreur', 'Impossible d\'ouvrir l\'app courriel'); }
+  };
 
   const fetchAppointment = async () => {
     setLoading(true);
@@ -455,6 +523,26 @@ export default function DetailScreen() {
             >
               <Feather name="file-text" size={18} color="#0891B2" />
               <Text style={[styles.actionBtnText, { color: '#0891B2' }]}>Facture</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="email-invoice-button"
+              style={[styles.actionBtn, { borderColor: '#059669' }]}
+              activeOpacity={0.7}
+              onPress={handleEmailInvoice}
+            >
+              <Feather name="mail" size={18} color="#059669" />
+              <Text style={[styles.actionBtnText, { color: '#059669' }]}>Envoyer facture</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="assign-button"
+              style={[styles.actionBtn, { borderColor: appointment.assigned_color || '#7C3AED' }]}
+              activeOpacity={0.7}
+              onPress={handleAssignEmployee}
+            >
+              <Feather name="user-check" size={18} color={appointment.assigned_color || '#7C3AED'} />
+              <Text style={[styles.actionBtnText, { color: appointment.assigned_color || '#7C3AED' }]} numberOfLines={1}>
+                {appointment.assigned_to ? appointment.assigned_to : 'Assigner'}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               testID="review-request-button"

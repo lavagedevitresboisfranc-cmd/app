@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import AppHeader from '../components/AppHeader';
 
 const WINDOW_TYPES = [
@@ -19,6 +20,33 @@ export default function EstimateScreen() {
   const router = useRouter();
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [discount, setDiscount] = useState(0);
+  const [photos, setPhotos] = useState<string[]>([]);
+
+  const takePhoto = async () => {
+    try {
+      const { granted } = await ImagePicker.requestCameraPermissionsAsync();
+      if (!granted) { Alert.alert('Permission', 'Accès à la caméra requis'); return; }
+      const result = await ImagePicker.launchCameraAsync({ quality: 0.6, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        setPhotos(prev => [...prev, result.assets[0].uri]);
+      }
+    } catch { Alert.alert('Erreur', 'Impossible d\'ouvrir la caméra'); }
+  };
+
+  const pickPhoto = async () => {
+    try {
+      const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!granted) { Alert.alert('Permission', 'Accès aux photos requis'); return; }
+      const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.6, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        setPhotos(prev => [...prev, result.assets[0].uri]);
+      }
+    } catch { Alert.alert('Erreur', 'Impossible d\'ouvrir la galerie'); }
+  };
+
+  const removePhoto = (idx: number) => {
+    setPhotos(prev => prev.filter((_, i) => i !== idx));
+  };
 
   const updateCount = (type: string, delta: number) => {
     setCounts((prev) => ({ ...prev, [type]: Math.max(0, (prev[type] || 0) + delta) }));
@@ -66,6 +94,37 @@ export default function EstimateScreen() {
             </View>
           </View>
         ))}
+
+        {/* Photos section */}
+        <View style={styles.photoSection}>
+          <Text style={styles.photoLabel}>PHOTOS DU SITE ({photos.length})</Text>
+          <View style={styles.photoActions}>
+            <TouchableOpacity testID="take-photo" style={styles.photoBtn} activeOpacity={0.7} onPress={takePhoto}>
+              <Feather name="camera" size={18} color="#0891B2" />
+              <Text style={styles.photoBtnText}>Prendre photo</Text>
+            </TouchableOpacity>
+            <TouchableOpacity testID="pick-photo" style={styles.photoBtn} activeOpacity={0.7} onPress={pickPhoto}>
+              <Feather name="image" size={18} color="#0891B2" />
+              <Text style={styles.photoBtnText}>Galerie</Text>
+            </TouchableOpacity>
+          </View>
+          {photos.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
+              {photos.map((uri, idx) => (
+                <View key={idx} style={styles.photoThumbWrap}>
+                  <Image source={{ uri }} style={styles.photoThumb} />
+                  <TouchableOpacity
+                    style={styles.photoRemove}
+                    activeOpacity={0.7}
+                    onPress={() => removePhoto(idx)}
+                  >
+                    <Feather name="x" size={14} color="#FFF" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+        </View>
 
         {/* Discount */}
         <View style={styles.discountSection}>
@@ -166,4 +225,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#0A0A0A', borderRadius: 8, paddingVertical: 16, gap: 8, marginTop: 16,
   },
   useBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
+  photoSection: { marginTop: 8, marginBottom: 16 },
+  photoLabel: { fontSize: 12, fontWeight: '600', color: '#737373', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 },
+  photoActions: { flexDirection: 'row', gap: 10 },
+  photoBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderColor: '#0891B2', backgroundColor: '#FFF',
+  },
+  photoBtnText: { color: '#0891B2', fontSize: 14, fontWeight: '600' },
+  photoThumbWrap: { marginRight: 10, position: 'relative' },
+  photoThumb: { width: 90, height: 90, borderRadius: 8, backgroundColor: '#E5E5E5' },
+  photoRemove: {
+    position: 'absolute', top: 4, right: 4, width: 24, height: 24, borderRadius: 12,
+    backgroundColor: 'rgba(255,59,48,0.9)', justifyContent: 'center', alignItems: 'center',
+  },
 });
