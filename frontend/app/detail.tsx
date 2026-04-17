@@ -422,6 +422,31 @@ export default function DetailScreen() {
               <Feather name="repeat" size={18} color="#0891B2" />
               <Text style={[styles.actionBtnText, { color: '#0891B2' }]}>Récurrence</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              testID="invoice-button"
+              style={[styles.actionBtn, { borderColor: '#0891B2' }]}
+              activeOpacity={0.7}
+              onPress={() => Linking.openURL(`${API_URL}/api/invoice/${appointment!.id}`)}
+            >
+              <Feather name="file-text" size={18} color="#0891B2" />
+              <Text style={[styles.actionBtnText, { color: '#0891B2' }]}>Facture</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="review-request-button"
+              style={[styles.actionBtn, { borderColor: '#F59E0B' }]}
+              activeOpacity={0.7}
+              onPress={async () => {
+                try {
+                  const res = await fetch(`${API_URL}/api/reviews/send-request/${appointment!.id}`, { method: 'POST' });
+                  const data = await res.json();
+                  if (res.ok) Alert.alert('Envoyé!', data.message);
+                  else Alert.alert('Erreur', data.detail);
+                } catch { Alert.alert('Erreur', 'Erreur réseau'); }
+              }}
+            >
+              <Feather name="star" size={18} color="#F59E0B" />
+              <Text style={[styles.actionBtnText, { color: '#F59E0B' }]}>Demander avis</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Voice Note */}

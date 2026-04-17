@@ -469,6 +469,235 @@ async def get_client_history(client_name: str):
 
 @api_router.post("/requests/seed")
 
+
+# --- Invoice PDF ---
+
+@api_router.get("/invoice/{appointment_id}")
+async def generate_invoice(appointment_id: str):
+    """Generate printable invoice for an appointment"""
+    from fastapi.responses import HTMLResponse
+    appt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if not appt:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+
+    invoice_num = appointment_id[:8].upper()
+    price = appt.get('price', 0)
+    tax_rate = 0.14975  # QC TPS+TVQ
+    tax = round(price * tax_rate, 2)
+    total = round(price + tax, 2)
+
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Facture {invoice_num}</title>
+<style>
+body{{font-family:-apple-system,sans-serif;max-width:700px;margin:40px auto;padding:30px;color:#0A0A0A;font-size:14px;}}
+.header{{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:30px;}}
+.logo{{font-size:22px;font-weight:800;}}.logo span{{color:#0891B2;}}
+.invoice-title{{font-size:28px;font-weight:800;color:#0891B2;text-align:right;}}
+.invoice-num{{font-size:14px;color:#737373;text-align:right;}}
+.section{{margin:20px 0;}}.section-title{{font-size:12px;font-weight:600;color:#737373;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;}}
+table{{width:100%;border-collapse:collapse;}}
+.info td{{padding:4px 0;}}
+.items th{{background:#0891B2;color:white;padding:10px;text-align:left;font-size:12px;text-transform:uppercase;}}
+.items td{{padding:10px;border-bottom:1px solid #E5E5E5;}}
+.total-row td{{font-weight:700;font-size:16px;padding:10px;}}
+.grand-total td{{font-size:22px;font-weight:800;color:#0891B2;border-top:2px solid #0891B2;padding:14px 10px;}}
+.footer{{margin-top:40px;text-align:center;color:#A3A3A3;font-size:12px;}}
+@media print{{body{{margin:0;}}}}
+</style></head><body>
+<div class="header">
+<div><div class="logo">Bright<span>Calendar</span></div><div style="color:#737373;font-size:13px;margin-top:4px;">Lavage de Vitre Bois-Franc</div></div>
+<div><div class="invoice-title">FACTURE</div><div class="invoice-num">#{invoice_num}</div><div class="invoice-num">{appt.get('date','')}</div></div>
+</div>
+<div class="section"><div class="section-title">Client</div>
+<table class="info"><tr><td style="width:100px;color:#737373;">Nom</td><td><strong>{appt.get('client_name','')}</strong></td></tr>
+<tr><td style="color:#737373;">Courriel</td><td>{appt.get('client_email','')}</td></tr>
+<tr><td style="color:#737373;">Téléphone</td><td>{appt.get('client_phone','')}</td></tr>
+<tr><td style="color:#737373;">Adresse</td><td>{appt.get('client_address','')}</td></tr></table></div>
+<div class="section"><div class="section-title">Service</div>
+<table class="items"><tr><th>Description</th><th>Date</th><th>Heure</th><th>Durée</th><th style="text-align:right;">Prix</th></tr>
+<tr><td>{appt.get('title','Service')}</td><td>{appt.get('date','')}</td><td>{appt.get('time_slot','')}</td><td>{appt.get('duration_minutes','')} min</td><td style="text-align:right;">{price:.2f} $</td></tr>
+<tr class="total-row"><td colspan="4" style="text-align:right;">Sous-total</td><td style="text-align:right;">{price:.2f} $</td></tr>
+<tr class="total-row"><td colspan="4" style="text-align:right;">Taxes (TPS+TVQ 14.975%)</td><td style="text-align:right;">{tax:.2f} $</td></tr>
+<tr class="grand-total"><td colspan="4" style="text-align:right;">TOTAL</td><td style="text-align:right;">{total:.2f} $</td></tr></table></div>
+{"<div class='section'><div class='section-title'>Notes</div><p>" + appt.get('notes','') + "</p></div>" if appt.get('notes') else ""}
+<div class="footer">Merci pour votre confiance! — BrightCalendar</div>
+<script>window.onload=function(){{window.print();}}</script>
+</body></html>"""
+    return HTMLResponse(content=html)
+
+# --- Monthly Report ---
+
+@api_router.get("/report/monthly")
+async def monthly_report(month: Optional[str] = None):
+    """Generate monthly report"""
+    from fastapi.responses import HTMLResponse
+    now = datetime.now(timezone.utc)
+    if not month:
+        month = now.strftime("%Y-%m")
+    month_start = f"{month}-01"
+    month_end = f"{month}-31"
+
+    appts = await db.appointments.find({"date": {"$gte": month_start, "$lte": month_end}}, {"_id": 0}).sort("date", 1).to_list(10000)
+    reqs = await db.appointment_requests.find({"preferred_date": {"$gte": month_start, "$lte": month_end}}, {"_id": 0}).to_list(10000)
+
+    total_rev = sum(a.get('price', 0) for a in appts)
+    completed = len([a for a in appts if a.get('status') == 'completed'])
+    upcoming = len([a for a in appts if a.get('status') == 'upcoming'])
+    cancelled = len([a for a in appts if a.get('status') == 'cancelled'])
+    accepted_reqs = len([r for r in reqs if r.get('status') == 'accepted'])
+    pending_reqs = len([r for r in reqs if r.get('status') == 'pending'])
+
+    # Top clients
+    client_stats = {}
+    for a in appts:
+        name = a.get('client_name', '')
+        if name not in client_stats:
+            client_stats[name] = {'count': 0, 'revenue': 0}
+        client_stats[name]['count'] += 1
+        client_stats[name]['revenue'] += a.get('price', 0)
+    top = sorted(client_stats.items(), key=lambda x: x[1]['revenue'], reverse=True)[:10]
+
+    appt_rows = ""
+    for a in appts:
+        appt_rows += f"<tr><td>{a.get('date','')}</td><td>{a.get('time_slot','')}</td><td>{a.get('client_name','')}</td><td>{a.get('title','')}</td><td>{a.get('price',0):.2f}$</td><td>{a.get('status','')}</td></tr>"
+
+    client_rows = ""
+    for name, stats in top:
+        client_rows += f"<tr><td>{name}</td><td>{stats['count']}</td><td>{stats['revenue']:.2f}$</td></tr>"
+
+    display_month = datetime.strptime(month + "-01", "%Y-%m-%d").strftime("%B %Y")
+
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Rapport {display_month}</title>
+<style>
+body{{font-family:-apple-system,sans-serif;max-width:800px;margin:30px auto;padding:20px;color:#0A0A0A;font-size:13px;}}
+h1{{font-size:24px;font-weight:800;}}.brand{{color:#0891B2;font-size:14px;margin-bottom:24px;}}
+h2{{font-size:16px;margin-top:24px;border-bottom:2px solid #0891B2;padding-bottom:6px;}}
+.stats{{display:flex;gap:12px;margin:16px 0;}}
+.stat{{flex:1;background:#F5F5F5;border-radius:8px;padding:14px;text-align:center;}}
+.stat-val{{font-size:22px;font-weight:800;color:#0891B2;}}.stat-label{{font-size:11px;color:#737373;text-transform:uppercase;margin-top:4px;}}
+table{{width:100%;border-collapse:collapse;margin-top:10px;}}
+th{{background:#0891B2;color:white;padding:8px;text-align:left;font-size:11px;text-transform:uppercase;}}
+td{{padding:7px 8px;border-bottom:1px solid #E5E5E5;}}
+@media print{{body{{margin:0;}}}}
+</style></head><body>
+<h1>Rapport mensuel</h1>
+<div class="brand">{display_month} — BrightCalendar</div>
+<div class="stats">
+<div class="stat"><div class="stat-val">{total_rev:.2f}$</div><div class="stat-label">Revenu</div></div>
+<div class="stat"><div class="stat-val">{len(appts)}</div><div class="stat-label">RDV total</div></div>
+<div class="stat"><div class="stat-val">{completed}</div><div class="stat-label">Complétés</div></div>
+<div class="stat"><div class="stat-val">{cancelled}</div><div class="stat-label">Annulés</div></div>
+<div class="stat"><div class="stat-val">{len(reqs)}</div><div class="stat-label">Demandes</div></div>
+</div>
+<h2>Meilleurs clients</h2>
+<table><tr><th>Client</th><th>RDV</th><th>Revenu</th></tr>{client_rows}</table>
+<h2>Tous les rendez-vous ({len(appts)})</h2>
+<table><tr><th>Date</th><th>Heure</th><th>Client</th><th>Service</th><th>Prix</th><th>Statut</th></tr>{appt_rows}</table>
+<script>window.onload=function(){{window.print();}}</script>
+</body></html>"""
+    return HTMLResponse(content=html)
+
+# --- Client Reviews ---
+
+class ReviewCreate(BaseModel):
+    appointment_id: str
+    client_name: str
+    rating: int  # 1-5
+    comment: Optional[str] = ""
+
+class ReviewResponse(BaseModel):
+    id: str
+    appointment_id: str
+    client_name: str
+    rating: int
+    comment: str
+    created_at: str
+
+@api_router.post("/reviews", response_model=ReviewResponse)
+async def create_review(data: ReviewCreate):
+    review = {
+        "id": str(uuid.uuid4()),
+        "appointment_id": data.appointment_id,
+        "client_name": data.client_name,
+        "rating": data.rating,
+        "comment": data.comment or "",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.reviews.insert_one(review)
+    return ReviewResponse(**{k: v for k, v in review.items() if k != "_id"})
+
+@api_router.get("/reviews", response_model=List[ReviewResponse])
+async def get_reviews():
+    reviews = await db.reviews.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return [ReviewResponse(**r) for r in reviews]
+
+@api_router.post("/reviews/send-request/{appointment_id}")
+async def send_review_request(appointment_id: str):
+    """Send review request email to client after service"""
+    appt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if not appt:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+
+    client_email = appt.get("client_email", "")
+    if not client_email:
+        raise HTTPException(status_code=400, detail="Client n'a pas de courriel")
+
+    review_url = f"https://booking-hub-406.preview.emergentagent.com/api/review-page/{appointment_id}"
+    html = f"""<div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:20px;">
+    <h2 style="color:#0891B2;">Comment était votre expérience?</h2>
+    <p>Bonjour {appt.get('client_name','')},</p>
+    <p>Merci d'avoir fait appel à nos services! Nous aimerions avoir votre avis.</p>
+    <a href="{review_url}" style="display:inline-block;background:#0891B2;color:white;padding:12px 24px;border-radius:4px;text-decoration:none;font-weight:600;margin:16px 0;">Laisser un avis</a>
+    <p style="color:#A3A3A3;font-size:13px;">— BrightCalendar</p>
+    </div>"""
+
+    if resend.api_key:
+        try:
+            await asyncio.to_thread(resend.Emails.send, {
+                "from": "onboarding@resend.dev",
+                "to": [client_email],
+                "subject": "Comment était votre expérience? — BrightCalendar",
+                "html": html,
+            })
+            return {"message": f"Demande d'avis envoyée à {client_email}"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    raise HTTPException(status_code=400, detail="Email non configuré")
+
+@api_router.get("/review-page/{appointment_id}")
+async def review_page(appointment_id: str):
+    """Public page for client to leave a review"""
+    from fastapi.responses import HTMLResponse
+    appt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    name = appt.get('client_name', 'Client') if appt else 'Client'
+
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Votre avis</title>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box;}}body{{font-family:-apple-system,sans-serif;background:#FAFAFA;display:flex;justify-content:center;padding:40px 20px;}}
+.c{{max-width:480px;width:100%;}}h1{{font-size:24px;font-weight:800;margin-bottom:8px;}}
+.sub{{color:#737373;margin-bottom:24px;}}.stars{{display:flex;gap:8px;margin:16px 0;}}
+.star{{font-size:36px;cursor:pointer;color:#E5E5E5;transition:color 0.2s;}}.star.active{{color:#F59E0B;}}
+textarea{{width:100%;border:none;border-bottom:1px solid #E5E5E5;padding:12px 0;font-size:16px;font-family:inherit;resize:none;min-height:80px;outline:none;}}
+.btn{{width:100%;padding:16px;background:#0891B2;color:white;border:none;border-radius:4px;font-size:16px;font-weight:600;cursor:pointer;margin-top:16px;}}
+.success{{display:none;text-align:center;padding:40px;}}.success h2{{font-size:22px;margin-bottom:8px;}}.success p{{color:#737373;}}
+</style></head><body><div class="c">
+<div id="form"><h1>Votre avis compte!</h1><p class="sub">Merci {name}, comment était votre expérience?</p>
+<div class="stars" id="stars"></div>
+<textarea id="comment" placeholder="Commentaire (optionnel)..."></textarea>
+<button class="btn" onclick="submit()">Envoyer mon avis</button></div>
+<div class="success" id="success"><h2>Merci!</h2><p>Votre avis a été enregistré.</p></div>
+<script>
+let rating=0;const stars=document.getElementById('stars');
+for(let i=1;i<=5;i++){{const s=document.createElement('span');s.className='star';s.textContent='★';s.onclick=()=>{{rating=i;document.querySelectorAll('.star').forEach((el,idx)=>el.className=idx<i?'star active':'star');}};stars.appendChild(s);}}
+async function submit(){{if(!rating){{alert('Choisissez une note');return;}}
+const res=await fetch('/api/reviews',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{appointment_id:'{appointment_id}',client_name:'{name}',rating,comment:document.getElementById('comment').value}})}});
+if(res.ok){{document.getElementById('form').style.display='none';document.getElementById('success').style.display='block';}}}}
+</script></div></body></html>"""
+    return HTMLResponse(content=html)
+
+
 # --- Backup & Export ---
 
 @api_router.get("/backup/export")

@@ -181,6 +181,19 @@ export default function StatsScreen() {
         <Text style={styles.sectionTitle}>Sauvegarde & Export</Text>
 
         <TouchableOpacity
+          testID="monthly-report"
+          style={styles.exportBtn}
+          activeOpacity={0.7}
+          onPress={() => Linking.openURL(`${API_URL}/api/report/monthly`)}
+        >
+          <Feather name="calendar" size={18} color="#0891B2" />
+          <View style={styles.exportInfo}>
+            <Text style={styles.exportTitle}>Rapport mensuel</Text>
+            <Text style={styles.exportSub}>Revenus, rdv, meilleurs clients</Text>
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
           testID="export-backup"
           style={styles.exportBtn}
           activeOpacity={0.7}
