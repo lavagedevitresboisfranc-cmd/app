@@ -571,7 +571,7 @@ table{{width:100%;border-collapse:collapse;}}
 </style></head><body>
 <div class="header">
 <div class="company">
-<img src="https://customer-assets.emergentagent.com/job_booking-hub-406/artifacts/j2bekjq6_IMG_3804.jpg" alt="Logo" />
+<img src="https://customer-assets.emergentagent.com/job_booking-hub-406/artifacts/kwu8xdcw_logo.jpg" alt="Logo" />
 <div>
 <div class="company-name">Lavage de Vitres Bois-Franc</div>
 <div class="company-info">

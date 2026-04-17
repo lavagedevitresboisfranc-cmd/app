@@ -10,6 +10,7 @@ import {
   SectionList,
   Modal,
   Pressable,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Calendar } from 'react-native-calendars';
@@ -51,6 +52,8 @@ interface CalendarItem {
   duration?: number;
   status: string;
 }
+
+const LOGO_URL = 'https://customer-assets.emergentagent.com/job_booking-hub-406/artifacts/kwu8xdcw_logo.jpg';
 
 type ViewMode = 'today' | 'week' | 'month';
 
@@ -414,15 +417,7 @@ export default function CalendarScreen() {
           <View style={styles.menuDrawer}>
             {/* Logo in menu */}
             <View style={styles.menuLogoRow}>
-              <View style={styles.menuLogoIcon}>
-                <View style={styles.logoWindowGrid}>
-                  <View style={[styles.logoPane, { backgroundColor: '#0891B2' }]} />
-                  <View style={[styles.logoPane, { backgroundColor: '#06B6D4' }]} />
-                  <View style={[styles.logoPane, { backgroundColor: '#06B6D4' }]} />
-                  <View style={[styles.logoPane, { backgroundColor: '#22D3EE' }]} />
-                </View>
-              </View>
-              <Text style={styles.menuLogoText}>Bright<Text style={{ color: '#0891B2' }}>Calendar</Text></Text>
+              <Image source={{ uri: LOGO_URL }} style={{ width: 180, height: 80 }} resizeMode="contain" />
             </View>
 
             {menuItems.map((item) => (
@@ -451,18 +446,7 @@ export default function CalendarScreen() {
           <Feather name="menu" size={24} color="#0A0A0A" />
         </TouchableOpacity>
         <View style={styles.logoRow}>
-          <View style={styles.logoIcon}>
-            <View style={styles.logoWindowGrid}>
-              <View style={[styles.logoPane, { backgroundColor: '#0891B2' }]} />
-              <View style={[styles.logoPane, { backgroundColor: '#06B6D4' }]} />
-              <View style={[styles.logoPane, { backgroundColor: '#06B6D4' }]} />
-              <View style={[styles.logoPane, { backgroundColor: '#22D3EE' }]} />
-            </View>
-            <View style={styles.logoSparkle}>
-              <Text style={styles.logoSparkleText}>✦</Text>
-            </View>
-          </View>
-          <Text style={styles.headerTitle}>Bright<Text style={styles.headerTitleAccent}>Calendar</Text></Text>
+          <Image source={{ uri: LOGO_URL }} style={{ width: 140, height: 40 }} resizeMode="contain" />
         </View>
         <TouchableOpacity testID="add-btn" onPress={() => router.push('/create')} style={styles.hamburgerBtn} activeOpacity={0.7}>
           <Feather name="plus" size={24} color="#0891B2" />

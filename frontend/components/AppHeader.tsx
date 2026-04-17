@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Pressable } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Pressable, Image } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+
+const LOGO_URL = 'https://customer-assets.emergentagent.com/job_booking-hub-406/artifacts/kwu8xdcw_logo.jpg';
 
 interface Props {
   title?: string;
@@ -28,14 +30,9 @@ export default function AppHeader({ title, showBack }: Props) {
       <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
         <Pressable style={styles.overlay} onPress={() => setMenuOpen(false)}>
           <View style={styles.drawer}>
+            {/* Logo in menu */}
             <View style={styles.logoRow}>
-              <View style={styles.logoGrid}>
-                <View style={[styles.pane, { backgroundColor: '#0891B2' }]} />
-                <View style={[styles.pane, { backgroundColor: '#06B6D4' }]} />
-                <View style={[styles.pane, { backgroundColor: '#06B6D4' }]} />
-                <View style={[styles.pane, { backgroundColor: '#22D3EE' }]} />
-              </View>
-              <Text style={styles.logoText}>Bright<Text style={{ color: '#0891B2' }}>Calendar</Text></Text>
+              <Image source={{ uri: LOGO_URL }} style={styles.menuLogo} resizeMode="contain" />
             </View>
             {menuItems.map((item) => (
               <TouchableOpacity
@@ -101,16 +98,14 @@ const styles = StyleSheet.create({
   },
   btn: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
   title: { fontSize: 18, fontWeight: '700', color: '#0A0A0A' },
-  logoRowSmall: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  logoGridSmall: { width: 24, height: 24, flexDirection: 'row', flexWrap: 'wrap', gap: 1.5, borderRadius: 3 },
-  paneSmall: { width: 11, height: 11, borderRadius: 1.5 },
-  logoTextSmall: { fontSize: 18, fontWeight: '800', color: '#0A0A0A' },
+  headerLogo: { width: 140, height: 40 },
+  menuLogo: { width: 180, height: 80 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', flexDirection: 'row' },
   drawer: {
     width: 280, backgroundColor: '#FFFFFF', paddingTop: 60, paddingHorizontal: 20, paddingBottom: 40,
     shadowColor: '#000', shadowOffset: { width: 2, height: 0 }, shadowOpacity: 0.15, shadowRadius: 10, elevation: 10,
   },
-  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 32, paddingBottom: 20, borderBottomWidth: 1, borderColor: '#E5E5E5' },
+  logoRow: { alignItems: 'center', marginBottom: 24, paddingBottom: 20, borderBottomWidth: 1, borderColor: '#E5E5E5' },
   logoGrid: { width: 32, height: 32, flexDirection: 'row', flexWrap: 'wrap', gap: 2, borderRadius: 4 },
   pane: { width: 15, height: 15, borderRadius: 2 },
   logoText: { fontSize: 20, fontWeight: '800', color: '#0A0A0A' },
