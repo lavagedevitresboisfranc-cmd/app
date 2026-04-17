@@ -10,11 +10,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   Keyboard,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Calendar } from 'react-native-calendars';
+import { Audio } from 'expo-av';
 import AppHeader from '../components/AppHeader';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -57,6 +59,54 @@ export default function CreateScreen() {
   const [notes, setNotes] = useState(params.editNotes || '');
   const [price, setPrice] = useState(params.editPrice || '');
   const [saving, setSaving] = useState(false);
+  const [voiceRecording, setVoiceRecording] = useState<Audio.Recording | null>(null);
+  const [isVoiceRecording, setIsVoiceRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+
+  const startVoice = async () => {
+    try {
+      const { granted } = await Audio.requestPermissionsAsync();
+      if (!granted) { Alert.alert('Permission', 'Microphone requis'); return; }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const { recording: rec } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      setVoiceRecording(rec);
+      setIsVoiceRecording(true);
+    } catch (e) { Alert.alert('Erreur', 'Micro non disponible'); }
+  };
+
+  const stopVoice = async () => {
+    if (!voiceRecording) return;
+    setIsVoiceRecording(false);
+    setTranscribing(true);
+    try {
+      await voiceRecording.stopAndUnloadAsync();
+      const uri = voiceRecording.getURI();
+      setVoiceRecording(null);
+      if (!uri) { setTranscribing(false); return; }
+
+      // Upload to backend for transcription
+      const formData = new FormData();
+      formData.append('file', { uri, name: 'voice.m4a', type: 'audio/m4a' } as any);
+      const res = await fetch(`${API_URL}/api/transcribe`, { method: 'POST', body: formData });
+      const data = await res.json();
+
+      if (res.ok && data.text) {
+        // Try to parse the text into fields
+        const text = data.text;
+        setNotes(text);
+        // Try to extract name if it mentions common patterns
+        const nameMatch = text.match(/(?:client|nom|name|pour|chez)\s*[:\s]+([A-ZÀ-Ÿ][a-zà-ÿ]+(?:\s+[A-ZÀ-Ÿ][a-zà-ÿ]+)*)/i);
+        if (nameMatch) setClientName(nameMatch[1].trim());
+        Alert.alert('Transcription', data.text);
+      } else {
+        Alert.alert('Erreur', data.detail || 'Transcription échouée');
+      }
+    } catch (e) {
+      Alert.alert('Erreur', 'Erreur de transcription');
+    } finally {
+      setTranscribing(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!title.trim()) {
@@ -152,6 +202,29 @@ export default function CreateScreen() {
         </View>
 
         <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
+          {/* Voice Dictation */}
+          <TouchableOpacity
+            testID="voice-dictation-button"
+            style={[styles.voiceDictBtn, isVoiceRecording && styles.voiceDictBtnActive]}
+            activeOpacity={0.7}
+            onPress={isVoiceRecording ? stopVoice : startVoice}
+            disabled={transcribing}
+          >
+            {transcribing ? (
+              <>
+                <ActivityIndicator size="small" color="#0891B2" />
+                <Text style={styles.voiceDictText}>Transcription en cours...</Text>
+              </>
+            ) : (
+              <>
+                <Feather name={isVoiceRecording ? 'square' : 'mic'} size={22} color={isVoiceRecording ? '#FF3B30' : '#FFFFFF'} />
+                <Text style={[styles.voiceDictText, isVoiceRecording && { color: '#FF3B30' }]}>
+                  {isVoiceRecording ? 'Appuyez pour arrêter...' : 'Dicter les infos du client'}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+
           {/* Title */}
           <View style={styles.fieldGroup}>
             <Text style={styles.label}>TITRE</Text>
@@ -376,6 +449,26 @@ const styles = StyleSheet.create({
   },
   form: {
     padding: 24,
+  },
+  voiceDictBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0891B2',
+    borderRadius: 12,
+    paddingVertical: 18,
+    gap: 10,
+    marginBottom: 28,
+  },
+  voiceDictBtnActive: {
+    backgroundColor: '#FFF5F5',
+    borderWidth: 2,
+    borderColor: '#FF3B30',
+  },
+  voiceDictText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   fieldGroup: {
     marginBottom: 28,

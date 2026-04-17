@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -101,6 +101,46 @@ class RequestResponse(BaseModel):
     suggested_time: Optional[str] = None
     suggested_note: Optional[str] = None
     created_at: str
+
+
+# --- Voice Transcription ---
+
+@api_router.post("/transcribe")
+async def transcribe_audio(file: UploadFile = File(...)):
+    """Transcribe audio to text using OpenAI Whisper"""
+    import tempfile
+    from emergentintegrations.llm.openai import OpenAISpeechToText
+
+    api_key = os.environ.get('EMERGENT_LLM_KEY', '')
+    if not api_key:
+        raise HTTPException(status_code=400, detail="API key not configured")
+
+    try:
+        # Save uploaded file to temp
+        suffix = ".m4a"
+        if file.filename:
+            suffix = "." + file.filename.split(".")[-1]
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        stt = OpenAISpeechToText(api_key=api_key)
+        with open(tmp_path, "rb") as audio_file:
+            response = await stt.transcribe(
+                file=audio_file,
+                model="whisper-1",
+                language="fr",
+                response_format="json",
+                prompt="Ceci est une prise de rendez-vous. Le client donne son nom, téléphone, adresse et détails du service.",
+            )
+
+        os.unlink(tmp_path)
+        return {"text": response.text}
+    except Exception as e:
+        logger.error(f"Transcription error: {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur de transcription: {str(e)}")
+
 
 # --- Booking Page (for customers) ---
 
