@@ -53,6 +53,7 @@ export default function CreateScreen() {
   const [timeSlot, setTimeSlot] = useState(params.editTime || '');
   const [duration, setDuration] = useState(Number(params.editDuration) || 30);
   const [notes, setNotes] = useState(params.editNotes || '');
+  const [price, setPrice] = useState(params.editPrice || '');
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {

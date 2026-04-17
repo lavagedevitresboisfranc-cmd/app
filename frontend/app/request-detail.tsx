@@ -47,6 +47,8 @@ export default function RequestDetailScreen() {
   const [request, setRequest] = useState<AppointmentRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [showSuggest, setShowSuggest] = useState(false);
+  const [showAcceptPrice, setShowAcceptPrice] = useState(false);
+  const [acceptPrice, setAcceptPrice] = useState('');
   const [suggestedDate, setSuggestedDate] = useState('');
   const [suggestedTime, setSuggestedTime] = useState('');
   const [suggestNote, setSuggestNote] = useState('');
@@ -75,32 +77,25 @@ export default function RequestDetailScreen() {
     }
   };
 
-  const handleAccept = () => {
-    Alert.alert(
-      'Accept Request',
-      `Accept and create appointment for ${request?.customer_name}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Accept',
-          onPress: async () => {
-            setActing(true);
-            try {
-              const res = await fetch(`${API_URL}/api/requests/${id}/accept`, { method: 'PUT' });
-              if (res.ok) {
-                Alert.alert('Done', 'Appointment created!', [{ text: 'OK', onPress: () => router.back() }]);
-              } else {
-                Alert.alert('Error', 'Failed to accept');
-              }
-            } catch {
-              Alert.alert('Error', 'Network error');
-            } finally {
-              setActing(false);
-            }
-          },
-        },
-      ]
-    );
+  const handleAccept = async () => {
+    Keyboard.dismiss();
+    setActing(true);
+    try {
+      const res = await fetch(`${API_URL}/api/requests/${id}/accept`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ price: acceptPrice ? parseFloat(acceptPrice) : 0 }),
+      });
+      if (res.ok) {
+        Alert.alert('Confirmé!', 'Rendez-vous créé avec succès', [{ text: 'OK', onPress: () => router.back() }]);
+      } else {
+        Alert.alert('Erreur', 'Échec de l\'acceptation');
+      }
+    } catch {
+      Alert.alert('Erreur', 'Erreur réseau');
+    } finally {
+      setActing(false);
+    }
   };
 
   const handleSuggest = async () => {
@@ -316,6 +311,21 @@ export default function RequestDetailScreen() {
           {request.status === 'pending' && !showSuggest && (
             <View style={styles.actionsSection}>
               <Text style={styles.sectionLabel}>ACTIONS</Text>
+
+              {/* Price input for accept */}
+              <View style={styles.priceInputRow}>
+                <Feather name="dollar-sign" size={18} color="#0891B2" />
+                <TextInput
+                  testID="accept-price-input"
+                  style={styles.priceInput}
+                  value={acceptPrice}
+                  onChangeText={setAcceptPrice}
+                  placeholder="Prix ($) - optionnel"
+                  placeholderTextColor="#A3A3A3"
+                  keyboardType="decimal-pad"
+                />
+              </View>
+
               <TouchableOpacity
                 testID="accept-request-button"
                 style={styles.acceptBtn}
@@ -324,7 +334,7 @@ export default function RequestDetailScreen() {
                 disabled={acting}
               >
                 <Feather name="check" size={20} color="#FFFFFF" />
-                <Text style={styles.acceptBtnText}>{acting ? 'Processing...' : 'Accept Request'}</Text>
+                <Text style={styles.acceptBtnText}>{acting ? 'En cours...' : 'Accepter la demande'}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -590,6 +600,22 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  priceInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#0891B2',
+    borderRadius: 4,
+    paddingHorizontal: 14,
+    gap: 8,
+  },
+  priceInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#0A0A0A',
+    paddingVertical: 12,
   },
   suggestBtn: {
     flexDirection: 'row',

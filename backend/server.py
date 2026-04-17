@@ -243,8 +243,11 @@ async def get_request(request_id: str):
         raise HTTPException(status_code=404, detail="Request not found")
     return RequestResponse(**req)
 
+class AcceptRequest(BaseModel):
+    price: Optional[float] = 0.0
+
 @api_router.put("/requests/{request_id}/accept", response_model=AppointmentResponse)
-async def accept_request(request_id: str):
+async def accept_request(request_id: str, data: AcceptRequest = AcceptRequest()):
     """Accept a request: creates a confirmed appointment and marks request as accepted"""
     req = await db.appointment_requests.find_one({"id": request_id}, {"_id": 0})
     if not req:
@@ -263,6 +266,7 @@ async def accept_request(request_id: str):
         "date": req["preferred_date"],
         "time_slot": req["preferred_time"],
         "duration_minutes": 30,
+        "price": data.price or 0.0,
         "notes": req.get("message", ""),
         "status": "upcoming",
         "created_at": datetime.now(timezone.utc).isoformat(),
