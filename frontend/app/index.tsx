@@ -318,7 +318,20 @@ export default function CalendarScreen() {
   return (
     <SafeAreaView style={styles.safeArea} testID="calendar-screen">
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>BrightCalendar</Text>
+        <View style={styles.logoRow}>
+          <View style={styles.logoIcon}>
+            <View style={styles.logoWindowGrid}>
+              <View style={[styles.logoPane, { backgroundColor: '#0891B2' }]} />
+              <View style={[styles.logoPane, { backgroundColor: '#06B6D4' }]} />
+              <View style={[styles.logoPane, { backgroundColor: '#06B6D4' }]} />
+              <View style={[styles.logoPane, { backgroundColor: '#22D3EE' }]} />
+            </View>
+            <View style={styles.logoSparkle}>
+              <Text style={styles.logoSparkleText}>✦</Text>
+            </View>
+          </View>
+          <Text style={styles.headerTitle}>Bright<Text style={styles.headerTitleAccent}>Calendar</Text></Text>
+        </View>
       </View>
       <View style={styles.legendBar}>
         <View style={styles.legendItem}>
@@ -490,11 +503,47 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
     backgroundColor: '#FAFAFA',
   },
+  logoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  logoIcon: {
+    width: 36,
+    height: 36,
+    position: 'relative',
+  },
+  logoWindowGrid: {
+    width: 32,
+    height: 32,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 2,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  logoPane: {
+    width: 15,
+    height: 15,
+    borderRadius: 2,
+  },
+  logoSparkle: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+  },
+  logoSparkleText: {
+    fontSize: 14,
+    color: '#F59E0B',
+  },
   headerTitle: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '800',
     letterSpacing: -1,
     color: '#0A0A0A',
+  },
+  headerTitleAccent: {
+    color: '#0891B2',
   },
   legendBar: {
     flexDirection: 'row',
