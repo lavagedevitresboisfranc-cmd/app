@@ -6,9 +6,11 @@ import { useRouter } from 'expo-router';
 import AppHeader from '../components/AppHeader';
 
 const WINDOW_TYPES = [
-  { key: 'standard', label: 'Standard', price: 8, icon: 'square' as const },
-  { key: 'large', label: 'Grande', price: 15, icon: 'maximize' as const },
-  { key: 'skylight', label: 'Puits de lumière', price: 25, icon: 'sun' as const },
+  { key: 'standard', label: 'Standard', price: 15, icon: 'square' as const },
+  { key: 'large', label: 'Grande', price: 20, icon: 'maximize' as const },
+  { key: 'skylight', label: 'Puits de lumière', price: 30, icon: 'sun' as const },
+  { key: 'patio_simple', label: 'Porte patio simple', price: 40, icon: 'columns' as const },
+  { key: 'patio_double', label: 'Porte patio double', price: 60, icon: 'grid' as const },
 ];
 
 export default function EstimateScreen() {

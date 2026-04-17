@@ -470,6 +470,73 @@ async def get_client_history(client_name: str):
 @api_router.post("/requests/seed")
 
 
+
+# --- Employees ---
+
+class EmployeeCreate(BaseModel):
+    name: str
+    phone: Optional[str] = ""
+    email: Optional[str] = ""
+    color: Optional[str] = "#0891B2"
+
+class EmployeeResponse(BaseModel):
+    id: str
+    name: str
+    phone: str
+    email: str
+    color: str
+    active: bool
+    created_at: str
+
+@api_router.post("/employees", response_model=EmployeeResponse)
+async def create_employee(data: EmployeeCreate):
+    emp = {
+        "id": str(uuid.uuid4()),
+        "name": data.name,
+        "phone": data.phone or "",
+        "email": data.email or "",
+        "color": data.color or "#0891B2",
+        "active": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.employees.insert_one(emp)
+    return EmployeeResponse(**{k: v for k, v in emp.items() if k != "_id"})
+
+@api_router.get("/employees", response_model=List[EmployeeResponse])
+async def get_employees():
+    emps = await db.employees.find({"active": True}, {"_id": 0}).sort("name", 1).to_list(100)
+    return [EmployeeResponse(**e) for e in emps]
+
+@api_router.delete("/employees/{employee_id}")
+async def delete_employee(employee_id: str):
+    await db.employees.update_one({"id": employee_id}, {"$set": {"active": False}})
+    return {"message": "Employé désactivé"}
+
+@api_router.put("/appointments/{appointment_id}/assign")
+async def assign_employee(appointment_id: str, employee_id: str):
+    """Assign an employee to an appointment"""
+    emp = await db.employees.find_one({"id": employee_id}, {"_id": 0})
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employé non trouvé")
+    result = await db.appointments.update_one(
+        {"id": appointment_id},
+        {"$set": {"assigned_to": emp["name"], "assigned_id": employee_id, "assigned_color": emp.get("color", "#0891B2")}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="RDV non trouvé")
+    appt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    return AppointmentResponse(**appt)
+
+@api_router.get("/employees/{employee_id}/schedule")
+async def get_employee_schedule(employee_id: str, date: Optional[str] = None):
+    """Get appointments assigned to an employee"""
+    query = {"assigned_id": employee_id}
+    if date:
+        query["date"] = date
+    appts = await db.appointments.find(query, {"_id": 0}).sort("date", 1).to_list(500)
+    return [AppointmentResponse(**a) for a in appts]
+
+
 # --- Invoice PDF ---
 
 @api_router.get("/invoice/{appointment_id}")

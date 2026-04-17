@@ -15,6 +15,7 @@ export default function RootLayout() {
         <Stack.Screen name="request-detail" />
         <Stack.Screen name="stats" />
         <Stack.Screen name="estimate" />
+        <Stack.Screen name="employees" />
         <Stack.Screen name="client-history" />
       </Stack>
     </View>
