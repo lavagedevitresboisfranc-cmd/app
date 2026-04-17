@@ -242,9 +242,7 @@ export default function DetailScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} testID="detail-screen">
-      <View style={styles.header}>
-        <AppHeader title="Détails" showBack />
-      </View>
+      <AppHeader title="Détails" showBack />
 
       <ScrollView contentContainerStyle={styles.content}>
         {/* Title & Status */}
@@ -496,7 +494,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 24,
-    paddingBottom: 48,
+    paddingBottom: 120,
   },
   title: {
     fontSize: 28,
