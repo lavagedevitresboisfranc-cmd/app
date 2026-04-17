@@ -221,27 +221,31 @@ export default function CreateScreen() {
           {/* Date */}
           <View style={styles.fieldGroup}>
             <Text style={styles.label}>DATE</Text>
-            <View style={styles.dateRow}>
-              <TouchableOpacity
-                testID="date-prev"
-                onPress={() => changeDate(-1)}
-                activeOpacity={0.7}
-                style={styles.dateArrow}
-              >
-                <Feather name="chevron-left" size={20} color="#0A0A0A" />
-              </TouchableOpacity>
-              <Text testID="date-display" style={styles.dateText}>
-                {formatDisplayDate(date)}
-              </Text>
-              <TouchableOpacity
-                testID="date-next"
-                onPress={() => changeDate(1)}
-                activeOpacity={0.7}
-                style={styles.dateArrow}
-              >
-                <Feather name="chevron-right" size={20} color="#0A0A0A" />
-              </TouchableOpacity>
-            </View>
+            <Calendar
+              current={date}
+              onDayPress={(day: { dateString: string }) => setDate(day.dateString)}
+              markedDates={{ [date]: { selected: true, selectedColor: '#0891B2' } }}
+              theme={{
+                backgroundColor: '#FAFAFA',
+                calendarBackground: '#FFFFFF',
+                textSectionTitleColor: '#737373',
+                selectedDayBackgroundColor: '#0891B2',
+                selectedDayTextColor: '#FFFFFF',
+                todayTextColor: '#0891B2',
+                todayBackgroundColor: '#E5F5F6',
+                dayTextColor: '#0A0A0A',
+                textDisabledColor: '#D4D4D4',
+                arrowColor: '#0891B2',
+                monthTextColor: '#0A0A0A',
+                textMonthFontWeight: '700',
+                textMonthFontSize: 16,
+                textDayFontSize: 15,
+                textDayHeaderFontSize: 13,
+                textDayFontWeight: '500',
+                textDayHeaderFontWeight: '600',
+              }}
+              style={{ borderRadius: 8, borderWidth: 1, borderColor: '#E5E5E5' }}
+            />
           </View>
 
           {/* Time Slots */}
