@@ -562,45 +562,52 @@ async def generate_invoice(appointment_id: str):
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>Facture {invoice_num}</title>
 <style>
+@page{{size:letter;margin:0;}}
 *{{box-sizing:border-box;}}
-body{{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;max-width:780px;margin:0 auto;padding:40px 36px;color:#1F2937;font-size:14px;background:#FFFFFF;}}
-.top-banner{{background:linear-gradient(135deg,#0891B2 0%,#06B6D4 100%);height:8px;border-radius:4px;margin-bottom:28px;}}
-.header{{display:flex;justify-content:space-between;align-items:center;gap:24px;margin-bottom:36px;padding-bottom:28px;border-bottom:2px solid #F3F4F6;}}
-.brand{{display:flex;align-items:center;gap:18px;flex:1;}}
-.brand img{{width:180px;height:180px;border-radius:16px;object-fit:cover;box-shadow:0 4px 12px rgba(0,0,0,0.08);}}
-.brand-info{{display:flex;flex-direction:column;gap:4px;}}
-.company-name{{font-size:16px;font-weight:700;color:#111827;line-height:1.3;}}
-.company-tagline{{font-size:11px;color:#6B7280;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;}}
-.company-contact{{font-size:12px;color:#6B7280;line-height:1.7;}}
+html,body{{margin:0;padding:0;}}
+body{{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;max-width:780px;margin:0 auto;padding:22px 28px;color:#1F2937;font-size:12px;background:#FFFFFF;}}
+.top-banner{{background:linear-gradient(135deg,#0891B2 0%,#06B6D4 100%);height:6px;border-radius:3px;margin-bottom:14px;}}
+.header{{display:flex;justify-content:space-between;align-items:center;gap:18px;margin-bottom:16px;padding-bottom:14px;border-bottom:2px solid #F3F4F6;}}
+.brand{{display:flex;align-items:center;gap:14px;flex:1;}}
+.brand img{{width:140px;height:140px;border-radius:14px;object-fit:cover;box-shadow:0 3px 10px rgba(0,0,0,0.08);}}
+.brand-info{{display:flex;flex-direction:column;gap:2px;}}
+.company-name{{font-size:14px;font-weight:700;color:#111827;line-height:1.25;}}
+.company-tagline{{font-size:9px;color:#6B7280;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;}}
+.company-contact{{font-size:11px;color:#6B7280;line-height:1.6;margin-top:6px;}}
 .company-contact strong{{color:#0891B2;font-weight:600;}}
 .invoice-block{{text-align:right;flex-shrink:0;}}
-.invoice-title{{font-size:32px;font-weight:800;color:#0891B2;letter-spacing:-1px;line-height:1;}}
-.invoice-meta{{font-size:12px;color:#6B7280;margin-top:10px;line-height:1.6;}}
+.invoice-title{{font-size:26px;font-weight:800;color:#0891B2;letter-spacing:-1px;line-height:1;}}
+.invoice-meta{{font-size:11px;color:#6B7280;margin-top:6px;line-height:1.5;}}
 .invoice-meta strong{{color:#111827;font-weight:600;}}
-.greeting{{font-size:15px;color:#374151;margin-bottom:24px;line-height:1.6;}}
+.greeting{{font-size:12px;color:#374151;margin-bottom:12px;line-height:1.5;}}
 .greeting .name{{font-weight:700;color:#0891B2;}}
-.card{{background:#F9FAFB;border-radius:12px;padding:20px 24px;margin-bottom:20px;border-left:4px solid #0891B2;}}
-.card-title{{font-size:11px;font-weight:700;color:#6B7280;text-transform:uppercase;letter-spacing:1.2px;margin-bottom:12px;}}
-.client-grid{{display:grid;grid-template-columns:auto 1fr;gap:8px 20px;}}
-.client-grid .lbl{{color:#9CA3AF;font-size:13px;}}
-.client-grid .val{{color:#111827;font-weight:500;font-size:14px;}}
-.service-table{{width:100%;border-collapse:collapse;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04);}}
-.service-table thead th{{background:#0891B2;color:#FFF;padding:14px 18px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;}}
+.card{{background:#F9FAFB;border-radius:10px;padding:12px 16px;margin-bottom:12px;border-left:4px solid #0891B2;}}
+.card-title{{font-size:10px;font-weight:700;color:#6B7280;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;}}
+.client-grid{{display:grid;grid-template-columns:auto 1fr;gap:4px 16px;}}
+.client-grid .lbl{{color:#9CA3AF;font-size:11px;}}
+.client-grid .val{{color:#111827;font-weight:500;font-size:12px;}}
+.service-table{{width:100%;border-collapse:collapse;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04);margin-bottom:12px;}}
+.service-table thead th{{background:#0891B2;color:#FFF;padding:10px 14px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;}}
 .service-table thead th:last-child{{text-align:right;}}
-.service-table tbody td{{padding:18px;background:#FFFFFF;border-bottom:1px solid #F3F4F6;font-size:14px;}}
+.service-table tbody td{{padding:12px 14px;background:#FFFFFF;border-bottom:1px solid #F3F4F6;font-size:12px;}}
 .service-table tbody td:last-child{{text-align:right;font-weight:600;}}
-.total-row td{{background:#F0F9FF!important;padding:20px 18px!important;font-size:20px!important;font-weight:800;color:#0891B2;border-bottom:none!important;}}
-.notes-card{{background:#FFFBEB;border-left-color:#F59E0B;}}
+.total-row td{{background:#F0F9FF!important;padding:14px!important;font-size:17px!important;font-weight:800;color:#0891B2;border-bottom:none!important;}}
+.notes-card{{background:#FFFBEB;border-left-color:#F59E0B;padding:10px 16px;}}
 .notes-card .card-title{{color:#92400E;}}
-.notes-card p{{color:#78350F;line-height:1.6;margin:0;}}
-.thankyou{{text-align:center;padding:30px 20px;margin-top:32px;background:#F0F9FF;border-radius:16px;}}
-.thankyou h3{{color:#0891B2;font-size:18px;margin:0 0 8px 0;font-weight:700;}}
-.thankyou p{{color:#374151;font-size:13px;margin:0;line-height:1.6;}}
-.footer{{margin-top:36px;padding-top:20px;border-top:1px solid #F3F4F6;text-align:center;color:#9CA3AF;font-size:11px;line-height:1.7;}}
+.notes-card p{{color:#78350F;line-height:1.4;margin:0;font-size:11px;}}
+.thankyou{{text-align:center;padding:14px 16px;margin-top:12px;background:#F0F9FF;border-radius:12px;}}
+.thankyou h3{{color:#0891B2;font-size:14px;margin:0 0 4px 0;font-weight:700;}}
+.thankyou p{{color:#374151;font-size:11px;margin:0;line-height:1.4;}}
+.footer{{margin-top:14px;padding-top:10px;border-top:1px solid #F3F4F6;text-align:center;color:#9CA3AF;font-size:10px;line-height:1.5;}}
 .footer strong{{color:#0891B2;}}
-@media print{{body{{padding:20px;}}.top-banner{{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}}}
+@media print{{
+  body{{padding:20px 28px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
+  .top-banner,.service-table thead th,.total-row td,.card,.thankyou{{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
+  .page{{page-break-after:avoid;page-break-inside:avoid;}}
+}}
 </style></head><body>
 
+<div class="page">
 <div class="top-banner"></div>
 
 <div class="header">
@@ -609,7 +616,7 @@ body{{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;max-width:780px;mar
     <div class="brand-info">
       <div class="company-tagline">Lavage professionnel</div>
       <div class="company-name">Lavage de Vitres<br>Bois-Franc</div>
-      <div class="company-contact" style="margin-top:10px;">
+      <div class="company-contact">
         <strong>☎</strong> 514-570-9802<br>
         <strong>✉</strong> lavagedevitreboisfranc@live.com<br>
         <strong>🌐</strong> Lavagedevitre.org
@@ -626,7 +633,7 @@ body{{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;max-width:780px;mar
 </div>
 
 <div class="greeting">
-  Bonjour <span class="name">{appt.get('client_name','')}</span>, voici le détail de votre service. Merci de nous faire confiance pour l'entretien de vos fenêtres! ✨
+  Bonjour <span class="name">{appt.get('client_name','')}</span>, voici le détail de votre service. Merci de nous faire confiance! ✨
 </div>
 
 <div class="card">
@@ -654,7 +661,7 @@ body{{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;max-width:780px;mar
   </tbody>
 </table>
 
-{"<div class='card notes-card'><div class='card-title'>📝 Notes</div><p>" + appt.get('notes','') + "</p></div>" if appt.get('notes') else ""}
+{"<div class='notes-card card'><div class='card-title'>📝 Notes</div><p>" + appt.get('notes','') + "</p></div>" if appt.get('notes') else ""}
 
 <div class="thankyou">
   <h3>Merci pour votre confiance! 💙</h3>
@@ -664,6 +671,7 @@ body{{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;max-width:780px;mar
 <div class="footer">
   <strong>Lavage de Vitres Bois-Franc</strong> · 514-570-9802 · Lavagedevitre.org<br>
   Service de lavage de vitres résidentiel et commercial
+</div>
 </div>
 
 <script>window.onload=function(){{window.print();}}</script>
