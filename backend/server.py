@@ -587,9 +587,9 @@ Lavagedevitre.org
 <tr><td style="color:#737373;">Téléphone</td><td>{appt.get('client_phone','')}</td></tr>
 <tr><td style="color:#737373;">Adresse</td><td>{appt.get('client_address','')}</td></tr></table></div>
 <div class="section"><div class="section-title">Service</div>
-<table class="items"><tr><th>Description</th><th>Date</th><th>Heure</th><th>Durée</th><th style="text-align:right;">Prix</th></tr>
-<tr><td>{appt.get('title','Service')}</td><td>{appt.get('date','')}</td><td>{appt.get('time_slot','')}</td><td>{appt.get('duration_minutes','')} min</td><td style="text-align:right;">{price:.2f} $</td></tr>
-<tr class="grand-total"><td colspan="4" style="text-align:right;">TOTAL</td><td style="text-align:right;">{price:.2f} $</td></tr></table></div>
+<table class="items"><tr><th>Description</th><th>Date</th><th style="text-align:right;">Prix</th></tr>
+<tr><td>{appt.get('title','Service')}</td><td>{appt.get('date','')}</td><td style="text-align:right;">{price:.2f} $</td></tr>
+<tr class="grand-total"><td colspan="2" style="text-align:right;">TOTAL</td><td style="text-align:right;">{price:.2f} $</td></tr></table></div>
 {"<div class='section'><div class='section-title'>Notes</div><p>" + appt.get('notes','') + "</p></div>" if appt.get('notes') else ""}
 <div class="footer">Merci pour votre confiance! — Lavage de Vitres Bois-Franc | 514-570-9802 | Lavagedevitre.org</div>
 <script>window.onload=function(){{window.print();}}</script>

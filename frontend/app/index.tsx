@@ -114,7 +114,9 @@ export default function CalendarScreen() {
     { icon: 'plus-circle' as const, label: 'Nouveau RDV', route: '/create' },
     { icon: 'inbox' as const, label: 'Demandes', route: '/requests' },
     { icon: 'bar-chart-2' as const, label: 'Statistiques', route: '/stats' },
-    { icon: 'users' as const, label: 'Clients', route: '/client-history' },
+    { icon: 'dollar-sign' as const, label: 'Estimation', route: '/estimate' },
+    { icon: 'users' as const, label: 'Employés', route: '/employees' },
+    { icon: 'user' as const, label: 'Clients', route: '/client-history' },
   ];
 
   // Fetch ALL upcoming appointments + pending requests
@@ -415,9 +417,20 @@ export default function CalendarScreen() {
       >
         <Pressable style={styles.menuOverlay} onPress={() => setMenuOpen(false)}>
           <View style={styles.menuDrawer}>
-            {/* Logo in menu */}
+            {/* Logo in menu - BrightCalendar generic */}
             <View style={styles.menuLogoRow}>
-              <Image source={{ uri: LOGO_URL }} style={{ width: 180, height: 80 }} resizeMode="contain" />
+              <View style={styles.logoIcon}>
+                <View style={styles.logoWindowGrid}>
+                  <View style={[styles.logoPane, { backgroundColor: '#0891B2' }]} />
+                  <View style={[styles.logoPane, { backgroundColor: '#06B6D4' }]} />
+                  <View style={[styles.logoPane, { backgroundColor: '#06B6D4' }]} />
+                  <View style={[styles.logoPane, { backgroundColor: '#22D3EE' }]} />
+                </View>
+                <View style={styles.logoSparkle}>
+                  <Text style={styles.logoSparkleText}>✦</Text>
+                </View>
+              </View>
+              <Text style={styles.headerTitle}>Bright<Text style={styles.headerTitleAccent}>Calendar</Text></Text>
             </View>
 
             {menuItems.map((item) => (
