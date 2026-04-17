@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,10 +9,12 @@ import {
   ActivityIndicator,
   Linking,
   Share,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { Audio } from 'expo-av';
 import AppHeader from '../components/AppHeader';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -38,6 +40,10 @@ export default function DetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [appointment, setAppointment] = useState<Appointment | null>(null);
   const [loading, setLoading] = useState(true);
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [recordingUri, setRecordingUri] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -60,6 +66,39 @@ export default function DetailScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const startRecording = async () => {
+    try {
+      const { granted } = await Audio.requestPermissionsAsync();
+      if (!granted) { Alert.alert('Permission', 'Microphone requis'); return; }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const { recording: rec } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      setRecording(rec);
+      setIsRecording(true);
+    } catch (e) { Alert.alert('Erreur', 'Impossible de démarrer l\'enregistrement'); }
+  };
+
+  const stopRecording = async () => {
+    if (!recording) return;
+    try {
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      setRecordingUri(uri);
+      setRecording(null);
+      setIsRecording(false);
+      Alert.alert('Note vocale enregistrée!', 'Vous pouvez la réécouter.');
+    } catch (e) { Alert.alert('Erreur', 'Impossible d\'arrêter'); setIsRecording(false); }
+  };
+
+  const playRecording = async () => {
+    if (!recordingUri) return;
+    try {
+      if (sound) await sound.unloadAsync();
+      const { sound: s } = await Audio.Sound.createAsync({ uri: recordingUri });
+      setSound(s);
+      await s.playAsync();
+    } catch (e) { Alert.alert('Erreur', 'Impossible de lire'); }
   };
 
   const handleShare = async () => {
@@ -386,6 +425,32 @@ export default function DetailScreen() {
               <Text style={[styles.actionBtnText, { color: '#0891B2' }]}>Récurrence</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Voice Note */}
+          <View style={styles.voiceSection}>
+            <TouchableOpacity
+              testID="voice-record-button"
+              style={[styles.voiceBtn, isRecording && styles.voiceBtnRecording]}
+              activeOpacity={0.7}
+              onPress={isRecording ? stopRecording : startRecording}
+            >
+              <Feather name={isRecording ? 'square' : 'mic'} size={20} color={isRecording ? '#FF3B30' : '#0891B2'} />
+              <Text style={[styles.voiceBtnText, isRecording && { color: '#FF3B30' }]}>
+                {isRecording ? 'Arrêter l\'enregistrement' : 'Note vocale'}
+              </Text>
+            </TouchableOpacity>
+            {recordingUri && (
+              <TouchableOpacity
+                testID="voice-play-button"
+                style={styles.voicePlayBtn}
+                activeOpacity={0.7}
+                onPress={playRecording}
+              >
+                <Feather name="play" size={18} color="#0891B2" />
+                <Text style={styles.voicePlayText}>Écouter</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
         {/* Delete */}
@@ -548,5 +613,46 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0A0A0A',
     marginTop: 16,
+  },
+  voiceSection: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  voiceBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#0891B2',
+    borderRadius: 4,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  voiceBtnRecording: {
+    borderColor: '#FF3B30',
+    backgroundColor: '#FFF5F5',
+  },
+  voiceBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0891B2',
+  },
+  voicePlayBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#0891B2',
+    borderRadius: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 6,
+  },
+  voicePlayText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0891B2',
   },
 });

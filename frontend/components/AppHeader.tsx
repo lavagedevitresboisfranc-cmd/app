@@ -14,6 +14,7 @@ const menuItems = [
   { icon: 'plus-circle' as const, label: 'Nouveau RDV', route: '/create' },
   { icon: 'inbox' as const, label: 'Demandes', route: '/requests' },
   { icon: 'bar-chart-2' as const, label: 'Statistiques', route: '/stats' },
+  { icon: 'dollar-sign' as const, label: 'Estimation', route: '/estimate' },
   { icon: 'users' as const, label: 'Clients', route: '/client-history' },
 ];
 

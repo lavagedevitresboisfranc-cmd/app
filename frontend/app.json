@@ -26,6 +26,12 @@
     "plugins": [
       "expo-router",
       [
+        "expo-av",
+        {
+          "microphonePermission": "Enregistrer des notes vocales pour vos rendez-vous"
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
