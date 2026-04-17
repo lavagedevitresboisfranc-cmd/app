@@ -549,16 +549,15 @@ async def generate_invoice(appointment_id: str):
 
     invoice_num = appointment_id[:8].upper()
     price = appt.get('price', 0)
-    tax_rate = 0.14975  # QC TPS+TVQ
-    tax = round(price * tax_rate, 2)
-    total = round(price + tax, 2)
 
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>Facture {invoice_num}</title>
 <style>
 body{{font-family:-apple-system,sans-serif;max-width:700px;margin:40px auto;padding:30px;color:#0A0A0A;font-size:14px;}}
 .header{{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:30px;}}
-.logo{{font-size:22px;font-weight:800;}}.logo span{{color:#0891B2;}}
+.company{{display:flex;align-items:center;gap:12px;}}.company img{{width:60px;height:60px;border-radius:8px;}}
+.company-info{{font-size:13px;color:#737373;line-height:1.6;}}
+.company-name{{font-size:18px;font-weight:800;color:#0A0A0A;}}
 .invoice-title{{font-size:28px;font-weight:800;color:#0891B2;text-align:right;}}
 .invoice-num{{font-size:14px;color:#737373;text-align:right;}}
 .section{{margin:20px 0;}}.section-title{{font-size:12px;font-weight:600;color:#737373;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;}}
@@ -566,13 +565,20 @@ table{{width:100%;border-collapse:collapse;}}
 .info td{{padding:4px 0;}}
 .items th{{background:#0891B2;color:white;padding:10px;text-align:left;font-size:12px;text-transform:uppercase;}}
 .items td{{padding:10px;border-bottom:1px solid #E5E5E5;}}
-.total-row td{{font-weight:700;font-size:16px;padding:10px;}}
 .grand-total td{{font-size:22px;font-weight:800;color:#0891B2;border-top:2px solid #0891B2;padding:14px 10px;}}
 .footer{{margin-top:40px;text-align:center;color:#A3A3A3;font-size:12px;}}
 @media print{{body{{margin:0;}}}}
 </style></head><body>
 <div class="header">
-<div><div class="logo">Bright<span>Calendar</span></div><div style="color:#737373;font-size:13px;margin-top:4px;">Lavage de Vitre Bois-Franc</div></div>
+<div class="company">
+<img src="https://customer-assets.emergentagent.com/job_booking-hub-406/artifacts/j2bekjq6_IMG_3804.jpg" alt="Logo" />
+<div>
+<div class="company-name">Lavage de Vitres Bois-Franc</div>
+<div class="company-info">
+514-570-9802<br>
+lavagedevitreboisfranc@live.com<br>
+Lavagedevitre.org
+</div></div></div>
 <div><div class="invoice-title">FACTURE</div><div class="invoice-num">#{invoice_num}</div><div class="invoice-num">{appt.get('date','')}</div></div>
 </div>
 <div class="section"><div class="section-title">Client</div>
@@ -583,11 +589,9 @@ table{{width:100%;border-collapse:collapse;}}
 <div class="section"><div class="section-title">Service</div>
 <table class="items"><tr><th>Description</th><th>Date</th><th>Heure</th><th>Durée</th><th style="text-align:right;">Prix</th></tr>
 <tr><td>{appt.get('title','Service')}</td><td>{appt.get('date','')}</td><td>{appt.get('time_slot','')}</td><td>{appt.get('duration_minutes','')} min</td><td style="text-align:right;">{price:.2f} $</td></tr>
-<tr class="total-row"><td colspan="4" style="text-align:right;">Sous-total</td><td style="text-align:right;">{price:.2f} $</td></tr>
-<tr class="total-row"><td colspan="4" style="text-align:right;">Taxes (TPS+TVQ 14.975%)</td><td style="text-align:right;">{tax:.2f} $</td></tr>
-<tr class="grand-total"><td colspan="4" style="text-align:right;">TOTAL</td><td style="text-align:right;">{total:.2f} $</td></tr></table></div>
+<tr class="grand-total"><td colspan="4" style="text-align:right;">TOTAL</td><td style="text-align:right;">{price:.2f} $</td></tr></table></div>
 {"<div class='section'><div class='section-title'>Notes</div><p>" + appt.get('notes','') + "</p></div>" if appt.get('notes') else ""}
-<div class="footer">Merci pour votre confiance! — BrightCalendar</div>
+<div class="footer">Merci pour votre confiance! — Lavage de Vitres Bois-Franc | 514-570-9802 | Lavagedevitre.org</div>
 <script>window.onload=function(){{window.print();}}</script>
 </body></html>"""
     return HTMLResponse(content=html)
@@ -959,9 +963,13 @@ class PriceEstimate(BaseModel):
 async def estimate_price(data: PriceEstimate):
     """Calculate price estimate based on number of windows"""
     rates = {
-        "standard": 8.0,
-        "large": 15.0,
-        "skylight": 25.0,
+        "standard": 15.0,
+        "standard_coulissante": 20.0,
+        "standard_double_coulissante": 40.0,
+        "large": 20.0,
+        "skylight": 30.0,
+        "patio_simple": 40.0,
+        "patio_double": 60.0,
     }
     rate = rates.get(data.window_type, 8.0)
     total = data.num_windows * rate

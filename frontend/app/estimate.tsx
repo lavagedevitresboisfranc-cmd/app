@@ -7,6 +7,8 @@ import AppHeader from '../components/AppHeader';
 
 const WINDOW_TYPES = [
   { key: 'standard', label: 'Standard', price: 15, icon: 'square' as const },
+  { key: 'standard_coulissante', label: 'Standard simple coulissante', price: 20, icon: 'sidebar' as const },
+  { key: 'standard_double_coulissante', label: 'Standard double coulissante', price: 40, icon: 'copy' as const },
   { key: 'large', label: 'Grande', price: 20, icon: 'maximize' as const },
   { key: 'skylight', label: 'Puits de lumière', price: 30, icon: 'sun' as const },
   { key: 'patio_simple', label: 'Porte patio simple', price: 40, icon: 'columns' as const },
@@ -15,14 +17,18 @@ const WINDOW_TYPES = [
 
 export default function EstimateScreen() {
   const router = useRouter();
-  const [counts, setCounts] = useState<Record<string, number>>({ standard: 0, large: 0, skylight: 0 });
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [discount, setDiscount] = useState(0);
 
   const updateCount = (type: string, delta: number) => {
     setCounts((prev) => ({ ...prev, [type]: Math.max(0, (prev[type] || 0) + delta) }));
   };
 
   const totalWindows = Object.values(counts).reduce((a, b) => a + b, 0);
-  const totalPrice = WINDOW_TYPES.reduce((sum, t) => sum + (counts[t.key] || 0) * t.price, 0);
+  const subtotal = WINDOW_TYPES.reduce((sum, t) => sum + (counts[t.key] || 0) * t.price, 0);
+  const discountAmount = subtotal * (discount / 100);
+  const totalPrice = subtotal - discountAmount;
+  const DISCOUNTS = [0, 10, 15, 20];
 
   return (
     <SafeAreaView style={styles.safeArea} testID="estimate-screen">
@@ -61,12 +67,46 @@ export default function EstimateScreen() {
           </View>
         ))}
 
+        {/* Discount */}
+        <View style={styles.discountSection}>
+          <Text style={styles.discountLabel}>RABAIS</Text>
+          <View style={styles.discountRow}>
+            {DISCOUNTS.map((d) => (
+              <TouchableOpacity
+                key={d}
+                testID={`discount-${d}`}
+                style={[styles.discountBtn, discount === d && styles.discountBtnActive]}
+                activeOpacity={0.7}
+                onPress={() => setDiscount(d)}
+              >
+                <Text style={[styles.discountText, discount === d && styles.discountTextActive]}>
+                  {d === 0 ? 'Aucun' : `${d}%`}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
         {/* Total */}
         <View style={styles.totalCard}>
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Fenêtres</Text>
             <Text style={styles.totalValue}>{totalWindows}</Text>
           </View>
+          <View style={styles.divider} />
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Sous-total</Text>
+            <Text style={styles.totalValue}>{subtotal.toFixed(2)} $</Text>
+          </View>
+          {discount > 0 && (
+            <>
+              <View style={styles.divider} />
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Rabais ({discount}%)</Text>
+                <Text style={[styles.totalValue, { color: '#FF3B30' }]}>-{discountAmount.toFixed(2)} $</Text>
+              </View>
+            </>
+          )}
           <View style={styles.divider} />
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Prix estimé</Text>
@@ -106,6 +146,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA',
   },
   counterText: { fontSize: 20, fontWeight: '700', color: '#0A0A0A', minWidth: 30, textAlign: 'center' },
+  discountSection: { marginTop: 8, marginBottom: 4 },
+  discountLabel: { fontSize: 12, fontWeight: '600', color: '#737373', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 },
+  discountRow: { flexDirection: 'row', gap: 8 },
+  discountBtn: { flex: 1, paddingVertical: 10, borderRadius: 4, borderWidth: 1, borderColor: '#E5E5E5', backgroundColor: '#FFFFFF', alignItems: 'center' },
+  discountBtnActive: { backgroundColor: '#FF3B30', borderColor: '#FF3B30' },
+  discountText: { fontSize: 14, fontWeight: '600', color: '#0A0A0A' },
+  discountTextActive: { color: '#FFFFFF' },
   totalCard: {
     backgroundColor: '#0891B2', borderRadius: 12, padding: 20, marginTop: 12,
   },
