@@ -39,6 +39,7 @@ class AppointmentCreate(BaseModel):
     date: str  # YYYY-MM-DD
     time_slot: str  # HH:MM
     duration_minutes: int = 30
+    price: Optional[float] = 0.0
     notes: Optional[str] = ""
     status: str = "upcoming"  # upcoming, completed, cancelled
 
@@ -51,6 +52,7 @@ class AppointmentUpdate(BaseModel):
     date: Optional[str] = None
     time_slot: Optional[str] = None
     duration_minutes: Optional[int] = None
+    price: Optional[float] = None
     notes: Optional[str] = None
     status: Optional[str] = None
 
@@ -64,6 +66,7 @@ class AppointmentResponse(BaseModel):
     date: str
     time_slot: str
     duration_minutes: int
+    price: float = 0.0
     notes: str
     status: str
     created_at: str
@@ -125,6 +128,7 @@ async def create_appointment(data: AppointmentCreate):
         "date": data.date,
         "time_slot": data.time_slot,
         "duration_minutes": data.duration_minutes,
+        "price": data.price or 0.0,
         "notes": data.notes or "",
         "status": data.status,
         "created_at": datetime.now(timezone.utc).isoformat(),

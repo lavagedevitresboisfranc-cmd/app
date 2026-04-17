@@ -25,6 +25,7 @@ interface Appointment {
   date: string;
   time_slot: string;
   duration_minutes: number;
+  price: number;
   notes: string;
   status: string;
   created_at: string;
@@ -109,6 +110,7 @@ export default function DetailScreen() {
         editDate: appointment.date,
         editTime: appointment.time_slot,
         editDuration: String(appointment.duration_minutes),
+        editPrice: appointment.price ? String(appointment.price) : '',
         editNotes: appointment.notes,
         editStatus: appointment.status,
       },
@@ -250,11 +252,23 @@ export default function DetailScreen() {
           <View style={styles.infoRow}>
             <Feather name="clock" size={18} color="#737373" />
             <View style={styles.infoContent}>
-              <Text style={styles.infoLabel}>TIME</Text>
+              <Text style={styles.infoLabel}>HEURE & DURÉE</Text>
               <Text style={styles.infoValue} testID="detail-time">{appointment.time_slot} — {appointment.duration_minutes} minutes</Text>
             </View>
           </View>
         </View>
+
+        {appointment.price > 0 ? (
+          <View style={[styles.infoCard, { borderColor: '#0891B2' }]}>
+            <View style={styles.infoRow}>
+              <Feather name="dollar-sign" size={18} color="#0891B2" />
+              <View style={styles.infoContent}>
+                <Text style={[styles.infoLabel, { color: '#0891B2' }]}>PRIX</Text>
+                <Text style={[styles.infoValue, { fontSize: 20, fontWeight: '800', color: '#0891B2' }]} testID="detail-price">{appointment.price.toFixed(2)} $</Text>
+              </View>
+            </View>
+          </View>
+        ) : null}
 
         {appointment.notes ? (
           <View style={styles.infoCard}>

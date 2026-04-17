@@ -38,6 +38,7 @@ export default function CreateScreen() {
     editTime?: string;
     editDuration?: string;
     editNotes?: string;
+    editPrice?: string;
     editStatus?: string;
   }>();
 
@@ -81,6 +82,7 @@ export default function CreateScreen() {
         date,
         time_slot: timeSlot,
         duration_minutes: duration,
+        price: price ? parseFloat(price) : 0,
         notes: notes.trim(),
         status: params.editStatus || 'upcoming',
       };
@@ -283,6 +285,20 @@ export default function CreateScreen() {
 
           {/* Notes */}
           <View style={styles.fieldGroup}>
+            <Text style={styles.label}>PRIX ($)</Text>
+            <TextInput
+              testID="price-input"
+              style={styles.input}
+              value={price}
+              onChangeText={setPrice}
+              placeholder="ex. 150.00"
+              placeholderTextColor="#A3A3A3"
+              keyboardType="decimal-pad"
+            />
+          </View>
+
+          {/* Notes */}
+          <View style={styles.fieldGroup}>
             <Text style={styles.label}>NOTES</Text>
             <TextInput
               testID="notes-input"
@@ -431,6 +447,10 @@ const styles = StyleSheet.create({
     color: '#0A0A0A',
   },
   durationTextActive: {
+    color: '#FFFFFF',
+  },
+});
+ive: {
     color: '#FFFFFF',
   },
 });
