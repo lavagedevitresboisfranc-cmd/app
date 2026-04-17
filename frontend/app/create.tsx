@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Calendar } from 'react-native-calendars';
+import AppHeader from '../components/AppHeader';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -318,6 +319,17 @@ export default function CreateScreen() {
             />
           </View>
 
+          <TouchableOpacity
+            testID="save-button"
+            onPress={handleSave}
+            activeOpacity={0.7}
+            style={styles.saveFullBtn}
+            disabled={saving}
+          >
+            <Feather name="check" size={20} color="#FFFFFF" />
+            <Text style={styles.saveFullBtnText}>{saving ? 'Enregistrement...' : 'Enregistrer'}</Text>
+          </TouchableOpacity>
+
           <View style={{ height: 48 }} />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -386,6 +398,21 @@ const styles = StyleSheet.create({
   notesInput: {
     height: 80,
     textAlignVertical: 'top',
+  },
+  saveFullBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0891B2',
+    borderRadius: 8,
+    paddingVertical: 16,
+    gap: 8,
+    marginTop: 8,
+  },
+  saveFullBtnText: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
   },
   dateRow: {
     flexDirection: 'row',

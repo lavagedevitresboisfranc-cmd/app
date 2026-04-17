@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
+import AppHeader from '../components/AppHeader';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -173,12 +174,7 @@ export default function RequestsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} testID="requests-screen">
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Requests</Text>
-        <View style={styles.headerBadge}>
-          <Text style={styles.headerBadgeText}>{requests.length}</Text>
-        </View>
-      </View>
+      <AppHeader title="Demandes" />
 
       <View style={styles.filterRow}>
         {filters.map((f) => (

@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
+import AppHeader from '../components/AppHeader';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -70,6 +71,7 @@ export default function StatsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} testID="stats-screen">
+      <AppHeader title="Statistiques" />
       <ScrollView
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0891B2" />}
         contentContainerStyle={styles.content}

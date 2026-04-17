@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
+import AppHeader from '../components/AppHeader';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -110,9 +111,7 @@ export default function AppointmentsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} testID="appointments-screen">
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>All Appointments</Text>
-      </View>
+      <AppHeader title="Tous les RDV" />
 
       <View style={styles.filterRow}>
         {filters.map((f) => (

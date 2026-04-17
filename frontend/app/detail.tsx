@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import AppHeader from '../components/AppHeader';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -203,18 +204,7 @@ export default function DetailScreen() {
   return (
     <SafeAreaView style={styles.safeArea} testID="detail-screen">
       <View style={styles.header}>
-        <TouchableOpacity testID="detail-back-button" onPress={() => router.back()} style={styles.headerBtn} activeOpacity={0.7}>
-          <Feather name="arrow-left" size={24} color="#0A0A0A" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Details</Text>
-        <View style={{ flexDirection: 'row' }}>
-          <TouchableOpacity testID="print-button" onPress={handlePrint} style={styles.headerBtn} activeOpacity={0.7}>
-            <Feather name="printer" size={20} color="#0891B2" />
-          </TouchableOpacity>
-          <TouchableOpacity testID="edit-button" onPress={handleEdit} style={styles.headerBtn} activeOpacity={0.7}>
-            <Feather name="edit-2" size={20} color="#0A0A0A" />
-          </TouchableOpacity>
-        </View>
+        <AppHeader title="Détails" showBack />
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>

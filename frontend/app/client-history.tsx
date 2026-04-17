@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import AppHeader from '../components/AppHeader';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -111,13 +112,7 @@ export default function ClientHistoryScreen() {
   if (!name) {
     return (
       <SafeAreaView style={styles.safeArea} testID="clients-screen">
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn} activeOpacity={0.7}>
-            <Feather name="arrow-left" size={24} color="#0A0A0A" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Clients</Text>
-          <View style={styles.headerBtn} />
-        </View>
+        <AppHeader title="Clients" showBack />
         {loading ? (
           <ActivityIndicator size="small" color="#0891B2" style={{ marginTop: 48 }} />
         ) : (
