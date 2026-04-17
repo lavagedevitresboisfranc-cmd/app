@@ -555,7 +555,7 @@ async def generate_invoice(appointment_id: str):
 <style>
 body{{font-family:-apple-system,sans-serif;max-width:700px;margin:40px auto;padding:30px;color:#0A0A0A;font-size:14px;}}
 .header{{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:30px;}}
-.company{{display:flex;align-items:center;gap:12px;}}.company img{{width:60px;height:60px;border-radius:8px;}}
+.company{{display:flex;align-items:center;gap:12px;}}.company img{{width:69px;height:69px;border-radius:8px;}}
 .company-info{{font-size:13px;color:#737373;line-height:1.6;}}
 .company-name{{font-size:18px;font-weight:800;color:#0A0A0A;}}
 .invoice-title{{font-size:28px;font-weight:800;color:#0891B2;text-align:right;}}

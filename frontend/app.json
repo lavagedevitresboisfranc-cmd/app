@@ -26,7 +26,7 @@
     "plugins": [
       "expo-router",
       [
-        "expo-av",
+        "expo-audio",
         {
           "microphonePermission": "Enregistrer des notes vocales pour vos rendez-vous"
         }

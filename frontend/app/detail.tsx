@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
-import { Audio } from 'expo-av';
+import { useAudioRecorder, useAudioPlayer, RecordingPresets, setAudioModeAsync, requestRecordingPermissionsAsync, AudioModule } from 'expo-audio';
 import AppHeader from '../components/AppHeader';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -40,10 +40,10 @@ export default function DetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [appointment, setAppointment] = useState<Appointment | null>(null);
   const [loading, setLoading] = useState(true);
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [recordingUri, setRecordingUri] = useState<string | null>(null);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const audioPlayer = useAudioPlayer(recordingUri);
 
   useFocusEffect(
     useCallback(() => {
@@ -70,22 +70,20 @@ export default function DetailScreen() {
 
   const startRecording = async () => {
     try {
-      const { granted } = await Audio.requestPermissionsAsync();
+      const { granted } = await requestRecordingPermissionsAsync();
       if (!granted) { Alert.alert('Permission', 'Microphone requis'); return; }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const { recording: rec } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      setRecording(rec);
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
       setIsRecording(true);
     } catch (e) { Alert.alert('Erreur', 'Impossible de démarrer l\'enregistrement'); }
   };
 
   const stopRecording = async () => {
-    if (!recording) return;
     try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
+      await audioRecorder.stop();
+      const uri = audioRecorder.uri;
       setRecordingUri(uri);
-      setRecording(null);
       setIsRecording(false);
       Alert.alert('Note vocale enregistrée!', 'Vous pouvez la réécouter.');
     } catch (e) { Alert.alert('Erreur', 'Impossible d\'arrêter'); setIsRecording(false); }
@@ -94,10 +92,8 @@ export default function DetailScreen() {
   const playRecording = async () => {
     if (!recordingUri) return;
     try {
-      if (sound) await sound.unloadAsync();
-      const { sound: s } = await Audio.Sound.createAsync({ uri: recordingUri });
-      setSound(s);
-      await s.playAsync();
+      audioPlayer.seekTo(0);
+      audioPlayer.play();
     } catch (e) { Alert.alert('Erreur', 'Impossible de lire'); }
   };
 
@@ -106,9 +102,38 @@ export default function DetailScreen() {
     try {
       const res = await fetch(`${API_URL}/api/share/appointment/${appointment.id}`);
       const data = await res.json();
+      const phone = (appointment.client_phone || '').replace(/\D/g, '');
+      if (phone) {
+        const sep = Platform.OS === 'ios' ? '&' : '?';
+        const url = `sms:${phone}${sep}body=${encodeURIComponent(data.text)}`;
+        const can = await Linking.canOpenURL(url);
+        if (can) { await Linking.openURL(url); return; }
+      }
+      // Fallback: native share
       await Share.share({ message: data.text });
     } catch (e) {
       Alert.alert('Erreur', 'Impossible de partager');
+    }
+  };
+
+  const handleReviewRequest = async () => {
+    if (!appointment) return;
+    const phone = (appointment.client_phone || '').replace(/\D/g, '');
+    if (!phone) {
+      Alert.alert('Téléphone manquant', 'Ce client n\'a pas de numéro de téléphone.');
+      return;
+    }
+    const clientName = appointment.client_name || 'Client';
+    const reviewUrl = `${API_URL}/api/review-page/${appointment.id}`;
+    const msg = `Bonjour ${clientName}, merci pour votre confiance! Nous aimerions avoir votre avis: ${reviewUrl}`;
+    try {
+      const sep = Platform.OS === 'ios' ? '&' : '?';
+      const url = `sms:${phone}${sep}body=${encodeURIComponent(msg)}`;
+      const can = await Linking.canOpenURL(url);
+      if (can) { await Linking.openURL(url); }
+      else { Alert.alert('Erreur', 'SMS non supporté sur cet appareil'); }
+    } catch {
+      Alert.alert('Erreur', 'Impossible d\'ouvrir SMS');
     }
   };
 
@@ -435,14 +460,7 @@ export default function DetailScreen() {
               testID="review-request-button"
               style={[styles.actionBtn, { borderColor: '#F59E0B' }]}
               activeOpacity={0.7}
-              onPress={async () => {
-                try {
-                  const res = await fetch(`${API_URL}/api/reviews/send-request/${appointment!.id}`, { method: 'POST' });
-                  const data = await res.json();
-                  if (res.ok) Alert.alert('Envoyé!', data.message);
-                  else Alert.alert('Erreur', data.detail);
-                } catch { Alert.alert('Erreur', 'Erreur réseau'); }
-              }}
+              onPress={handleReviewRequest}
             >
               <Feather name="star" size={18} color="#F59E0B" />
               <Text style={[styles.actionBtnText, { color: '#F59E0B' }]}>Demander avis</Text>

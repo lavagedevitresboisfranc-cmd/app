@@ -16,7 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Calendar } from 'react-native-calendars';
-import { Audio } from 'expo-av';
+import { useAudioRecorder, RecordingPresets, setAudioModeAsync, requestRecordingPermissionsAsync } from 'expo-audio';
 import AppHeader from '../components/AppHeader';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -59,17 +59,19 @@ export default function CreateScreen() {
   const [notes, setNotes] = useState(params.editNotes || '');
   const [price, setPrice] = useState(params.editPrice || '');
   const [saving, setSaving] = useState(false);
-  const [voiceRecording, setVoiceRecording] = useState<Audio.Recording | null>(null);
+  const [voiceRecording, setVoiceRecording] = useState(false);
   const [isVoiceRecording, setIsVoiceRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
+  const voiceRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
   const startVoice = async () => {
     try {
-      const { granted } = await Audio.requestPermissionsAsync();
+      const { granted } = await requestRecordingPermissionsAsync();
       if (!granted) { Alert.alert('Permission', 'Microphone requis'); return; }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const { recording: rec } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      setVoiceRecording(rec);
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await voiceRecorder.prepareToRecordAsync();
+      voiceRecorder.record();
+      setVoiceRecording(true);
       setIsVoiceRecording(true);
     } catch (e) { Alert.alert('Erreur', 'Micro non disponible'); }
   };
@@ -79,9 +81,9 @@ export default function CreateScreen() {
     setIsVoiceRecording(false);
     setTranscribing(true);
     try {
-      await voiceRecording.stopAndUnloadAsync();
-      const uri = voiceRecording.getURI();
-      setVoiceRecording(null);
+      await voiceRecorder.stop();
+      const uri = voiceRecorder.uri;
+      setVoiceRecording(false);
       if (!uri) { setTranscribing(false); return; }
 
       // Upload to backend for transcription
