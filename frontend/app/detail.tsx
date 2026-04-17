@@ -60,6 +60,11 @@ export default function DetailScreen() {
     }
   };
 
+  const handlePrint = () => {
+    if (!appointment) return;
+    Linking.openURL(`${API_URL}/api/print/appointment/${appointment.id}`);
+  };
+
   const handleDelete = () => {
     Alert.alert('Delete Appointment', 'Are you sure you want to delete this appointment?', [
       { text: 'Cancel', style: 'cancel' },
@@ -161,9 +166,14 @@ export default function DetailScreen() {
           <Feather name="arrow-left" size={24} color="#0A0A0A" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Details</Text>
-        <TouchableOpacity testID="edit-button" onPress={handleEdit} style={styles.headerBtn} activeOpacity={0.7}>
-          <Feather name="edit-2" size={20} color="#0A0A0A" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row' }}>
+          <TouchableOpacity testID="print-button" onPress={handlePrint} style={styles.headerBtn} activeOpacity={0.7}>
+            <Feather name="printer" size={20} color="#0891B2" />
+          </TouchableOpacity>
+          <TouchableOpacity testID="edit-button" onPress={handleEdit} style={styles.headerBtn} activeOpacity={0.7}>
+            <Feather name="edit-2" size={20} color="#0A0A0A" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>

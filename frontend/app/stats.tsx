@@ -7,6 +7,7 @@ import {
   ScrollView,
   ActivityIndicator,
   RefreshControl,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -173,6 +174,35 @@ export default function StatsScreen() {
           <Feather name="arrow-right" size={16} color="#0891B2" />
         </TouchableOpacity>
 
+        {/* Backup & Export */}
+        <Text style={styles.sectionTitle}>Sauvegarde & Export</Text>
+
+        <TouchableOpacity
+          testID="export-backup"
+          style={styles.exportBtn}
+          activeOpacity={0.7}
+          onPress={() => Linking.openURL(`${API_URL}/api/backup/export`)}
+        >
+          <Feather name="download-cloud" size={18} color="#0891B2" />
+          <View style={styles.exportInfo}>
+            <Text style={styles.exportTitle}>Backup complet (JSON)</Text>
+            <Text style={styles.exportSub}>Tous les rdv + demandes</Text>
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          testID="export-csv"
+          style={styles.exportBtn}
+          activeOpacity={0.7}
+          onPress={() => Linking.openURL(`${API_URL}/api/backup/clients-csv`)}
+        >
+          <Feather name="file-text" size={18} color="#0891B2" />
+          <View style={styles.exportInfo}>
+            <Text style={styles.exportTitle}>Liste clients (CSV)</Text>
+            <Text style={styles.exportSub}>Ouvrir dans Excel / Google Sheets</Text>
+          </View>
+        </TouchableOpacity>
+
         <View style={{ height: 32 }} />
       </ScrollView>
     </SafeAreaView>
@@ -216,5 +246,12 @@ const styles = StyleSheet.create({
     gap: 6, paddingVertical: 14, marginTop: 8,
   },
   viewAllText: { fontSize: 15, fontWeight: '600', color: '#0891B2' },
+  exportBtn: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF',
+    borderWidth: 1, borderColor: '#E5E5E5', borderRadius: 8, padding: 16, marginBottom: 8, gap: 14,
+  },
+  exportInfo: { flex: 1 },
+  exportTitle: { fontSize: 15, fontWeight: '600', color: '#0A0A0A' },
+  exportSub: { fontSize: 13, color: '#A3A3A3', marginTop: 2 },
   emptyText: { fontSize: 14, color: '#A3A3A3', textAlign: 'center', paddingVertical: 20 },
 });

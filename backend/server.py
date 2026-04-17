@@ -428,6 +428,102 @@ async def get_client_history(client_name: str):
 
 
 @api_router.post("/requests/seed")
+
+# --- Backup & Export ---
+
+@api_router.get("/backup/export")
+async def export_backup():
+    """Export all data as JSON for backup"""
+    appointments = await db.appointments.find({}, {"_id": 0}).to_list(10000)
+    requests = await db.appointment_requests.find({}, {"_id": 0}).to_list(10000)
+    return {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "appointments_count": len(appointments),
+        "requests_count": len(requests),
+        "appointments": appointments,
+        "requests": requests,
+    }
+
+@api_router.get("/backup/clients-csv")
+async def export_clients_csv():
+    """Export all client data as CSV text"""
+    from fastapi.responses import PlainTextResponse
+    pipeline = [
+        {"$group": {
+            "_id": "$client_name",
+            "count": {"$sum": 1},
+            "total_spent": {"$sum": "$price"},
+            "last_visit": {"$max": "$date"},
+            "email": {"$first": "$client_email"},
+            "phone": {"$first": "$client_phone"},
+            "address": {"$first": "$client_address"},
+        }},
+        {"$sort": {"last_visit": -1}},
+    ]
+    clients = await db.appointments.aggregate(pipeline).to_list(500)
+
+    lines = ["Nom,Courriel,Téléphone,Adresse,Nombre RDV,Total dépensé,Dernière visite"]
+    for c in clients:
+        if not c["_id"]:
+            continue
+        name = (c["_id"] or "").replace(",", " ")
+        email = (c.get("email") or "").replace(",", " ")
+        phone = (c.get("phone") or "").replace(",", " ")
+        address = (c.get("address") or "").replace(",", " ")
+        lines.append(f'{name},{email},{phone},{address},{c["count"]},{c.get("total_spent", 0):.2f},{c.get("last_visit", "")}')
+
+    csv_text = "\n".join(lines)
+    return PlainTextResponse(content=csv_text, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=clients_brightcalendar.csv"})
+
+@api_router.get("/print/appointment/{appointment_id}")
+async def print_appointment(appointment_id: str):
+    """Generate printable HTML for an appointment"""
+    from fastapi.responses import HTMLResponse
+    appt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if not appt:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>RDV - {appt.get('client_name','')}</title>
+<style>
+body{{font-family:-apple-system,sans-serif;max-width:600px;margin:40px auto;padding:20px;color:#0A0A0A;}}
+h1{{font-size:24px;margin-bottom:4px;}}
+.brand{{color:#0891B2;font-size:14px;margin-bottom:24px;}}
+table{{width:100%;border-collapse:collapse;margin-top:16px;}}
+td{{padding:10px 0;vertical-align:top;}}
+.label{{font-size:12px;font-weight:600;color:#737373;text-transform:uppercase;letter-spacing:0.5px;width:120px;}}
+.value{{font-size:15px;}}
+.divider{{border-top:1px solid #E5E5E5;margin:16px 0;}}
+.price{{font-size:20px;font-weight:800;color:#0891B2;}}
+@media print{{body{{margin:0;}}}}
+</style></head><body>
+<h1>{appt.get('title','Rendez-vous')}</h1>
+<div class="brand">BrightCalendar</div>
+<div class="divider"></div>
+<table>
+<tr><td class="label">Client</td><td class="value">{appt.get('client_name','')}</td></tr>
+<tr><td class="label">Courriel</td><td class="value">{appt.get('client_email','')}</td></tr>
+<tr><td class="label">Téléphone</td><td class="value">{appt.get('client_phone','')}</td></tr>
+<tr><td class="label">Adresse</td><td class="value">{appt.get('client_address','')}</td></tr>
+</table>
+<div class="divider"></div>
+<table>
+<tr><td class="label">Date</td><td class="value">{appt.get('date','')}</td></tr>
+<tr><td class="label">Heure</td><td class="value">{appt.get('time_slot','')}</td></tr>
+<tr><td class="label">Durée</td><td class="value">{appt.get('duration_minutes','')} minutes</td></tr>
+</table>
+<div class="divider"></div>
+<table>
+<tr><td class="label">Prix</td><td class="price">{appt.get('price',0):.2f} $</td></tr>
+</table>
+{"<div class='divider'></div><table><tr><td class='label'>Notes</td><td class='value'>" + appt.get('notes','') + "</td></tr></table>" if appt.get('notes') else ""}
+<div class="divider"></div>
+<p style="font-size:12px;color:#A3A3A3;margin-top:24px;">Imprimé depuis BrightCalendar</p>
+<script>window.onload=function(){{window.print();}}</script>
+</body></html>"""
+    return HTMLResponse(content=html)
+
+
 async def seed_requests():
     """Seed sample requests for testing"""
     now = datetime.now(timezone.utc)
