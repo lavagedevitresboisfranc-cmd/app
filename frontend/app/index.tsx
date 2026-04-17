@@ -100,6 +100,32 @@ export default function CalendarScreen() {
   const [markedDates, setMarkedDates] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [allItems, setAllItems] = useState<CalendarItem[]>([]);
+
+  // Fetch ALL upcoming appointments + pending requests
+  const fetchAllItems = useCallback(async () => {
+    try {
+      const [apptRes, reqRes] = await Promise.all([
+        fetch(`${API_URL}/api/appointments`),
+        fetch(`${API_URL}/api/requests?status=pending`),
+      ]);
+      const appts: Appointment[] = await apptRes.json();
+      const reqs: PendingRequest[] = await reqRes.json();
+      const items: CalendarItem[] = [
+        ...appts.map((a) => ({
+          id: a.id, type: 'appointment' as const, name: a.client_name,
+          date: a.date, time: a.time_slot, duration: a.duration_minutes, status: a.status,
+        })),
+        ...reqs.map((r) => ({
+          id: r.id, type: 'request' as const, name: r.customer_name,
+          date: r.preferred_date, time: r.preferred_time, status: 'pending',
+        })),
+      ].sort((a, b) => a.date === b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date));
+      setAllItems(items);
+    } catch (e) {
+      console.error('Failed to fetch all items', e);
+    }
+  }, []);
 
   // Fetch appointments + pending requests for a single day
   const fetchDayItems = useCallback(async (date: string) => {
@@ -233,6 +259,7 @@ export default function CalendarScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      fetchAllItems();
       if (viewMode === 'today') {
         fetchDayItems(today);
       } else if (viewMode === 'week') {
@@ -246,6 +273,7 @@ export default function CalendarScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
+    await fetchAllItems();
     if (viewMode === 'today') {
       await fetchDayItems(today);
     } else if (viewMode === 'week') {
@@ -264,6 +292,52 @@ export default function CalendarScreen() {
     setWeekBase(newBase);
     fetchWeekItems(newBase);
   };
+
+  const formatItemDate = (dateStr: string) => {
+    const d = new Date(dateStr + 'T00:00:00');
+    return d.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
+  };
+
+  const AllAppointmentsFooter = () => (
+    <View>
+      <View style={styles.allHeader}>
+        <Text style={styles.allHeaderTitle}>Tous les rendez-vous</Text>
+        <Text style={styles.allHeaderCount}>{allItems.length}</Text>
+      </View>
+      {allItems.map((item) => {
+        const isRequest = item.type === 'request';
+        const accentColor = isRequest ? '#FF3B30' : '#34C759';
+        return (
+          <TouchableOpacity
+            key={item.id}
+            style={[styles.card, { borderLeftWidth: 4, borderLeftColor: accentColor }]}
+            activeOpacity={0.7}
+            onPress={() => {
+              if (isRequest) router.push({ pathname: '/request-detail', params: { id: item.id } });
+              else router.push({ pathname: '/detail', params: { id: item.id } });
+            }}
+          >
+            <View style={styles.cardLeft}>
+              <Text style={styles.cardDateSmall}>{formatItemDate(item.date)}</Text>
+              <Text style={styles.timeText} numberOfLines={1}>{item.time}</Text>
+            </View>
+            <View style={styles.cardDivider} />
+            <View style={styles.cardRight}>
+              <Text style={styles.cardTitle} numberOfLines={1}>{item.name}</Text>
+              <View style={styles.statusRow}>
+                <View style={[styles.statusDot, { backgroundColor: accentColor }]} />
+                <Text style={[styles.statusText, { color: accentColor }]}>
+                  {isRequest ? 'En attente' : item.status === 'upcoming' ? 'Confirmé' : item.status}
+                </Text>
+              </View>
+            </View>
+            <Feather name="chevron-right" size={20} color="#A3A3A3" />
+          </TouchableOpacity>
+        );
+      })}
+      <View style={{ height: 24 }} />
+    </View>
+  );
 
   const renderItem = ({ item }: { item: CalendarItem }) => {
     const isRequest = item.type === 'request';
@@ -384,6 +458,7 @@ export default function CalendarScreen() {
               </View>
             )
           }
+          ListFooterComponent={AllAppointmentsFooter}
           contentContainerStyle={styles.listContent}
         />
       )}
@@ -425,6 +500,7 @@ export default function CalendarScreen() {
           }
           contentContainerStyle={styles.listContent}
           stickySectionHeadersEnabled={false}
+          ListFooterComponent={AllAppointmentsFooter}
         />
       )}
 
@@ -485,6 +561,7 @@ export default function CalendarScreen() {
               </View>
             )
           }
+          ListFooterComponent={AllAppointmentsFooter}
           contentContainerStyle={styles.listContent}
         />
       )}
@@ -734,5 +811,32 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0A0A0A',
     marginTop: 16,
+  },
+  allHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 12,
+    borderTopWidth: 1,
+    borderColor: '#E5E5E5',
+    marginTop: 16,
+  },
+  allHeaderTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#0A0A0A',
+  },
+  allHeaderCount: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#A3A3A3',
+  },
+  cardDateSmall: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#A3A3A3',
+    marginBottom: 2,
   },
 });
