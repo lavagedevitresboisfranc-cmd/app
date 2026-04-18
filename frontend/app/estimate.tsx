@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Image, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import AppHeader from '../components/AppHeader';
+
+const PRICES_STORAGE_KEY = 'brightcalendar_window_prices_v1';
 
 const WINDOW_TYPES = [
   { key: 'standard', label: 'Standard', price: 15, icon: 'square' as const },
@@ -28,6 +31,45 @@ export default function EstimateScreen() {
   const [editingPriceKey, setEditingPriceKey] = useState<string | null>(null);
   const [priceEditValue, setPriceEditValue] = useState('');
   const [discount, setDiscount] = useState(0);
+
+  // Load saved prices on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem(PRICES_STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          // Merge with defaults in case new types were added
+          setPrices({ ...DEFAULT_PRICES, ...parsed });
+        }
+      } catch {}
+    })();
+  }, []);
+
+  // Persist prices whenever they change
+  const persistPrices = async (newPrices: Record<string, number>) => {
+    try {
+      await AsyncStorage.setItem(PRICES_STORAGE_KEY, JSON.stringify(newPrices));
+    } catch {}
+  };
+
+  const resetPrices = () => {
+    Alert.alert(
+      'Réinitialiser les prix',
+      'Restaurer les prix par défaut ?',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Réinitialiser',
+          style: 'destructive',
+          onPress: () => {
+            setPrices(DEFAULT_PRICES);
+            persistPrices(DEFAULT_PRICES);
+          },
+        },
+      ]
+    );
+  };
   const [photos, setPhotos] = useState<string[]>([]);
   const [fixedPrice, setFixedPrice] = useState('');
   const [useFixed, setUseFixed] = useState(false);
@@ -77,7 +119,9 @@ export default function EstimateScreen() {
   const savePrice = () => {
     if (editingPriceKey) {
       const val = parseFloat(priceEditValue) || 0;
-      setPrices(prev => ({ ...prev, [editingPriceKey]: val }));
+      const newPrices = { ...prices, [editingPriceKey]: val };
+      setPrices(newPrices);
+      persistPrices(newPrices);
     }
     setEditingPriceKey(null);
     setPriceEditValue('');
@@ -87,7 +131,14 @@ export default function EstimateScreen() {
     <SafeAreaView style={styles.safeArea} testID="estimate-screen">
       <AppHeader title="Estimation" showBack />
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.subtitle}>Calculez le prix selon le nombre de fenêtres</Text>
+        <View style={styles.subtitleRow}>
+          <Text style={styles.subtitle}>Calculez le prix selon le nombre de fenêtres</Text>
+          <TouchableOpacity testID="reset-prices" onPress={resetPrices} style={styles.resetBtn} activeOpacity={0.7}>
+            <Feather name="refresh-cw" size={12} color="#737373" />
+            <Text style={styles.resetBtnText}>Prix par défaut</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.hintText}>💡 Tapez sur un prix pour le modifier (sauvegardé automatiquement)</Text>
 
         {WINDOW_TYPES.map((type) => (
           <View key={type.key} style={styles.row}>
@@ -273,6 +324,14 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#FAFAFA' },
   content: { padding: 24 },
   subtitle: { fontSize: 15, color: '#737373', marginBottom: 24 },
+  subtitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  hintText: { fontSize: 12, color: '#0891B2', fontStyle: 'italic', marginBottom: 18 },
+  resetBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6,
+    borderWidth: 1, borderColor: '#E5E5E5', backgroundColor: '#FFFFFF',
+  },
+  resetBtnText: { fontSize: 11, color: '#737373', fontWeight: '600' },
   row: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E5E5', borderRadius: 8,
