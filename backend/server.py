@@ -178,7 +178,7 @@ async def booking_qr_code():
     )
     qr.add_data(booking_url)
     qr.make(fit=True)
-    img = qr.make_image(fill_color="#0891B2", back_color="white")
+    img = qr.make_image(fill_color="black", back_color="white")
 
     buf = BytesIO()
     img.save(buf, format="PNG")
