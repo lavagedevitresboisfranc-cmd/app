@@ -13,6 +13,7 @@ const menuItems = [
   { icon: 'list' as const, label: 'Tous les RDV', route: '/appointments' },
   { icon: 'plus-circle' as const, label: 'Nouveau RDV', route: '/create' },
   { icon: 'inbox' as const, label: 'Demandes', route: '/requests' },
+  { icon: 'grid' as const, label: 'QR Code client', route: '/qr' },
   { icon: 'bar-chart-2' as const, label: 'Statistiques', route: '/stats' },
   { icon: 'dollar-sign' as const, label: 'Estimation', route: '/estimate' },
   { icon: 'users' as const, label: 'Employés', route: '/employees' },
