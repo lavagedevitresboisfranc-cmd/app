@@ -159,6 +159,73 @@ async def booking_page():
     content = content.replace("window.location.origin", f'"{app_url}"')
     return HTMLResponse(content=content)
 
+
+@api_router.get("/booking-qr")
+async def booking_qr_code():
+    """Generate a QR code pointing to the booking page"""
+    import qrcode
+    from fastapi.responses import Response
+    from io import BytesIO
+
+    app_url = os.environ.get("APP_URL", "").rstrip("/")
+    booking_url = f"{app_url}/api/booking"
+
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=12,
+        border=4,
+    )
+    qr.add_data(booking_url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="#0891B2", back_color="white")
+
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return Response(content=buf.getvalue(), media_type="image/png", headers={
+        "Content-Disposition": 'inline; filename="brightcalendar-qr.png"'
+    })
+
+
+@api_router.get("/booking-qr-page", response_class=HTMLResponse)
+async def booking_qr_page():
+    """A printable page with the QR code + instructions"""
+    app_url = os.environ.get("APP_URL", "").rstrip("/")
+    qr_url = f"{app_url}/api/booking-qr"
+    booking_url = f"{app_url}/api/booking"
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>QR Code — Prendre rendez-vous</title>
+<style>
+*{{box-sizing:border-box;}}body{{font-family:-apple-system,'Segoe UI',sans-serif;max-width:600px;margin:40px auto;padding:30px;text-align:center;color:#1F2937;}}
+.card{{background:linear-gradient(135deg,#0891B2 0%,#06B6D4 100%);color:#FFF;padding:40px 30px;border-radius:24px;box-shadow:0 10px 40px rgba(0,0,0,0.1);}}
+h1{{margin:0 0 8px 0;font-size:28px;}}
+.tagline{{font-size:14px;opacity:0.9;margin-bottom:24px;text-transform:uppercase;letter-spacing:2px;}}
+.qr-wrap{{background:#FFF;padding:20px;border-radius:20px;display:inline-block;margin:16px 0;}}
+.qr-wrap img{{display:block;width:260px;height:260px;}}
+.cta{{font-size:22px;font-weight:800;margin:20px 0 6px 0;}}
+.hint{{font-size:13px;opacity:0.9;}}
+.contact{{background:#FFF;color:#0A0A0A;border-radius:16px;padding:20px;margin-top:24px;font-size:14px;line-height:1.8;}}
+.contact strong{{color:#0891B2;}}
+.url-fallback{{margin-top:20px;font-size:11px;color:#737373;word-break:break-all;}}
+@media print{{body{{margin:0;padding:20px;}}.card{{box-shadow:none;-webkit-print-color-adjust:exact;print-color-adjust:exact;}}}}
+</style></head><body>
+<div class="card">
+  <div class="tagline">Lavage de Vitres Bois-Franc</div>
+  <h1>📅 Prenez rendez-vous</h1>
+  <div class="qr-wrap"><img src="{qr_url}" alt="QR Code"/></div>
+  <div class="cta">Scannez avec votre téléphone</div>
+  <div class="hint">Ouvrez l'appareil photo et pointez-le vers le QR code</div>
+</div>
+<div class="contact">
+  <strong>☎ 514-570-9802</strong><br>
+  ✉ lavagedevitreboisfranc@live.com<br>
+  🌐 Lavagedevitre.org
+</div>
+<div class="url-fallback">Ou visitez: {booking_url}</div>
+</body></html>"""
+    return HTMLResponse(content=html)
+
 # --- Routes ---
 
 @api_router.get("/")

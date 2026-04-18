@@ -101,7 +101,7 @@ export default function RequestDetailScreen() {
 
   const handleSuggest = async () => {
     if (!suggestedTime) {
-      Alert.alert('Required', 'Please select a time slot');
+      Alert.alert('Requis', 'Sélectionnez une heure');
       return;
     }
     Keyboard.dismiss();
@@ -120,12 +120,50 @@ export default function RequestDetailScreen() {
         const data = await res.json();
         setRequest(data);
         setShowSuggest(false);
-        Alert.alert('Done', 'Alternative suggestion sent');
+
+        // Open native email/SMS to actually send the proposal to the client
+        const customerName = request?.customer_name || 'Client';
+        const customerEmail = (request?.customer_email || '').trim();
+        const customerPhone = (request?.customer_phone || '').replace(/\D/g, '');
+        const noteBlock = suggestNote.trim() ? `\n\nNote: ${suggestNote.trim()}` : '';
+        const message = `Bonjour ${customerName},\n\nMerci pour votre demande de rendez-vous. Je vous propose une alternative :\n\n📅 Date: ${suggestedDate}\n🕐 Heure: ${suggestedTime}${noteBlock}\n\nCette proposition vous convient-elle? Répondez pour confirmer.\n\nMerci,\nLavage de Vitres Bois-Franc\n📞 514-570-9802`;
+
+        Alert.alert(
+          'Envoyer au client',
+          `Comment voulez-vous transmettre la proposition à ${customerName} ?`,
+          [
+            ...(customerEmail ? [{
+              text: '📧 Courriel',
+              onPress: async () => {
+                const subject = 'Proposition de rendez-vous — Lavage de Vitres Bois-Franc';
+                const url = `mailto:${customerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`;
+                try {
+                  const can = await Linking.canOpenURL(url);
+                  if (can) await Linking.openURL(url);
+                  else Alert.alert('Erreur', 'Aucune app courriel disponible');
+                } catch { Alert.alert('Erreur', 'Impossible d\'ouvrir l\'app courriel'); }
+              }
+            }] : []),
+            ...(customerPhone ? [{
+              text: '💬 SMS',
+              onPress: async () => {
+                const sep = Platform.OS === 'ios' ? '&' : '?';
+                const url = `sms:${customerPhone}${sep}body=${encodeURIComponent(message)}`;
+                try {
+                  const can = await Linking.canOpenURL(url);
+                  if (can) await Linking.openURL(url);
+                  else Alert.alert('Erreur', 'SMS non supporté');
+                } catch { Alert.alert('Erreur', 'Impossible d\'ouvrir SMS'); }
+              }
+            }] : []),
+            { text: 'Plus tard', style: 'cancel' },
+          ]
+        );
       } else {
-        Alert.alert('Error', 'Failed to send suggestion');
+        Alert.alert('Erreur', 'Échec de l\'envoi');
       }
     } catch {
-      Alert.alert('Error', 'Network error');
+      Alert.alert('Erreur', 'Erreur réseau');
     } finally {
       setActing(false);
     }
