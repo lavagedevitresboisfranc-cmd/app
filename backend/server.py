@@ -153,7 +153,11 @@ async def transcribe_audio(file: UploadFile = File(...)):
 async def booking_page():
     """Public booking page for customers to request appointments"""
     html_path = ROOT_DIR / "booking.html"
-    return HTMLResponse(content=html_path.read_text())
+    content = html_path.read_text()
+    # Inject the backend API URL so form submits to BrightCalendar even when embedded on external sites
+    app_url = os.environ.get("APP_URL", "").rstrip("/")
+    content = content.replace("window.location.origin", f'"{app_url}"')
+    return HTMLResponse(content=content)
 
 # --- Routes ---
 
