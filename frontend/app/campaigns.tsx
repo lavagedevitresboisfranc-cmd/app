@@ -24,16 +24,15 @@ const CAMPAIGNS = [
     icon: '🌷',
     label: 'Campagne Printemps',
     color: '#10B981',
-    subject: 'Offre Printemps — Lavage de vitres',
+    subject: 'Printemps — Lavage de vitres',
     body: `Bonjour,
 
-Le printemps est arrivé! C'est le moment idéal pour redonner de l'éclat à vos fenêtres.
-
-🌷 OFFRE PRINTEMPS 🌷
-10% de rabais sur votre lavage de vitres
-Code: PRINTEMPS10
+Le printemps est arrivé! C'est le moment idéal pour redonner de l'éclat à vos fenêtres après les intempéries de l'hiver.
 
 Réservez dès maintenant avant que mon agenda se remplisse!
+
+📅 Prendre rendez-vous en ligne:
+{BOOKING_URL}
 
 📞 514-570-9802
 🌐 Lavagedevitre.org
@@ -56,7 +55,8 @@ Avant que l'hiver n'arrive, offrez à vos fenêtres un dernier nettoyage pour pr
 Code: AUTOMNE10
 Valide jusqu'au 30 novembre
 
-Un petit geste pour des vitres éclatantes tout l'hiver!
+📅 Prendre rendez-vous en ligne:
+{BOOKING_URL}
 
 📞 514-570-9802
 🌐 Lavagedevitre.org
@@ -78,7 +78,8 @@ L'été bat son plein! Profitez de votre cour et de votre patio avec des fenêtr
 10% de rabais
 Code: ETE10
 
-Réservez votre créneau dès maintenant!
+📅 Prendre rendez-vous en ligne:
+{BOOKING_URL}
 
 📞 514-570-9802
 🌐 Lavagedevitre.org
@@ -106,7 +107,9 @@ export default function CampaignsScreen() {
 
   const openPreview = (campaign: typeof CAMPAIGNS[0]) => {
     setExcluded(new Set());
-    setPreview({ campaign, subject: campaign.subject, body: campaign.body });
+    const bookingUrl = `${API_URL}/api/booking`;
+    const body = campaign.body.replace(/\{BOOKING_URL\}/g, bookingUrl);
+    setPreview({ campaign, subject: campaign.subject, body });
   };
 
   const toggleExclude = (email: string) => {

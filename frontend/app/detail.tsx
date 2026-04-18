@@ -10,11 +10,13 @@ import {
   Linking,
   Share,
   Platform,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useAudioRecorder, useAudioPlayer, RecordingPresets, setAudioModeAsync, requestRecordingPermissionsAsync, AudioModule } from 'expo-audio';
+import * as ImagePicker from 'expo-image-picker';
 import AppHeader from '../components/AppHeader';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -36,6 +38,7 @@ interface Appointment {
   assigned_to?: string;
   assigned_id?: string;
   assigned_color?: string;
+  client_photo?: string;
 }
 
 interface Employee { id: string; name: string; color: string; }
@@ -100,6 +103,52 @@ export default function DetailScreen() {
       } else {
         Alert.alert('Erreur', 'Échec de l\'assignation');
       }
+    } catch { Alert.alert('Erreur', 'Erreur réseau'); }
+  };
+
+  const handleCallClient = () => {
+    if (!appointment) return;
+    const phone = (appointment.client_phone || '').replace(/[^\d+]/g, '');
+    if (!phone) { Alert.alert('Téléphone manquant', 'Ce client n\'a pas de numéro.'); return; }
+    Linking.openURL(`tel:${phone}`).catch(() => Alert.alert('Erreur', 'Impossible d\'ouvrir l\'app téléphone'));
+  };
+
+  const handleChangeClientPhoto = async () => {
+    if (!appointment) return;
+    Alert.alert('Photo du client', 'Choisir une source:', [
+      { text: 'Caméra', onPress: () => pickClientPhoto('camera') },
+      { text: 'Galerie', onPress: () => pickClientPhoto('library') },
+      ...(appointment.client_photo ? [{ text: 'Retirer', style: 'destructive' as const, onPress: () => saveClientPhoto('') }] : []),
+      { text: 'Annuler', style: 'cancel' as const },
+    ]);
+  };
+
+  const pickClientPhoto = async (source: 'camera' | 'library') => {
+    try {
+      const perm = source === 'camera'
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) { Alert.alert('Permission refusée'); return; }
+      const result = source === 'camera'
+        ? await ImagePicker.launchCameraAsync({ quality: 0.5, allowsEditing: true, aspect: [1, 1], base64: true, mediaTypes: ImagePicker.MediaTypeOptions.Images })
+        : await ImagePicker.launchImageLibraryAsync({ quality: 0.5, allowsEditing: true, aspect: [1, 1], base64: true, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+      if (!result.canceled && result.assets?.[0]?.base64) {
+        const dataUri = `data:image/jpeg;base64,${result.assets[0].base64}`;
+        await saveClientPhoto(dataUri);
+      }
+    } catch { Alert.alert('Erreur', 'Impossible de charger la photo'); }
+  };
+
+  const saveClientPhoto = async (photoData: string) => {
+    if (!appointment) return;
+    try {
+      const res = await fetch(`${API_URL}/api/appointments/${appointment.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...appointment, client_photo: photoData }),
+      });
+      if (res.ok) fetchAppointment();
+      else Alert.alert('Erreur', 'Échec sauvegarde photo');
     } catch { Alert.alert('Erreur', 'Erreur réseau'); }
   };
 
@@ -366,6 +415,29 @@ export default function DetailScreen() {
           </View>
         </View>
 
+        {/* Client Avatar */}
+        <View style={styles.avatarSection}>
+          <TouchableOpacity
+            testID="client-photo-btn"
+            style={styles.avatarWrap}
+            activeOpacity={0.8}
+            onPress={handleChangeClientPhoto}
+          >
+            {appointment.client_photo ? (
+              <Image source={{ uri: appointment.client_photo }} style={styles.avatarImg} />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Feather name="camera" size={28} color="#0891B2" />
+              </View>
+            )}
+            <View style={styles.avatarEditBadge}>
+              <Feather name="edit-2" size={10} color="#FFF" />
+            </View>
+          </TouchableOpacity>
+          <Text style={styles.avatarName}>{appointment.client_name}</Text>
+          <Text style={styles.avatarHint}>Tapez pour ajouter/modifier la photo</Text>
+        </View>
+
         {/* Info Cards */}
         <View style={styles.infoCard}>
           <View style={styles.infoRow}>
@@ -390,15 +462,21 @@ export default function DetailScreen() {
         ) : null}
 
         {appointment.client_phone ? (
-          <View style={styles.infoCard}>
+          <TouchableOpacity
+            testID="call-client-btn"
+            style={[styles.infoCard, { borderColor: '#10B981', borderWidth: 1 }]}
+            activeOpacity={0.7}
+            onPress={handleCallClient}
+          >
             <View style={styles.infoRow}>
-              <Feather name="phone" size={18} color="#737373" />
+              <Feather name="phone" size={18} color="#10B981" />
               <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>TÉLÉPHONE</Text>
-                <Text style={styles.infoValue} testID="detail-phone">{appointment.client_phone}</Text>
+                <Text style={[styles.infoLabel, { color: '#10B981' }]}>TÉLÉPHONE — APPUYEZ POUR APPELER</Text>
+                <Text style={[styles.infoValue, { color: '#10B981', fontWeight: '700' }]} testID="detail-phone">{appointment.client_phone}</Text>
               </View>
+              <Feather name="phone-call" size={20} color="#10B981" />
             </View>
-          </View>
+          </TouchableOpacity>
         ) : null}
 
         {appointment.client_address ? (
@@ -692,6 +770,22 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
   },
+  avatarSection: { alignItems: 'center', marginBottom: 20 },
+  avatarWrap: { position: 'relative' },
+  avatarImg: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#F5F5F5' },
+  avatarPlaceholder: {
+    width: 100, height: 100, borderRadius: 50, backgroundColor: '#F0F9FF',
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 2, borderColor: '#0891B2', borderStyle: 'dashed',
+  },
+  avatarEditBadge: {
+    position: 'absolute', bottom: 0, right: 0,
+    width: 28, height: 28, borderRadius: 14, backgroundColor: '#0891B2',
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 2, borderColor: '#FAFAFA',
+  },
+  avatarName: { fontSize: 18, fontWeight: '700', color: '#0A0A0A', marginTop: 10 },
+  avatarHint: { fontSize: 11, color: '#A3A3A3', marginTop: 2 },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',

@@ -55,6 +55,7 @@ class AppointmentUpdate(BaseModel):
     price: Optional[float] = None
     notes: Optional[str] = None
     status: Optional[str] = None
+    client_photo: Optional[str] = None
 
 class AppointmentResponse(BaseModel):
     id: str
@@ -70,6 +71,10 @@ class AppointmentResponse(BaseModel):
     notes: str
     status: str
     created_at: str
+    assigned_to: Optional[str] = None
+    assigned_id: Optional[str] = None
+    assigned_color: Optional[str] = None
+    client_photo: Optional[str] = None
 
 # --- Request Models ---
 
@@ -546,9 +551,8 @@ async def get_employee_schedule(employee_id: str, date: Optional[str] = None):
     return [AppointmentResponse(**a) for a in appts]
 
 
-@api_router.get("/backup/export")
-async def export_backup():
-    """Export all data as JSON for backup"""
+async def _build_backup_data():
+    """Return all DB data as a plain dict (used by export endpoint + scheduler)."""
     data = {
         "exported_at": datetime.utcnow().isoformat() + "Z",
         "version": 1,
@@ -566,6 +570,62 @@ async def export_backup():
     async for d in db.reviews.find({}, {"_id": 0}):
         data["reviews"].append(d)
     return data
+
+
+@api_router.get("/backup/export")
+async def export_backup():
+    """Export all data as JSON for backup"""
+    return await _build_backup_data()
+
+
+async def _create_auto_backup():
+    """Creates a backup document and keeps only last 2."""
+    try:
+        data = await _build_backup_data()
+        backup_doc = {
+            "id": str(uuid.uuid4()),
+            "created_at": datetime.utcnow().isoformat() + "Z",
+            "type": "auto",
+            "data": data,
+            "stats": {
+                "appointments": len(data.get("appointments", [])),
+                "requests": len(data.get("requests", [])),
+                "employees": len(data.get("employees", [])),
+                "reviews": len(data.get("reviews", [])),
+            },
+        }
+        await db.backups.insert_one(backup_doc)
+        # Keep only 2 most recent automatic backups
+        cursor = db.backups.find({"type": "auto"}, {"_id": 1, "created_at": 1}).sort("created_at", -1)
+        all_backups = [b async for b in cursor]
+        for old in all_backups[2:]:
+            await db.backups.delete_one({"_id": old["_id"]})
+        logger.info(f"Auto backup created. Kept {min(len(all_backups), 2)} backups.")
+    except Exception as e:
+        logger.error(f"Auto backup failed: {e}")
+
+
+@api_router.get("/backup/list")
+async def list_backups():
+    """List stored automatic backups."""
+    cursor = db.backups.find({}, {"_id": 0, "data": 0}).sort("created_at", -1)
+    return [b async for b in cursor]
+
+
+@api_router.post("/backup/run-now")
+async def run_backup_now():
+    """Trigger a backup immediately (manual trigger)."""
+    await _create_auto_backup()
+    return {"status": "ok", "message": "Backup created"}
+
+
+@api_router.get("/backup/download/{backup_id}")
+async def download_backup(backup_id: str):
+    """Download a specific stored backup as JSON."""
+    b = await db.backups.find_one({"id": backup_id}, {"_id": 0})
+    if not b:
+        raise HTTPException(status_code=404, detail="Backup non trouvé")
+    return b.get("data", {})
 
 
 @api_router.post("/backup/import")
@@ -1348,4 +1408,25 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    try:
+        scheduler.shutdown(wait=False)
+    except Exception:
+        pass
     client.close()
+
+
+# Scheduler: auto backup every day at midnight (00:00)
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+
+scheduler = AsyncIOScheduler(timezone="America/Toronto")
+
+
+@app.on_event("startup")
+async def start_scheduler():
+    try:
+        scheduler.add_job(_create_auto_backup, CronTrigger(hour=0, minute=0), id="daily_backup", replace_existing=True)
+        scheduler.start()
+        logger.info("Scheduler started: daily backup @ 00:00")
+    except Exception as e:
+        logger.error(f"Scheduler failed to start: {e}")
