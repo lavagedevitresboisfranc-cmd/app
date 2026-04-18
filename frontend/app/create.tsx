@@ -17,9 +17,17 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Calendar } from 'react-native-calendars';
 import { useAudioRecorder, RecordingPresets, setAudioModeAsync, requestRecordingPermissionsAsync } from 'expo-audio';
+import * as Location from 'expo-location';
 import AppHeader from '../components/AppHeader';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+
+const TITLE_OPTIONS = [
+  'Intérieur et extérieur',
+  'Extérieur seulement',
+  'Intérieur seulement',
+  'Extérieur sans balcon',
+];
 
 const TIME_SLOTS = [
   '08:00', '08:30', '09:00', '09:30', '10:00', '10:30',
@@ -49,6 +57,34 @@ export default function CreateScreen() {
   const isEditing = !!params.editId;
 
   const [title, setTitle] = useState(params.editTitle || '');
+  const [gettingLocation, setGettingLocation] = useState(false);
+
+  const getCurrentLocation = async () => {
+    setGettingLocation(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission refusée', 'Accès à la localisation requis.');
+        setGettingLocation(false);
+        return;
+      }
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      const places = await Location.reverseGeocodeAsync({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+      if (places && places.length > 0) {
+        const p = places[0];
+        const parts = [
+          p.streetNumber, p.street, p.city, p.region, p.postalCode,
+        ].filter(Boolean).join(', ').replace(', ,', ',');
+        setClientAddress(parts);
+      } else {
+        Alert.alert('Introuvable', 'Impossible de trouver votre adresse');
+      }
+    } catch (e) {
+      Alert.alert('Erreur', 'Impossible d\'obtenir votre position');
+    } finally {
+      setGettingLocation(false);
+    }
+  };
   const [clientName, setClientName] = useState(params.editClient || '');
   const [clientEmail, setClientEmail] = useState(params.editEmail || '');
   const [clientPhone, setClientPhone] = useState(params.editPhone || '');
@@ -227,15 +263,28 @@ export default function CreateScreen() {
             )}
           </TouchableOpacity>
 
-          {/* Title */}
+          {/* Title - Type de service */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.label}>TITRE</Text>
+            <Text style={styles.label}>TYPE DE SERVICE</Text>
+            <View style={styles.chipsRow}>
+              {TITLE_OPTIONS.map((opt) => (
+                <TouchableOpacity
+                  key={opt}
+                  testID={`title-chip-${opt}`}
+                  style={[styles.chip, title === opt && styles.chipActive]}
+                  activeOpacity={0.7}
+                  onPress={() => setTitle(opt)}
+                >
+                  <Text style={[styles.chipText, title === opt && styles.chipTextActive]}>{opt}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
             <TextInput
               testID="title-input"
-              style={styles.input}
+              style={[styles.input, { marginTop: 8 }]}
               value={title}
               onChangeText={setTitle}
-              placeholder="ex. Lavage de vitres"
+              placeholder="Ou écrire un titre personnalisé..."
               placeholderTextColor="#A3A3A3"
             />
           </View>
@@ -284,7 +333,25 @@ export default function CreateScreen() {
 
           {/* Address */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.label}>ADRESSE</Text>
+            <View style={styles.labelRow}>
+              <Text style={styles.label}>ADRESSE</Text>
+              <TouchableOpacity
+                testID="geolocate-btn"
+                style={styles.geoBtn}
+                activeOpacity={0.7}
+                onPress={getCurrentLocation}
+                disabled={gettingLocation}
+              >
+                {gettingLocation ? (
+                  <ActivityIndicator size="small" color="#0891B2" />
+                ) : (
+                  <>
+                    <Feather name="map-pin" size={14} color="#0891B2" />
+                    <Text style={styles.geoBtnText}>Ma position</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
             <TextInput
               testID="address-input"
               style={styles.input}
@@ -292,6 +359,7 @@ export default function CreateScreen() {
               onChangeText={setClientAddress}
               placeholder="ex. 123 Rue Principale, Bois-Franc"
               placeholderTextColor="#A3A3A3"
+              multiline
             />
           </View>
 
@@ -482,6 +550,22 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 10,
   },
+  labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  geoBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16,
+    borderWidth: 1, borderColor: '#0891B2', backgroundColor: '#F0F9FF',
+    minHeight: 28,
+  },
+  geoBtnText: { color: '#0891B2', fontSize: 12, fontWeight: '700' },
+  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+    borderWidth: 1, borderColor: '#D4D4D4', backgroundColor: '#FFFFFF',
+  },
+  chipActive: { borderColor: '#0891B2', backgroundColor: '#0891B2' },
+  chipText: { fontSize: 13, fontWeight: '600', color: '#404040' },
+  chipTextActive: { color: '#FFFFFF' },
   input: {
     height: 48,
     borderBottomWidth: 1,

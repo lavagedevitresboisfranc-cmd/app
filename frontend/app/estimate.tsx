@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Image, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -8,8 +8,8 @@ import AppHeader from '../components/AppHeader';
 
 const WINDOW_TYPES = [
   { key: 'standard', label: 'Standard', price: 15, icon: 'square' as const },
-  { key: 'standard_coulissante', label: 'Standard simple coulissante', price: 20, icon: 'sidebar' as const },
-  { key: 'standard_double_coulissante', label: 'Standard double coulissante', price: 40, icon: 'copy' as const },
+  { key: 'standard_coulissante', label: 'Simple coulissante', price: 20, icon: 'sidebar' as const },
+  { key: 'standard_double_coulissante', label: 'Double coulissante', price: 40, icon: 'copy' as const },
   { key: 'large', label: 'Grande', price: 20, icon: 'maximize' as const },
   { key: 'skylight', label: 'Puits de lumière', price: 30, icon: 'sun' as const },
   { key: 'patio_simple', label: 'Porte patio simple', price: 40, icon: 'columns' as const },
@@ -21,6 +21,8 @@ export default function EstimateScreen() {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [discount, setDiscount] = useState(0);
   const [photos, setPhotos] = useState<string[]>([]);
+  const [fixedPrice, setFixedPrice] = useState('');
+  const [useFixed, setUseFixed] = useState(false);
 
   const takePhoto = async () => {
     try {
@@ -54,8 +56,10 @@ export default function EstimateScreen() {
 
   const totalWindows = Object.values(counts).reduce((a, b) => a + b, 0);
   const subtotal = WINDOW_TYPES.reduce((sum, t) => sum + (counts[t.key] || 0) * t.price, 0);
-  const discountAmount = subtotal * (discount / 100);
-  const totalPrice = subtotal - discountAmount;
+  const fixedValue = parseFloat(fixedPrice) || 0;
+  const baseTotal = useFixed ? fixedValue : subtotal;
+  const discountAmount = baseTotal * (discount / 100);
+  const totalPrice = baseTotal - discountAmount;
   const DISCOUNTS = [0, 10, 15, 20];
 
   return (
@@ -68,8 +72,8 @@ export default function EstimateScreen() {
           <View key={type.key} style={styles.row}>
             <View style={styles.rowInfo}>
               <Feather name={type.icon} size={20} color="#0891B2" />
-              <View>
-                <Text style={styles.typeName}>{type.label}</Text>
+              <View style={{ flexShrink: 1, flex: 1 }}>
+                <Text style={styles.typeName} numberOfLines={2}>{type.label}</Text>
                 <Text style={styles.typePrice}>{type.price.toFixed(2)} $ / fenêtre</Text>
               </View>
             </View>
@@ -82,7 +86,7 @@ export default function EstimateScreen() {
               >
                 <Feather name="minus" size={18} color="#0A0A0A" />
               </TouchableOpacity>
-              <Text style={styles.counterText}>{counts[type.key]}</Text>
+              <Text style={styles.counterText}>{counts[type.key] || 0}</Text>
               <TouchableOpacity
                 testID={`plus-${type.key}`}
                 style={styles.counterBtn}
@@ -126,6 +130,39 @@ export default function EstimateScreen() {
           )}
         </View>
 
+        {/* Prix fixe (personnalisable) */}
+        <View style={styles.fixedSection}>
+          <View style={styles.fixedHeader}>
+            <Text style={styles.discountLabel}>PRIX FIXE (personnalisé)</Text>
+            <TouchableOpacity
+              testID="toggle-fixed"
+              style={[styles.toggleBtn, useFixed && styles.toggleBtnActive]}
+              activeOpacity={0.7}
+              onPress={() => setUseFixed(!useFixed)}
+            >
+              <Text style={[styles.toggleText, useFixed && styles.toggleTextActive]}>
+                {useFixed ? '✓ Activé' : 'Utiliser'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.fixedInputRow}>
+            <TextInput
+              testID="fixed-price-input"
+              style={[styles.fixedInput, !useFixed && { opacity: 0.5 }]}
+              placeholder="Ex: 250"
+              placeholderTextColor="#A3A3A3"
+              keyboardType="decimal-pad"
+              value={fixedPrice}
+              onChangeText={setFixedPrice}
+              editable={useFixed}
+            />
+            <Text style={styles.fixedCurrency}>$</Text>
+          </View>
+          {useFixed && (
+            <Text style={styles.fixedHint}>Le prix fixe remplace le calcul par fenêtre</Text>
+          )}
+        </View>
+
         {/* Discount */}
         <View style={styles.discountSection}>
           <Text style={styles.discountLabel}>RABAIS</Text>
@@ -154,8 +191,8 @@ export default function EstimateScreen() {
           </View>
           <View style={styles.divider} />
           <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Sous-total</Text>
-            <Text style={styles.totalValue}>{subtotal.toFixed(2)} $</Text>
+            <Text style={styles.totalLabel}>{useFixed ? 'Prix fixe' : 'Sous-total'}</Text>
+            <Text style={styles.totalValue}>{baseTotal.toFixed(2)} $</Text>
           </View>
           {discount > 0 && (
             <>
@@ -194,17 +231,17 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E5E5', borderRadius: 8,
-    padding: 16, marginBottom: 12,
+    padding: 14, marginBottom: 12, gap: 8,
   },
-  rowInfo: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  typeName: { fontSize: 16, fontWeight: '600', color: '#0A0A0A' },
-  typePrice: { fontSize: 13, color: '#A3A3A3', marginTop: 2 },
-  counter: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  rowInfo: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 },
+  typeName: { fontSize: 14, fontWeight: '600', color: '#0A0A0A', flexShrink: 1 },
+  typePrice: { fontSize: 12, color: '#A3A3A3', marginTop: 2 },
+  counter: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 },
   counterBtn: {
-    width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: '#E5E5E5',
+    width: 32, height: 32, borderRadius: 16, borderWidth: 1, borderColor: '#E5E5E5',
     justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA',
   },
-  counterText: { fontSize: 20, fontWeight: '700', color: '#0A0A0A', minWidth: 30, textAlign: 'center' },
+  counterText: { fontSize: 18, fontWeight: '700', color: '#0A0A0A', minWidth: 24, textAlign: 'center' },
   discountSection: { marginTop: 8, marginBottom: 4 },
   discountLabel: { fontSize: 12, fontWeight: '600', color: '#737373', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 },
   discountRow: { flexDirection: 'row', gap: 8 },
@@ -239,4 +276,20 @@ const styles = StyleSheet.create({
     position: 'absolute', top: 4, right: 4, width: 24, height: 24, borderRadius: 12,
     backgroundColor: 'rgba(255,59,48,0.9)', justifyContent: 'center', alignItems: 'center',
   },
+  fixedSection: {
+    backgroundColor: '#FFF', borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: '#E5E5E5', marginBottom: 14,
+  },
+  fixedHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  toggleBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: '#0891B2' },
+  toggleBtnActive: { backgroundColor: '#0891B2' },
+  toggleText: { color: '#0891B2', fontSize: 12, fontWeight: '700' },
+  toggleTextActive: { color: '#FFF' },
+  fixedInputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  fixedInput: {
+    flex: 1, borderWidth: 1, borderColor: '#D4D4D4', borderRadius: 8,
+    paddingHorizontal: 12, paddingVertical: 10, fontSize: 18, fontWeight: '700', color: '#0A0A0A',
+  },
+  fixedCurrency: { fontSize: 22, fontWeight: '800', color: '#0891B2' },
+  fixedHint: { fontSize: 11, color: '#737373', marginTop: 6, fontStyle: 'italic' },
 });

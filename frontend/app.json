@@ -13,7 +13,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Prendre des photos pour vos estimations",
         "NSPhotoLibraryUsageDescription": "Joindre des photos à vos estimations",
-        "NSMicrophoneUsageDescription": "Enregistrer des notes vocales"
+        "NSMicrophoneUsageDescription": "Enregistrer des notes vocales",
+        "NSLocationWhenInUseUsageDescription": "Utiliser votre position pour remplir l'adresse"
       }
     },
     "android": {
@@ -22,7 +23,7 @@
         "backgroundColor": "#FAFAFA"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": ["CAMERA", "RECORD_AUDIO", "READ_EXTERNAL_STORAGE"]
+      "permissions": ["CAMERA", "RECORD_AUDIO", "READ_EXTERNAL_STORAGE", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
     },
     "web": {
       "bundler": "metro",
