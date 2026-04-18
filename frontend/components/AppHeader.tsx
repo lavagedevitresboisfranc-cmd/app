@@ -17,6 +17,7 @@ const menuItems = [
   { icon: 'dollar-sign' as const, label: 'Estimation', route: '/estimate' },
   { icon: 'users' as const, label: 'Employés', route: '/employees' },
   { icon: 'star' as const, label: 'Avis clients', route: '/reviews' },
+  { icon: 'send' as const, label: 'Campagnes', route: '/campaigns' },
   { icon: 'user' as const, label: 'Clients', route: '/client-history' },
 ];
 

@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#FAFAFA' },
   content: { padding: 24 },
   headerTitle: { fontSize: 32, fontWeight: '800', letterSpacing: -1, color: '#0A0A0A', marginBottom: 20 },
-  row: { flexDirection: 'row', gap: 10, marginBottom: 10 },
+  row: { flexDirection: 'column', gap: 10, marginBottom: 10 },
   statCard: {
     flex: 1, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E5E5',
     borderRadius: 8, padding: 16, alignItems: 'center', gap: 4,

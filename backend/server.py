@@ -546,6 +546,24 @@ async def get_employee_schedule(employee_id: str, date: Optional[str] = None):
     return [AppointmentResponse(**a) for a in appts]
 
 
+@api_router.get("/clients/emails")
+async def get_client_emails():
+    """Get unique client emails for email campaigns"""
+    cursor = db.appointments.find({"client_email": {"$nin": [None, ""]}}, {"_id": 0, "client_email": 1, "client_name": 1, "client_phone": 1, "date": 1})
+    seen = {}
+    async for doc in cursor:
+        email = (doc.get("client_email") or "").strip().lower()
+        if not email or email in seen:
+            continue
+        seen[email] = {
+            "email": doc.get("client_email"),
+            "name": doc.get("client_name", ""),
+            "phone": doc.get("client_phone", ""),
+            "last_visit": doc.get("date", ""),
+        }
+    return list(seen.values())
+
+
 # --- Invoice PDF ---
 
 @api_router.get("/invoice/{appointment_id}")
@@ -559,6 +577,23 @@ async def generate_invoice(appointment_id: str):
     invoice_num = appointment_id[:8].upper()
     price = appt.get('price', 0)
     logo_url = os.environ.get('INVOICE_LOGO_URL', 'https://customer-assets.emergentagent.com/job_booking-hub-406/artifacts/kwu8xdcw_logo.jpg')
+
+    # Seasonal promo: 10% automne (sept-nov)
+    from datetime import datetime
+    try:
+        appt_date = datetime.strptime(appt.get('date', ''), '%Y-%m-%d')
+    except Exception:
+        appt_date = datetime.now()
+    is_autumn = 9 <= appt_date.month <= 11
+    promo_banner_html = ""
+    if is_autumn:
+        promo_banner_html = """
+<div style="background:linear-gradient(135deg,#F59E0B 0%,#DC2626 100%);color:#FFF;padding:14px 20px;border-radius:12px;margin:16px 0;text-align:center;box-shadow:0 4px 12px rgba(245,158,11,0.3);-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+  <div style="font-size:11px;letter-spacing:2px;font-weight:700;opacity:0.95;">🍂 PROMO AUTOMNE 🍂</div>
+  <div style="font-size:22px;font-weight:800;margin-top:4px;">-10% sur votre prochain lavage</div>
+  <div style="font-size:11px;margin-top:6px;opacity:0.95;">Valide jusqu'au 30 novembre • Mentionnez ce code: AUTOMNE10</div>
+</div>
+"""
 
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>Facture {invoice_num}</title>
@@ -663,6 +698,8 @@ body{{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;max-width:780px;mar
 </table>
 
 {"<div class='notes-card card'><div class='card-title'>📝 Notes</div><p>" + appt.get('notes','') + "</p></div>" if appt.get('notes') else ""}
+
+{promo_banner_html}
 
 <div class="thankyou">
   <h3>Merci pour votre confiance! 💙</h3>
