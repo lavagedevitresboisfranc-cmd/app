@@ -184,6 +184,23 @@ export default function DetailScreen() {
     }
   };
 
+  // Native share (opens iOS share sheet with AirDrop, WhatsApp, etc.)
+  const handleAirDrop = async () => {
+    if (!appointment) return;
+    try {
+      const res = await fetch(`${API_URL}/api/share/appointment/${appointment.id}`);
+      const data = await res.json();
+      const invoiceUrl = `${API_URL}/api/invoice/${appointment.id}`;
+      await Share.share({
+        message: `${data.text}\n\n📄 Facture: ${invoiceUrl}`,
+        url: invoiceUrl, // iOS uses this for AirDrop link preview
+        title: `Facture — ${appointment.title || 'Service'}`,
+      });
+    } catch (e) {
+      Alert.alert('Erreur', 'Impossible de partager');
+    }
+  };
+
   const handleReviewRequest = async () => {
     if (!appointment) return;
     const phone = (appointment.client_phone || '').replace(/\D/g, '');
@@ -514,6 +531,15 @@ export default function DetailScreen() {
             >
               <Feather name="repeat" size={18} color="#0891B2" />
               <Text style={[styles.actionBtnText, { color: '#0891B2' }]}>Récurrence</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="airdrop-button"
+              style={[styles.actionBtn, { borderColor: '#000000', backgroundColor: '#F5F5F7' }]}
+              activeOpacity={0.7}
+              onPress={handleAirDrop}
+            >
+              <Feather name="send" size={18} color="#000000" />
+              <Text style={[styles.actionBtnText, { color: '#000000' }]}>AirDrop</Text>
             </TouchableOpacity>
             <TouchableOpacity
               testID="invoice-button"

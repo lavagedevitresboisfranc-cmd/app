@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Image, TextInput } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Image, TextInput, Linking, Platform, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -125,6 +125,87 @@ export default function EstimateScreen() {
     }
     setEditingPriceKey(null);
     setPriceEditValue('');
+  };
+
+  // Build estimate text
+  const buildEstimateText = () => {
+    const lines: string[] = ['📋 ESTIMATION — Lavage de Vitres Bois-Franc', ''];
+    if (!useFixed) {
+      const breakdown = WINDOW_TYPES.filter(t => (counts[t.key] || 0) > 0);
+      if (breakdown.length > 0) {
+        lines.push('Détail:');
+        breakdown.forEach(t => {
+          const c = counts[t.key] || 0;
+          const p = prices[t.key] || 0;
+          lines.push(`  • ${t.label} : ${c} × ${p.toFixed(2)} $ = ${(c * p).toFixed(2)} $`);
+        });
+        lines.push('');
+      }
+      lines.push(`Sous-total: ${subtotal.toFixed(2)} $`);
+    } else {
+      lines.push(`Prix forfaitaire: ${fixedValue.toFixed(2)} $`);
+    }
+    if (discount > 0) {
+      lines.push(`Rabais (${discount}%): -${discountAmount.toFixed(2)} $`);
+    }
+    lines.push('');
+    lines.push(`💰 TOTAL: ${totalPrice.toFixed(2)} $`);
+    lines.push('');
+    lines.push('📞 514-570-9802');
+    lines.push('✉ lavagedevitreboisfranc@live.com');
+    lines.push('🌐 Lavagedevitre.org');
+    return lines.join('\n');
+  };
+
+  const sendByEmail = async () => {
+    Alert.prompt(
+      'Envoyer par courriel',
+      'Adresse courriel du client :',
+      async (email) => {
+        if (!email || !email.trim()) return;
+        const subject = `Estimation — Lavage de vitres`;
+        const body = buildEstimateText();
+        const url = `mailto:${email.trim()}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        try {
+          const can = await Linking.canOpenURL(url);
+          if (can) { await Linking.openURL(url); }
+          else { Alert.alert('Erreur', 'Aucune app courriel disponible'); }
+        } catch { Alert.alert('Erreur', 'Impossible d\'ouvrir l\'app courriel'); }
+      },
+      'plain-text'
+    );
+  };
+
+  const sendBySMS = async () => {
+    Alert.prompt(
+      'Envoyer par SMS',
+      'Numéro de téléphone du client :',
+      async (phone) => {
+        if (!phone) return;
+        const cleaned = phone.replace(/\D/g, '');
+        if (!cleaned) return;
+        const body = buildEstimateText();
+        const sep = Platform.OS === 'ios' ? '&' : '?';
+        const url = `sms:${cleaned}${sep}body=${encodeURIComponent(body)}`;
+        try {
+          const can = await Linking.canOpenURL(url);
+          if (can) { await Linking.openURL(url); }
+          else { Alert.alert('Erreur', 'SMS non supporté sur cet appareil'); }
+        } catch { Alert.alert('Erreur', 'Impossible d\'ouvrir SMS'); }
+      },
+      'plain-text',
+      '',
+      'phone-pad'
+    );
+  };
+
+  const shareEstimate = async () => {
+    try {
+      await Share.share({
+        message: buildEstimateText(),
+        title: 'Estimation — Lavage de vitres',
+      });
+    } catch { Alert.alert('Erreur', 'Impossible de partager'); }
   };
 
   return (
@@ -306,6 +387,23 @@ export default function EstimateScreen() {
           </View>
         </View>
 
+        {/* Send actions */}
+        <Text style={styles.sendLabel}>ENVOYER L'ESTIMATION</Text>
+        <View style={styles.sendRow}>
+          <TouchableOpacity testID="send-email" style={[styles.sendBtn, { borderColor: '#059669' }]} activeOpacity={0.7} onPress={sendByEmail}>
+            <Feather name="mail" size={20} color="#059669" />
+            <Text style={[styles.sendBtnText, { color: '#059669' }]}>Courriel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity testID="send-sms" style={[styles.sendBtn, { borderColor: '#0891B2' }]} activeOpacity={0.7} onPress={sendBySMS}>
+            <Feather name="message-circle" size={20} color="#0891B2" />
+            <Text style={[styles.sendBtnText, { color: '#0891B2' }]}>SMS</Text>
+          </TouchableOpacity>
+          <TouchableOpacity testID="send-share" style={[styles.sendBtn, { borderColor: '#7C3AED' }]} activeOpacity={0.7} onPress={shareEstimate}>
+            <Feather name="share-2" size={20} color="#7C3AED" />
+            <Text style={[styles.sendBtnText, { color: '#7C3AED' }]}>Partager</Text>
+          </TouchableOpacity>
+        </View>
+
         <TouchableOpacity
           testID="use-estimate"
           style={styles.useBtn}
@@ -379,6 +477,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#0A0A0A', borderRadius: 8, paddingVertical: 16, gap: 8, marginTop: 16,
   },
   useBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
+  sendLabel: {
+    fontSize: 12, fontWeight: '700', color: '#737373',
+    textTransform: 'uppercase', letterSpacing: 1,
+    marginTop: 20, marginBottom: 10,
+  },
+  sendRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  sendBtn: {
+    flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 14, borderRadius: 10, borderWidth: 1.5, backgroundColor: '#FFFFFF',
+  },
+  sendBtnText: { fontSize: 13, fontWeight: '700' },
   photoSection: { marginTop: 8, marginBottom: 16 },
   photoLabel: { fontSize: 12, fontWeight: '600', color: '#737373', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 },
   photoActions: { flexDirection: 'row', gap: 10 },
