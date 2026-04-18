@@ -112,6 +112,8 @@ export default function CalendarScreen() {
   const [allItems, setAllItems] = useState<CalendarItem[]>([]);
   const [isOffline, setIsOffline] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [prevPendingCount, setPrevPendingCount] = useState(0);
 
   const menuItems = [
     { icon: 'calendar' as const, label: 'Calendrier', route: '/' },
@@ -299,9 +301,30 @@ export default function CalendarScreen() {
     }
   }, []);
 
+  // Fetch pending requests count for badge
+  const fetchPendingCount = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/requests?status=pending`);
+      if (res.ok) {
+        const data = await res.json();
+        const count = Array.isArray(data) ? data.length : 0;
+        setPendingCount((prev) => {
+          if (count > prev && prev > 0) {
+            // New request arrived while app is open
+            if (typeof window !== 'undefined' && (window as any).navigator?.vibrate) {
+              (window as any).navigator.vibrate(200);
+            }
+          }
+          return count;
+        });
+      }
+    } catch {}
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       fetchAllItems();
+      fetchPendingCount();
       if (viewMode === 'today') {
         fetchDayItems(today);
       } else if (viewMode === 'week') {
@@ -310,6 +333,11 @@ export default function CalendarScreen() {
         fetchDayItems(selectedDate);
         fetchMarkedDates(selectedDate);
       }
+      // Poll for new requests every 30 seconds
+      const interval = setInterval(() => {
+        fetchPendingCount();
+      }, 30000);
+      return () => clearInterval(interval);
     }, [viewMode, selectedDate, weekBase])
   );
 
@@ -470,8 +498,20 @@ export default function CalendarScreen() {
                   router.push(item.route as any);
                 }}
               >
-                <Feather name={item.icon} size={22} color="#0A0A0A" />
+                <View style={{ position: 'relative' }}>
+                  <Feather name={item.icon} size={22} color="#0A0A0A" />
+                  {item.route === '/requests' && pendingCount > 0 && (
+                    <View style={styles.menuItemBadge}>
+                      <Text style={styles.menuItemBadgeText}>{pendingCount > 99 ? '99+' : pendingCount}</Text>
+                    </View>
+                  )}
+                </View>
                 <Text style={styles.menuItemText}>{item.label}</Text>
+                {item.route === '/requests' && pendingCount > 0 && (
+                  <View style={styles.menuItemPill}>
+                    <Text style={styles.menuItemPillText}>{pendingCount} nouvelle{pendingCount > 1 ? 's' : ''}</Text>
+                  </View>
+                )}
               </TouchableOpacity>
             ))}
           </View>
@@ -482,6 +522,11 @@ export default function CalendarScreen() {
       <View style={styles.header}>
         <TouchableOpacity testID="hamburger-menu" onPress={() => setMenuOpen(true)} style={styles.hamburgerBtn} activeOpacity={0.7}>
           <Feather name="menu" size={24} color="#0A0A0A" />
+          {pendingCount > 0 && (
+            <View style={styles.hamburgerBadge}>
+              <Text style={styles.hamburgerBadgeText}>{pendingCount > 9 ? '9+' : pendingCount}</Text>
+            </View>
+          )}
         </TouchableOpacity>
         <View style={styles.logoRow}>
           <View style={styles.logoIcon}>
@@ -736,6 +781,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#F59E0B', paddingVertical: 6, paddingHorizontal: 12,
   },
   offlineText: { color: '#FFF', fontSize: 12, fontWeight: '700' },
+  hamburgerBadge: {
+    position: 'absolute', top: 4, right: 4,
+    minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4,
+    backgroundColor: '#FF3B30', justifyContent: 'center', alignItems: 'center',
+    borderWidth: 2, borderColor: '#FAFAFA',
+  },
+  hamburgerBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '800' },
+  menuItemBadge: {
+    position: 'absolute', top: -6, right: -8,
+    minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4,
+    backgroundColor: '#FF3B30', justifyContent: 'center', alignItems: 'center',
+  },
+  menuItemBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '800' },
+  menuItemPill: {
+    marginLeft: 'auto',
+    backgroundColor: '#FEE2E2', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,
+  },
+  menuItemPillText: { color: '#B91C1C', fontSize: 11, fontWeight: '700' },
   legendBar: {
     flexDirection: 'row',
     paddingHorizontal: 24,
