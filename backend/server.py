@@ -558,6 +558,7 @@ async def generate_invoice(appointment_id: str):
 
     invoice_num = appointment_id[:8].upper()
     price = appt.get('price', 0)
+    logo_url = os.environ.get('INVOICE_LOGO_URL', 'https://customer-assets.emergentagent.com/job_booking-hub-406/artifacts/kwu8xdcw_logo.jpg')
 
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>Facture {invoice_num}</title>
@@ -612,7 +613,7 @@ body{{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;max-width:780px;mar
 
 <div class="header">
   <div class="brand">
-    <img src="https://customer-assets.emergentagent.com/job_booking-hub-406/artifacts/kwu8xdcw_logo.jpg" alt="Logo" />
+    <img src="{logo_url}" alt="Logo" />
     <div class="brand-info">
       <div class="company-tagline">Lavage professionnel</div>
       <div class="company-name">Lavage de Vitres<br>Bois-Franc</div>
@@ -796,7 +797,8 @@ async def send_review_request(appointment_id: str):
     if not client_email:
         raise HTTPException(status_code=400, detail="Client n'a pas de courriel")
 
-    review_url = f"https://booking-hub-406.preview.emergentagent.com/api/review-page/{appointment_id}"
+    app_url = os.environ.get("APP_URL", "").rstrip("/")
+    review_url = f"{app_url}/api/review-page/{appointment_id}"
     html = f"""<div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:20px;">
     <h2 style="color:#0891B2;">Comment était votre expérience?</h2>
     <p>Bonjour {appt.get('client_name','')},</p>

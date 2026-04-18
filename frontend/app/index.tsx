@@ -10,7 +10,6 @@ import {
   SectionList,
   Modal,
   Pressable,
-  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Calendar } from 'react-native-calendars';
@@ -57,7 +56,7 @@ interface CalendarItem {
   status: string;
 }
 
-const LOGO_URL = 'https://customer-assets.emergentagent.com/job_booking-hub-406/artifacts/kwu8xdcw_logo.jpg';
+const LOGO_URL = process.env.EXPO_PUBLIC_LOGO_URL || '';
 
 type ViewMode = 'today' | 'week' | 'month';
 
