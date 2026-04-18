@@ -109,6 +109,35 @@
             background: #A3A3A3;
             cursor: not-allowed;
         }
+        .type-toggle {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 28px;
+            background: #F5F5F5;
+            padding: 6px;
+            border-radius: 12px;
+        }
+        .toggle-btn {
+            flex: 1;
+            background: transparent;
+            border: none;
+            padding: 12px 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+        .toggle-btn.active {
+            background: #FFFFFF;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+        }
+        .toggle-icon { font-size: 22px; }
+        .toggle-label { font-size: 13px; font-weight: 600; color: #404040; }
+        .toggle-btn.active .toggle-label { color: #0891B2; }
         .success-box {
             display: none;
             text-align: center;
@@ -166,8 +195,19 @@
     <div class="container">
         <!-- Form -->
         <div id="form-section">
-            <h1>Prendre Rendez-vous</h1>
-            <p class="subtitle">Remplissez le formulaire ci-dessous et nous vous contacterons rapidement.</p>
+            <h1 id="form-title">Prendre Rendez-vous</h1>
+            <p class="subtitle" id="form-subtitle">Remplissez le formulaire ci-dessous et nous vous contacterons rapidement.</p>
+
+            <div class="type-toggle">
+              <button type="button" id="btn-rdv" class="toggle-btn active">
+                <span class="toggle-icon">📅</span>
+                <span class="toggle-label">Prendre RDV</span>
+              </button>
+              <button type="button" id="btn-est" class="toggle-btn">
+                <span class="toggle-icon">💰</span>
+                <span class="toggle-label">Estimation</span>
+              </button>
+            </div>
 
             <form id="booking-form">
                 <div class="field">
@@ -255,6 +295,32 @@
         // Get the base API URL - works both standalone and embedded
         const API_BASE = window.location.origin;
 
+        // Type toggle (RDV vs Estimation)
+        let currentType = 'rdv';
+        const btnRdv = document.getElementById('btn-rdv');
+        const btnEst = document.getElementById('btn-est');
+        const formTitle = document.getElementById('form-title');
+        const formSubtitle = document.getElementById('form-subtitle');
+        const submitBtn = document.getElementById('submit-btn');
+        function setType(type) {
+            currentType = type;
+            if (type === 'rdv') {
+                btnRdv.classList.add('active');
+                btnEst.classList.remove('active');
+                formTitle.textContent = 'Prendre Rendez-vous';
+                formSubtitle.textContent = 'Remplissez le formulaire et nous vous contacterons rapidement.';
+                submitBtn.textContent = 'Envoyer la demande de RDV';
+            } else {
+                btnEst.classList.add('active');
+                btnRdv.classList.remove('active');
+                formTitle.textContent = 'Demander une Estimation';
+                formSubtitle.textContent = 'Recevez un prix pour vos fenêtres. Remplissez le formulaire et nous vous enverrons une estimation rapidement.';
+                submitBtn.textContent = 'Demander une estimation';
+            }
+        }
+        btnRdv.onclick = () => setType('rdv');
+        btnEst.onclick = () => setType('est');
+
         // Form submit
         document.getElementById('booking-form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -275,7 +341,8 @@
                 customer_address: document.getElementById('address').value.trim(),
                 preferred_date: document.getElementById('date').value,
                 preferred_time: selectedTime,
-                message: ""
+                message: "",
+                request_type: currentType
             };
 
             try {

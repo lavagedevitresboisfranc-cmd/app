@@ -31,6 +31,7 @@ interface AppointmentRequest {
   suggested_time: string | null;
   suggested_note: string | null;
   created_at: string;
+  request_type?: string;
 }
 
 type FilterType = 'pending' | 'all' | 'alternative_offered' | 'accepted';
@@ -111,6 +112,14 @@ export default function RequestsScreen() {
     >
       <View style={styles.cardTop}>
         <View style={styles.cardInfo}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <View style={[styles.typeBadge, item.request_type === 'est' ? styles.typeEst : styles.typeRdv]}>
+              <Text style={{ fontSize: 11 }}>{item.request_type === 'est' ? '💰' : '📅'}</Text>
+              <Text style={[styles.typeBadgeText, { color: item.request_type === 'est' ? '#B45309' : '#0891B2' }]}>
+                {item.request_type === 'est' ? 'ESTIMATION' : 'RDV'}
+              </Text>
+            </View>
+          </View>
           <Text style={styles.cardName} numberOfLines={1}>{item.customer_name}</Text>
           <Text style={styles.cardEmail} numberOfLines={1}>{item.customer_email}</Text>
         </View>
@@ -313,6 +322,14 @@ const styles = StyleSheet.create({
     color: '#A3A3A3',
     marginTop: 2,
   },
+  typeBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,
+    alignSelf: 'flex-start',
+  },
+  typeRdv: { backgroundColor: '#F0F9FF', borderWidth: 1, borderColor: '#BAE6FD' },
+  typeEst: { backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#FDE68A' },
+  typeBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',

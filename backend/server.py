@@ -86,6 +86,7 @@ class RequestCreate(BaseModel):
     preferred_date: str  # YYYY-MM-DD
     preferred_time: str  # HH:MM
     message: Optional[str] = ""
+    request_type: Optional[str] = "rdv"  # 'rdv' or 'est'
 
 class RequestSuggest(BaseModel):
     suggested_date: str
@@ -106,6 +107,7 @@ class RequestResponse(BaseModel):
     suggested_time: Optional[str] = None
     suggested_note: Optional[str] = None
     created_at: str
+    request_type: Optional[str] = "rdv"
 
 
 # --- Voice Transcription ---
