@@ -24,12 +24,12 @@ const CAMPAIGNS = [
     icon: '🌷',
     label: 'Campagne Printemps',
     color: '#10B981',
-    subject: 'Offre spéciale Printemps — Lavage de vitres',
+    subject: 'Offre Printemps — Lavage de vitres',
     body: `Bonjour,
 
 Le printemps est arrivé! C'est le moment idéal pour redonner de l'éclat à vos fenêtres.
 
-🌷 OFFRE SPÉCIALE PRINTEMPS 🌷
+🌷 OFFRE PRINTEMPS 🌷
 10% de rabais sur votre lavage de vitres
 Code: PRINTEMPS10
 

@@ -18,6 +18,7 @@ const menuItems = [
   { icon: 'users' as const, label: 'Employés', route: '/employees' },
   { icon: 'star' as const, label: 'Avis clients', route: '/reviews' },
   { icon: 'send' as const, label: 'Campagnes', route: '/campaigns' },
+  { icon: 'cloud' as const, label: 'Sauvegarde', route: '/backup' },
   { icon: 'user' as const, label: 'Clients', route: '/client-history' },
 ];
 

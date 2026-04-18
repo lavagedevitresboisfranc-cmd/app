@@ -127,28 +127,14 @@ export default function EstimateScreen() {
     setPriceEditValue('');
   };
 
-  // Build estimate text
+  // Build estimate text (simplified: description + total only)
   const buildEstimateText = () => {
     const lines: string[] = ['📋 ESTIMATION — Lavage de Vitres Bois-Franc', ''];
-    if (!useFixed) {
-      const breakdown = WINDOW_TYPES.filter(t => (counts[t.key] || 0) > 0);
-      if (breakdown.length > 0) {
-        lines.push('Détail:');
-        breakdown.forEach(t => {
-          const c = counts[t.key] || 0;
-          const p = prices[t.key] || 0;
-          lines.push(`  • ${t.label} : ${c} × ${p.toFixed(2)} $ = ${(c * p).toFixed(2)} $`);
-        });
-        lines.push('');
-      }
-      lines.push(`Sous-total: ${subtotal.toFixed(2)} $`);
-    } else {
-      lines.push(`Prix forfaitaire: ${fixedValue.toFixed(2)} $`);
-    }
-    if (discount > 0) {
-      lines.push(`Rabais (${discount}%): -${discountAmount.toFixed(2)} $`);
-    }
+    lines.push('Lavage de vitres');
     lines.push('');
+    if (discount > 0) {
+      lines.push(`Rabais: -${discount}%`);
+    }
     lines.push(`💰 TOTAL: ${totalPrice.toFixed(2)} $`);
     lines.push('');
     lines.push('📞 514-570-9802');

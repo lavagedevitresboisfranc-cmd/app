@@ -546,6 +546,52 @@ async def get_employee_schedule(employee_id: str, date: Optional[str] = None):
     return [AppointmentResponse(**a) for a in appts]
 
 
+@api_router.get("/backup/export")
+async def export_backup():
+    """Export all data as JSON for backup"""
+    data = {
+        "exported_at": datetime.utcnow().isoformat() + "Z",
+        "version": 1,
+        "appointments": [],
+        "requests": [],
+        "employees": [],
+        "reviews": [],
+    }
+    async for d in db.appointments.find({}, {"_id": 0}):
+        data["appointments"].append(d)
+    async for d in db.appointment_requests.find({}, {"_id": 0}):
+        data["requests"].append(d)
+    async for d in db.employees.find({}, {"_id": 0}):
+        data["employees"].append(d)
+    async for d in db.reviews.find({}, {"_id": 0}):
+        data["reviews"].append(d)
+    return data
+
+
+@api_router.post("/backup/import")
+async def import_backup(body: dict):
+    """Import/restore data from a backup JSON. Upserts based on id field."""
+    results = {"appointments": 0, "requests": 0, "employees": 0, "reviews": 0}
+    for coll_key, coll_name in [
+        ("appointments", "appointments"),
+        ("requests", "appointment_requests"),
+        ("employees", "employees"),
+        ("reviews", "reviews"),
+    ]:
+        items = body.get(coll_key, [])
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            item_id = item.get("id")
+            if not item_id:
+                continue
+            await db[coll_name].update_one({"id": item_id}, {"$set": item}, upsert=True)
+            results[coll_key] += 1
+    return {"status": "ok", "imported": results}
+
+
 @api_router.get("/clients/emails")
 async def get_client_emails():
     """Get unique client emails for email campaigns"""
