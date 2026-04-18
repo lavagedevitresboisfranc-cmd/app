@@ -295,7 +295,9 @@
         // Get the base API URL - works both standalone and embedded
         const API_BASE = window.location.origin;
 
-        // Type toggle (RDV vs Estimation)
+        // Type toggle (RDV vs Estimation) — pre-selected from URL ?type=rdv or ?type=est
+        const urlParams = new URLSearchParams(window.location.search);
+        const initialType = urlParams.get('type') === 'est' ? 'est' : 'rdv';
         let currentType = 'rdv';
         const btnRdv = document.getElementById('btn-rdv');
         const btnEst = document.getElementById('btn-est');
@@ -320,6 +322,9 @@
         }
         btnRdv.onclick = () => setType('rdv');
         btnEst.onclick = () => setType('est');
+
+        // Apply initial type from URL (?type=est or ?type=rdv)
+        setType(initialType);
 
         // Form submit
         document.getElementById('booking-form').addEventListener('submit', async (e) => {
