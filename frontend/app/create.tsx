@@ -68,13 +68,13 @@ export default function CreateScreen() {
         setGettingLocation(false);
         return;
       }
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      // Approximate location (city/area level, not exact GPS)
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
       const places = await Location.reverseGeocodeAsync({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
       if (places && places.length > 0) {
         const p = places[0];
-        const parts = [
-          p.streetNumber, p.street, p.city, p.region, p.postalCode,
-        ].filter(Boolean).join(', ').replace(', ,', ',');
+        // Approximate: just city, region, postal code (no street number)
+        const parts = [p.city || p.subregion, p.region, p.postalCode].filter(Boolean).join(', ');
         setClientAddress(parts);
       } else {
         Alert.alert('Introuvable', 'Impossible de trouver votre adresse');

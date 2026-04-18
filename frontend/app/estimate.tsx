@@ -16,9 +16,17 @@ const WINDOW_TYPES = [
   { key: 'patio_double', label: 'Porte patio double', price: 60, icon: 'grid' as const },
 ];
 
+const DEFAULT_PRICES: Record<string, number> = WINDOW_TYPES.reduce((acc, t) => {
+  acc[t.key] = t.price;
+  return acc;
+}, {} as Record<string, number>);
+
 export default function EstimateScreen() {
   const router = useRouter();
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [prices, setPrices] = useState<Record<string, number>>(DEFAULT_PRICES);
+  const [editingPriceKey, setEditingPriceKey] = useState<string | null>(null);
+  const [priceEditValue, setPriceEditValue] = useState('');
   const [discount, setDiscount] = useState(0);
   const [photos, setPhotos] = useState<string[]>([]);
   const [fixedPrice, setFixedPrice] = useState('');
@@ -55,12 +63,25 @@ export default function EstimateScreen() {
   };
 
   const totalWindows = Object.values(counts).reduce((a, b) => a + b, 0);
-  const subtotal = WINDOW_TYPES.reduce((sum, t) => sum + (counts[t.key] || 0) * t.price, 0);
+  const subtotal = WINDOW_TYPES.reduce((sum, t) => sum + (counts[t.key] || 0) * (prices[t.key] || 0), 0);
   const fixedValue = parseFloat(fixedPrice) || 0;
   const baseTotal = useFixed ? fixedValue : subtotal;
   const discountAmount = baseTotal * (discount / 100);
   const totalPrice = baseTotal - discountAmount;
   const DISCOUNTS = [0, 10, 15, 20];
+
+  const startEditPrice = (key: string) => {
+    setEditingPriceKey(key);
+    setPriceEditValue(String(prices[key] || 0));
+  };
+  const savePrice = () => {
+    if (editingPriceKey) {
+      const val = parseFloat(priceEditValue) || 0;
+      setPrices(prev => ({ ...prev, [editingPriceKey]: val }));
+    }
+    setEditingPriceKey(null);
+    setPriceEditValue('');
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} testID="estimate-screen">
@@ -74,7 +95,31 @@ export default function EstimateScreen() {
               <Feather name={type.icon} size={20} color="#0891B2" />
               <View style={{ flexShrink: 1, flex: 1 }}>
                 <Text style={styles.typeName} numberOfLines={2}>{type.label}</Text>
-                <Text style={styles.typePrice}>{type.price.toFixed(2)} $ / fenêtre</Text>
+                {editingPriceKey === type.key ? (
+                  <View style={styles.priceEditRow}>
+                    <TextInput
+                      testID={`price-edit-${type.key}`}
+                      style={styles.priceEditInput}
+                      value={priceEditValue}
+                      onChangeText={setPriceEditValue}
+                      keyboardType="decimal-pad"
+                      autoFocus
+                      onBlur={savePrice}
+                      onSubmitEditing={savePrice}
+                    />
+                    <Text style={styles.priceEditSuffix}>$</Text>
+                    <TouchableOpacity onPress={savePrice} style={styles.priceOkBtn}>
+                      <Feather name="check" size={14} color="#FFF" />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity onPress={() => startEditPrice(type.key)} activeOpacity={0.6}>
+                    <Text style={styles.typePriceEditable}>
+                      {(prices[type.key] || 0).toFixed(2)} $ / fenêtre
+                      <Text style={styles.editHint}>  ✎</Text>
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
             <View style={styles.counter}>
@@ -236,6 +281,19 @@ const styles = StyleSheet.create({
   rowInfo: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 },
   typeName: { fontSize: 14, fontWeight: '600', color: '#0A0A0A', flexShrink: 1 },
   typePrice: { fontSize: 12, color: '#A3A3A3', marginTop: 2 },
+  typePriceEditable: { fontSize: 12, color: '#0891B2', marginTop: 2, fontWeight: '600', textDecorationLine: 'underline' },
+  editHint: { fontSize: 11, color: '#A3A3A3', fontWeight: '400' },
+  priceEditRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  priceEditInput: {
+    borderWidth: 1, borderColor: '#0891B2', borderRadius: 6,
+    paddingHorizontal: 6, paddingVertical: 4, fontSize: 13, fontWeight: '700',
+    color: '#0A0A0A', minWidth: 50, maxWidth: 80,
+  },
+  priceEditSuffix: { fontSize: 13, fontWeight: '700', color: '#0891B2' },
+  priceOkBtn: {
+    width: 24, height: 24, borderRadius: 12, backgroundColor: '#0891B2',
+    justifyContent: 'center', alignItems: 'center', marginLeft: 4,
+  },
   counter: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 },
   counterBtn: {
     width: 32, height: 32, borderRadius: 16, borderWidth: 1, borderColor: '#E5E5E5',
