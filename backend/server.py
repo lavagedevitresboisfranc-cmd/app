@@ -545,6 +545,225 @@ async def get_client_history(client_name: str):
     return [AppointmentResponse(**a) for a in appointments]
 
 
+# ============================================================
+# CLIENTS DATABASE (Phase 1) — Dedicated clients collection
+# ============================================================
+
+class ClientCreate(BaseModel):
+    name: str
+    email: Optional[str] = ""
+    phone: Optional[str] = ""
+    address: Optional[str] = ""
+    notes: Optional[str] = ""
+    tags: Optional[List[str]] = []
+
+class ClientUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    notes: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+class ClientResponse(BaseModel):
+    id: str
+    name: str
+    email: str
+    phone: str
+    address: str
+    notes: str
+    tags: List[str]
+    created_at: str
+    updated_at: str
+
+class ClientMatchRequest(BaseModel):
+    email: Optional[str] = ""
+    phone: Optional[str] = ""
+    name: Optional[str] = ""
+
+
+def _normalize_email(email: Optional[str]) -> str:
+    return (email or "").strip().lower()
+
+
+def _normalize_phone(phone: Optional[str]) -> str:
+    """Keep only digits for matching"""
+    import re
+    return re.sub(r"\D", "", phone or "")
+
+
+def _client_to_response(c: dict) -> dict:
+    return {
+        "id": c.get("id", ""),
+        "name": c.get("name", ""),
+        "email": c.get("email", ""),
+        "phone": c.get("phone", ""),
+        "address": c.get("address", ""),
+        "notes": c.get("notes", ""),
+        "tags": c.get("tags", []) or [],
+        "created_at": c.get("created_at", ""),
+        "updated_at": c.get("updated_at", ""),
+    }
+
+
+@api_router.post("/clients-db", response_model=ClientResponse)
+async def create_client_db(data: ClientCreate):
+    """Create a new stored client"""
+    email_norm = _normalize_email(data.email)
+    phone_norm = _normalize_phone(data.phone)
+
+    # Check for duplicates by email (if present) or phone
+    if email_norm:
+        existing = await db.clients.find_one({"email_norm": email_norm})
+        if existing:
+            raise HTTPException(status_code=409, detail=f"Client avec ce courriel existe déjà: {existing.get('name')}")
+    elif phone_norm:
+        existing = await db.clients.find_one({"phone_norm": phone_norm})
+        if existing:
+            raise HTTPException(status_code=409, detail=f"Client avec ce téléphone existe déjà: {existing.get('name')}")
+
+    now = datetime.now(timezone.utc).isoformat()
+    client_doc = {
+        "id": str(uuid.uuid4()),
+        "name": (data.name or "").strip(),
+        "email": (data.email or "").strip(),
+        "email_norm": email_norm,
+        "phone": (data.phone or "").strip(),
+        "phone_norm": phone_norm,
+        "address": (data.address or "").strip(),
+        "notes": (data.notes or "").strip(),
+        "tags": data.tags or [],
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.clients.insert_one(client_doc)
+    return ClientResponse(**_client_to_response(client_doc))
+
+
+@api_router.get("/clients-db", response_model=List[ClientResponse])
+async def list_clients_db(search: Optional[str] = None, limit: int = 500):
+    """List all stored clients with optional search by name/email/phone"""
+    query = {}
+    if search:
+        search_trim = search.strip()
+        query = {
+            "$or": [
+                {"name": {"$regex": search_trim, "$options": "i"}},
+                {"email": {"$regex": search_trim, "$options": "i"}},
+                {"phone": {"$regex": search_trim, "$options": "i"}},
+                {"address": {"$regex": search_trim, "$options": "i"}},
+            ]
+        }
+    cursor = db.clients.find(query, {"_id": 0}).sort("name", 1).limit(max(1, min(limit, 2000)))
+    items = await cursor.to_list(2000)
+    return [ClientResponse(**_client_to_response(c)) for c in items]
+
+
+@api_router.get("/clients-db/count")
+async def count_clients_db():
+    """Total count of stored clients"""
+    count = await db.clients.count_documents({})
+    return {"count": count}
+
+
+@api_router.post("/clients-db/match")
+async def match_client_db(data: ClientMatchRequest):
+    """Find an existing client by email, phone, or name. Priority: email > phone > name."""
+    email_norm = _normalize_email(data.email)
+    phone_norm = _normalize_phone(data.phone)
+
+    if email_norm:
+        c = await db.clients.find_one({"email_norm": email_norm}, {"_id": 0})
+        if c:
+            return {"matched": True, "by": "email", "client": _client_to_response(c)}
+
+    if phone_norm:
+        c = await db.clients.find_one({"phone_norm": phone_norm}, {"_id": 0})
+        if c:
+            return {"matched": True, "by": "phone", "client": _client_to_response(c)}
+
+    if data.name:
+        c = await db.clients.find_one(
+            {"name": {"$regex": f"^{data.name.strip()}$", "$options": "i"}}, {"_id": 0}
+        )
+        if c:
+            return {"matched": True, "by": "name", "client": _client_to_response(c)}
+
+    return {"matched": False, "by": None, "client": None}
+
+
+@api_router.get("/clients-db/{client_id}", response_model=ClientResponse)
+async def get_client_db(client_id: str):
+    """Get a single stored client by id"""
+    c = await db.clients.find_one({"id": client_id}, {"_id": 0})
+    if not c:
+        raise HTTPException(status_code=404, detail="Client introuvable")
+    return ClientResponse(**_client_to_response(c))
+
+
+@api_router.put("/clients-db/{client_id}", response_model=ClientResponse)
+async def update_client_db(client_id: str, data: ClientUpdate):
+    """Update a stored client"""
+    c = await db.clients.find_one({"id": client_id})
+    if not c:
+        raise HTTPException(status_code=404, detail="Client introuvable")
+
+    update_fields = {}
+    for field in ["name", "email", "phone", "address", "notes", "tags"]:
+        val = getattr(data, field, None)
+        if val is not None:
+            update_fields[field] = val
+
+    if "email" in update_fields:
+        update_fields["email_norm"] = _normalize_email(update_fields["email"])
+    if "phone" in update_fields:
+        update_fields["phone_norm"] = _normalize_phone(update_fields["phone"])
+
+    update_fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    await db.clients.update_one({"id": client_id}, {"$set": update_fields})
+    updated = await db.clients.find_one({"id": client_id}, {"_id": 0})
+    return ClientResponse(**_client_to_response(updated))
+
+
+@api_router.delete("/clients-db/{client_id}")
+async def delete_client_db(client_id: str):
+    """Delete a stored client"""
+    res = await db.clients.delete_one({"id": client_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Client introuvable")
+    return {"message": "Client supprimé", "id": client_id}
+
+
+@api_router.get("/clients-db/{client_id}/history")
+async def get_client_db_history(client_id: str):
+    """Get all appointments and requests linked to this stored client"""
+    c = await db.clients.find_one({"id": client_id}, {"_id": 0})
+    if not c:
+        raise HTTPException(status_code=404, detail="Client introuvable")
+
+    # Match appointments by email or phone or name
+    conditions = []
+    if c.get("email"):
+        conditions.append({"client_email": {"$regex": f"^{c['email']}$", "$options": "i"}})
+    if c.get("phone"):
+        # Normalize both sides
+        phone_digits = c.get("phone_norm", "")
+        if phone_digits:
+            conditions.append({"client_phone": {"$regex": phone_digits[-7:]}})
+    if c.get("name"):
+        conditions.append({"client_name": {"$regex": f"^{c['name']}$", "$options": "i"}})
+
+    query = {"$or": conditions} if conditions else {"_id": "never_matches"}
+    appointments = await db.appointments.find(query, {"_id": 0}).sort("date", -1).to_list(500)
+    return {
+        "client": _client_to_response(c),
+        "appointments": [AppointmentResponse(**a) for a in appointments],
+        "total": len(appointments),
+    }
+
+
+
 @api_router.post("/requests/seed")
 
 
