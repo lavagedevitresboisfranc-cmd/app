@@ -162,6 +162,17 @@ async def booking_page():
     return HTMLResponse(content=content)
 
 
+@api_router.get("/client-signup", response_class=HTMLResponse)
+async def client_signup_page():
+    """Public signup form - embed on website to collect clients into the database"""
+    html_path = ROOT_DIR / "client-signup.html"
+    content = html_path.read_text()
+    app_url = os.environ.get("APP_URL", "").rstrip("/")
+    if app_url:
+        content = content.replace("window.location.origin", f'"{app_url}"')
+    return HTMLResponse(content=content)
+
+
 @api_router.get("/booking-qr")
 async def booking_qr_code():
     """Generate a QR code pointing to the booking page"""
@@ -761,6 +772,275 @@ async def get_client_db_history(client_id: str):
         "appointments": [AppointmentResponse(**a) for a in appointments],
         "total": len(appointments),
     }
+
+# ============================================================
+# CLIENTS: Public Subscribe + CSV/XLSX Import
+# ============================================================
+
+class ClientSubscribe(BaseModel):
+    name: str
+    email: Optional[str] = ""
+    phone: Optional[str] = ""
+    address: Optional[str] = ""
+    notes: Optional[str] = ""
+    source: Optional[str] = "web"
+
+
+@api_router.post("/clients-db/subscribe")
+async def subscribe_client(data: ClientSubscribe):
+    """Public endpoint used by the 'Add me to the client list' form on the website.
+    Creates new client OR updates existing one if email/phone matches. Always returns 200."""
+    email_norm = _normalize_email(data.email)
+    phone_norm = _normalize_phone(data.phone)
+
+    # Try to find existing
+    existing = None
+    if email_norm:
+        existing = await db.clients.find_one({"email_norm": email_norm})
+    if not existing and phone_norm:
+        existing = await db.clients.find_one({"phone_norm": phone_norm})
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    if existing:
+        # Update non-empty fields only
+        update_fields = {"updated_at": now}
+        for src_k, dst_k in [("name", "name"), ("email", "email"), ("phone", "phone"),
+                             ("address", "address"), ("notes", "notes")]:
+            val = getattr(data, src_k, None)
+            if val and val.strip():
+                update_fields[dst_k] = val.strip()
+        if email_norm:
+            update_fields["email_norm"] = email_norm
+        if phone_norm:
+            update_fields["phone_norm"] = phone_norm
+
+        # Append source tag
+        tags = existing.get("tags", []) or []
+        if data.source and data.source not in tags:
+            tags.append(data.source)
+            update_fields["tags"] = tags
+
+        await db.clients.update_one({"id": existing["id"]}, {"$set": update_fields})
+        updated = await db.clients.find_one({"id": existing["id"]}, {"_id": 0})
+        logger.info(f"Subscribe: updated existing client {updated.get('name')} ({updated.get('email')})")
+        return {"status": "updated", "client": _client_to_response(updated)}
+
+    # Create new
+    client_doc = {
+        "id": str(uuid.uuid4()),
+        "name": (data.name or "").strip(),
+        "email": (data.email or "").strip(),
+        "email_norm": email_norm,
+        "phone": (data.phone or "").strip(),
+        "phone_norm": phone_norm,
+        "address": (data.address or "").strip(),
+        "notes": (data.notes or "").strip(),
+        "tags": [data.source] if data.source else [],
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.clients.insert_one(client_doc)
+    logger.info(f"Subscribe: new client {client_doc['name']} ({client_doc['email']}) via {data.source}")
+    return {"status": "created", "client": _client_to_response(client_doc)}
+
+
+@api_router.post("/clients-db/import")
+async def import_clients(file: UploadFile = File(...)):
+    """Bulk import clients from CSV or XLSX. Auto-detects columns in FR or EN.
+    Dedupes by email (preferred) or phone. Returns a detailed report."""
+    import pandas as pd
+    import io
+    import re as _re
+
+    try:
+        content = await file.read()
+        filename = (file.filename or "").lower()
+
+        # Parse according to extension
+        if filename.endswith(".xlsx") or filename.endswith(".xls"):
+            df = pd.read_excel(io.BytesIO(content))
+        else:
+            # Try utf-8, fallback to latin-1
+            try:
+                df = pd.read_csv(io.BytesIO(content), encoding="utf-8")
+            except Exception:
+                df = pd.read_csv(io.BytesIO(content), encoding="latin-1")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Fichier illisible: {str(e)}")
+
+    if df.empty:
+        raise HTTPException(status_code=400, detail="Fichier vide")
+
+    # Normalize column names
+    def norm_col(c):
+        return _re.sub(r"[^a-z0-9]", "", str(c).lower().strip())
+
+    cols = {norm_col(c): c for c in df.columns}
+
+    # Column mappings (priority order)
+    col_name = next((cols[k] for k in ["nom", "name", "nomcomplet", "fullname", "clientname"] if k in cols), None)
+    col_first = next((cols[k] for k in ["prenom", "firstname", "namefirst", "first"] if k in cols), None)
+    col_last = next((cols[k] for k in ["nomfamille", "lastname", "namelast", "last", "surname"] if k in cols), None)
+    col_email = next((cols[k] for k in ["courriel", "email", "mail", "courrier"] if k in cols), None)
+    col_phone = next((cols[k] for k in ["telephone", "phone", "tel", "mobile", "cellulaire"] if k in cols), None)
+    col_address = next((cols[k] for k in ["adresse", "address", "addr", "rue"] if k in cols), None)
+    col_notes = next((cols[k] for k in ["notes", "note", "remarques", "comment"] if k in cols), None)
+
+    if not (col_name or col_first or col_last or col_email):
+        detected = list(cols.values())
+        raise HTTPException(
+            status_code=400,
+            detail=f"Colonnes requises introuvables. Colonnes détectées: {detected}. "
+                   f"Requis: au moins une colonne Nom, Prénom, Nom de famille, ou Courriel."
+        )
+
+    created = 0
+    updated = 0
+    skipped = 0
+    errors: List[str] = []
+    seen_emails = set()
+    seen_phones = set()
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    for idx, row in df.iterrows():
+        try:
+            # Build name
+            if col_name:
+                name = str(row[col_name]) if pd.notna(row[col_name]) else ""
+            else:
+                first = str(row[col_first]) if col_first and pd.notna(row[col_first]) else ""
+                last = str(row[col_last]) if col_last and pd.notna(row[col_last]) else ""
+                name = f"{first.strip()} {last.strip()}".strip()
+
+            email = str(row[col_email]) if col_email and pd.notna(row[col_email]) else ""
+            phone = str(row[col_phone]) if col_phone and pd.notna(row[col_phone]) else ""
+            address = str(row[col_address]) if col_address and pd.notna(row[col_address]) else ""
+            notes = str(row[col_notes]) if col_notes and pd.notna(row[col_notes]) else ""
+
+            # Clean up "nan" strings from pandas
+            def clean(s):
+                if not s or str(s).strip().lower() in ("nan", "none", "null"):
+                    return ""
+                return str(s).strip()
+
+            name = clean(name)
+            email = clean(email)
+            phone = clean(phone)
+            address = clean(address)
+            notes = clean(notes)
+
+            if not name and not email and not phone:
+                skipped += 1
+                continue
+
+            email_norm = _normalize_email(email)
+            phone_norm = _normalize_phone(phone)
+
+            # Dedup within import batch
+            if email_norm and email_norm in seen_emails:
+                skipped += 1
+                continue
+            if phone_norm and not email_norm and phone_norm in seen_phones:
+                skipped += 1
+                continue
+            if email_norm:
+                seen_emails.add(email_norm)
+            if phone_norm:
+                seen_phones.add(phone_norm)
+
+            # Dedup against DB
+            existing = None
+            if email_norm:
+                existing = await db.clients.find_one({"email_norm": email_norm})
+            if not existing and phone_norm:
+                existing = await db.clients.find_one({"phone_norm": phone_norm})
+
+            if existing:
+                # Merge non-empty fields into existing
+                update_fields = {"updated_at": now}
+                for field, val in [("name", name), ("email", email), ("phone", phone),
+                                   ("address", address), ("notes", notes)]:
+                    if val and not existing.get(field):
+                        update_fields[field] = val
+                if email_norm and not existing.get("email_norm"):
+                    update_fields["email_norm"] = email_norm
+                if phone_norm and not existing.get("phone_norm"):
+                    update_fields["phone_norm"] = phone_norm
+
+                tags = existing.get("tags", []) or []
+                if "import" not in tags:
+                    tags.append("import")
+                    update_fields["tags"] = tags
+
+                await db.clients.update_one({"id": existing["id"]}, {"$set": update_fields})
+                updated += 1
+            else:
+                client_doc = {
+                    "id": str(uuid.uuid4()),
+                    "name": name,
+                    "email": email,
+                    "email_norm": email_norm,
+                    "phone": phone,
+                    "phone_norm": phone_norm,
+                    "address": address,
+                    "notes": notes,
+                    "tags": ["import"],
+                    "created_at": now,
+                    "updated_at": now,
+                }
+                await db.clients.insert_one(client_doc)
+                created += 1
+
+        except Exception as e:
+            errors.append(f"Ligne {idx + 2}: {str(e)}")
+
+    total = len(df)
+    logger.info(f"Import: {created} créés, {updated} mis à jour, {skipped} ignorés, {len(errors)} erreurs (sur {total})")
+
+    return {
+        "total_rows": total,
+        "created": created,
+        "updated": updated,
+        "skipped_duplicates": skipped,
+        "errors_count": len(errors),
+        "errors": errors[:20],  # limit sample
+        "message": f"Import terminé: {created} créés, {updated} mis à jour, {skipped} doublons ignorés."
+    }
+
+
+@api_router.get("/clients-db/export/csv")
+async def export_clients_csv():
+    """Export all clients as CSV"""
+    from fastapi.responses import StreamingResponse
+    import csv
+    import io
+
+    clients_list = await db.clients.find({}, {"_id": 0}).sort("name", 1).to_list(5000)
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Nom", "Courriel", "Téléphone", "Adresse", "Notes", "Tags", "Date création"])
+    for c in clients_list:
+        writer.writerow([
+            c.get("name", ""),
+            c.get("email", ""),
+            c.get("phone", ""),
+            c.get("address", ""),
+            c.get("notes", ""),
+            ", ".join(c.get("tags", []) or []),
+            c.get("created_at", ""),
+        ])
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=clients_brightcalendar.csv"}
+    )
+
+
 
 
 
