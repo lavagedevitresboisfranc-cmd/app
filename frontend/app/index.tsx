@@ -10,12 +10,16 @@ import {
   SectionList,
   Modal,
   Pressable,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Calendar } from 'react-native-calendars';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useTranslation } from 'react-i18next';
+import { Flag } from '../components/Flag';
+import { saveLanguage, SUPPORTED_LANGUAGES } from '../src/i18n';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 const CACHE_KEY_ALL = 'brightcalendar_cache_all';
@@ -99,6 +103,8 @@ const formatWeekRange = (days: string[]) => {
 
 export default function CalendarScreen() {
   const router = useRouter();
+  const { t, i18n } = useTranslation();
+  const currentLang = i18n.language || 'fr';
   const today = new Date().toISOString().split('T')[0];
   const [viewMode, setViewMode] = useState<ViewMode>('today');
   const [selectedDate, setSelectedDate] = useState(today);
@@ -114,19 +120,50 @@ export default function CalendarScreen() {
   const [pendingCount, setPendingCount] = useState(0);
   const [prevPendingCount, setPrevPendingCount] = useState(0);
 
-  const menuItems = [
-    { icon: 'calendar' as const, label: 'Calendrier', route: '/' },
-    { icon: 'list' as const, label: 'Tous les RDV', route: '/appointments' },
-    { icon: 'plus-circle' as const, label: 'Nouveau RDV', route: '/create' },
-    { icon: 'inbox' as const, label: 'Demandes', route: '/requests' },
-    { icon: 'grid' as const, label: 'QR Code client', route: '/qr' },
-    { icon: 'bar-chart-2' as const, label: 'Statistiques', route: '/stats' },
-    { icon: 'dollar-sign' as const, label: 'Estimation', route: '/estimate' },
-    { icon: 'users' as const, label: 'Employés', route: '/employees' },
-    { icon: 'star' as const, label: 'Avis clients', route: '/reviews' },
-    { icon: 'send' as const, label: 'Campagnes', route: '/campaigns' },
-    { icon: 'cloud' as const, label: 'Sauvegarde', route: '/backup' },
-    { icon: 'user' as const, label: 'Clients', route: '/client-history' },
+  const menuSections = [
+    {
+      titleKey: 'menu.sections.agenda',
+      color: '#0891B2',
+      items: [
+        { icon: 'calendar' as const, labelKey: 'menu.items.calendar', route: '/' },
+        { icon: 'list' as const, labelKey: 'menu.items.allAppointments', route: '/appointments' },
+        { icon: 'plus-circle' as const, labelKey: 'menu.items.newAppointment', route: '/create' },
+        { icon: 'inbox' as const, labelKey: 'menu.items.requests', route: '/requests' },
+      ],
+    },
+    {
+      titleKey: 'menu.sections.clients',
+      color: '#D97706',
+      items: [
+        { icon: 'database' as const, labelKey: 'menu.items.clientsDb', route: '/clients-db' },
+        { icon: 'user' as const, labelKey: 'menu.items.clientsHistory', route: '/client-history' },
+        { icon: 'star' as const, labelKey: 'menu.items.reviews', route: '/reviews' },
+      ],
+    },
+    {
+      titleKey: 'menu.sections.marketing',
+      color: '#7C3AED',
+      items: [
+        { icon: 'dollar-sign' as const, labelKey: 'menu.items.estimate', route: '/estimate' },
+        { icon: 'send' as const, labelKey: 'menu.items.campaigns', route: '/campaigns' },
+        { icon: 'grid' as const, labelKey: 'menu.items.qr', route: '/qr' },
+      ],
+    },
+    {
+      titleKey: 'menu.sections.team',
+      color: '#16A34A',
+      items: [
+        { icon: 'users' as const, labelKey: 'menu.items.employees', route: '/employees' },
+        { icon: 'bar-chart-2' as const, labelKey: 'menu.items.stats', route: '/stats' },
+      ],
+    },
+    {
+      titleKey: 'menu.sections.system',
+      color: '#64748B',
+      items: [
+        { icon: 'cloud' as const, labelKey: 'menu.items.backup', route: '/backup' },
+      ],
+    },
   ];
 
   // Fetch ALL upcoming appointments + pending requests
@@ -471,7 +508,7 @@ export default function CalendarScreen() {
         onRequestClose={() => setMenuOpen(false)}
       >
         <Pressable style={styles.menuOverlay} onPress={() => setMenuOpen(false)}>
-          <View style={styles.menuDrawer}>
+          <Pressable style={styles.menuDrawer} onPress={(e) => e.stopPropagation()}>
             {/* Logo in menu - BrightCalendar generic */}
             <View style={styles.menuLogoRow}>
               <View style={styles.logoIcon}>
@@ -488,35 +525,69 @@ export default function CalendarScreen() {
               <Text style={styles.headerTitle}>Bright<Text style={styles.headerTitleAccent}>Calendar</Text></Text>
             </View>
 
-            {menuItems.map((item) => (
-              <TouchableOpacity
-                key={item.route}
-                testID={`menu-${item.label}`}
-                style={styles.menuItem}
-                activeOpacity={0.7}
-                onPress={() => {
-                  setMenuOpen(false);
-                  if (item.route === '/') return;
-                  router.push(item.route as any);
-                }}
-              >
-                <View style={{ position: 'relative' }}>
-                  <Feather name={item.icon} size={22} color="#0A0A0A" />
-                  {item.route === '/requests' && pendingCount > 0 && (
-                    <View style={styles.menuItemBadge}>
-                      <Text style={styles.menuItemBadgeText}>{pendingCount > 99 ? '99+' : pendingCount}</Text>
-                    </View>
-                  )}
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+              {/* Language Selector */}
+              <View style={styles.menuSectionBlock}>
+                <View style={styles.menuSectionHeader}>
+                  <View style={[styles.menuSectionDot, { backgroundColor: '#EC4899' }]} />
+                  <Text style={[styles.menuSectionTitle, { color: '#EC4899' }]}>{t('menu.sections.language')}</Text>
                 </View>
-                <Text style={styles.menuItemText}>{item.label}</Text>
-                {item.route === '/requests' && pendingCount > 0 && (
-                  <View style={styles.menuItemPill}>
-                    <Text style={styles.menuItemPillText}>{pendingCount} nouvelle{pendingCount > 1 ? 's' : ''}</Text>
+                <View style={styles.flagRow}>
+                  {SUPPORTED_LANGUAGES.map((lang) => (
+                    <TouchableOpacity
+                      key={lang.code}
+                      testID={`lang-${lang.code}`}
+                      style={[styles.flagBtn, currentLang === lang.code && styles.flagBtnActive]}
+                      activeOpacity={0.7}
+                      onPress={() => saveLanguage(lang.code)}
+                    >
+                      <Flag code={lang.code} size={32} />
+                      <Text style={[styles.flagLabel, currentLang === lang.code && styles.flagLabelActive]}>
+                        {lang.code.toUpperCase()}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {menuSections.map((section) => (
+                <View key={section.titleKey} style={styles.menuSectionBlock}>
+                  <View style={styles.menuSectionHeader}>
+                    <View style={[styles.menuSectionDot, { backgroundColor: section.color }]} />
+                    <Text style={[styles.menuSectionTitle, { color: section.color }]}>{t(section.titleKey)}</Text>
                   </View>
-                )}
-              </TouchableOpacity>
-            ))}
-          </View>
+                  {section.items.map((item) => (
+                    <TouchableOpacity
+                      key={item.route}
+                      testID={`menu-${item.labelKey}`}
+                      style={styles.menuItem}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        setMenuOpen(false);
+                        if (item.route === '/') return;
+                        router.push(item.route as any);
+                      }}
+                    >
+                      <View style={{ position: 'relative' }}>
+                        <Feather name={item.icon} size={20} color="#0A0A0A" />
+                        {item.route === '/requests' && pendingCount > 0 && (
+                          <View style={styles.menuItemBadge}>
+                            <Text style={styles.menuItemBadgeText}>{pendingCount > 99 ? '99+' : pendingCount}</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.menuItemText}>{t(item.labelKey)}</Text>
+                      {item.route === '/requests' && pendingCount > 0 && (
+                        <View style={styles.menuItemPill}>
+                          <Text style={styles.menuItemPillText}>{pendingCount}</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ))}
+            </ScrollView>
+          </Pressable>
         </Pressable>
       </Modal>
 
@@ -1062,8 +1133,29 @@ const styles = StyleSheet.create({
     borderColor: '#F5F5F5',
   },
   menuItemText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: '#0A0A0A',
   },
+  menuSectionBlock: { marginBottom: 10 },
+  menuSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, paddingHorizontal: 2 },
+  menuSectionDot: { width: 8, height: 8, borderRadius: 4 },
+  menuSectionTitle: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 },
+  flagRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 8, paddingTop: 4 },
+  flagBtn: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    backgroundColor: '#F9FAFB',
+  },
+  flagBtnActive: {
+    borderColor: '#EC4899',
+    backgroundColor: '#FDF2F8',
+  },
+  flagLabel: { fontSize: 11, fontWeight: '800', color: '#6B7280', letterSpacing: 0.5 },
+  flagLabelActive: { color: '#EC4899' },
 });
