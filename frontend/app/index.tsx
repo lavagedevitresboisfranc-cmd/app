@@ -18,7 +18,6 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTranslation } from 'react-i18next';
-import { Flag } from '../components/Flag';
 import { saveLanguage, SUPPORTED_LANGUAGES } from '../src/i18n';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -117,12 +116,18 @@ export default function CalendarScreen() {
   const [allItems, setAllItems] = useState<CalendarItem[]>([]);
   const [isOffline, setIsOffline] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({ agenda: true });
+  const [langOpen, setLangOpen] = useState(false);
+  const toggleSection = (key: string) => setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
+  const currentLangName = SUPPORTED_LANGUAGES.find((l) => l.code === currentLang)?.name || 'Français';
   const [pendingCount, setPendingCount] = useState(0);
   const [prevPendingCount, setPrevPendingCount] = useState(0);
 
-  const menuSections = [
+  const menuSections: Array<{ key: string; titleKey: string; icon: any; color: string; items: Array<{ icon: any; labelKey: string; route: string }> }> = [
     {
+      key: 'agenda',
       titleKey: 'menu.sections.agenda',
+      icon: 'calendar' as const,
       color: '#0891B2',
       items: [
         { icon: 'calendar' as const, labelKey: 'menu.items.calendar', route: '/' },
@@ -132,7 +137,9 @@ export default function CalendarScreen() {
       ],
     },
     {
+      key: 'clients',
       titleKey: 'menu.sections.clients',
+      icon: 'users' as const,
       color: '#D97706',
       items: [
         { icon: 'database' as const, labelKey: 'menu.items.clientsDb', route: '/clients-db' },
@@ -141,7 +148,9 @@ export default function CalendarScreen() {
       ],
     },
     {
+      key: 'marketing',
       titleKey: 'menu.sections.marketing',
+      icon: 'trending-up' as const,
       color: '#7C3AED',
       items: [
         { icon: 'dollar-sign' as const, labelKey: 'menu.items.estimate', route: '/estimate' },
@@ -150,7 +159,9 @@ export default function CalendarScreen() {
       ],
     },
     {
+      key: 'team',
       titleKey: 'menu.sections.team',
+      icon: 'bar-chart-2' as const,
       color: '#16A34A',
       items: [
         { icon: 'users' as const, labelKey: 'menu.items.employees', route: '/employees' },
@@ -158,7 +169,9 @@ export default function CalendarScreen() {
       ],
     },
     {
+      key: 'system',
       titleKey: 'menu.sections.system',
+      icon: 'settings' as const,
       color: '#64748B',
       items: [
         { icon: 'cloud' as const, labelKey: 'menu.items.backup', route: '/backup' },
@@ -526,66 +539,87 @@ export default function CalendarScreen() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-              {/* Language Selector */}
-              <View style={styles.menuSectionBlock}>
-                <View style={styles.menuSectionHeader}>
-                  <View style={[styles.menuSectionDot, { backgroundColor: '#EC4899' }]} />
-                  <Text style={[styles.menuSectionTitle, { color: '#EC4899' }]}>{t('menu.sections.language')}</Text>
-                </View>
-                <View style={styles.flagRow}>
+              {/* Language (collapsible submenu, no flags) */}
+              <TouchableOpacity
+                onPress={() => setLangOpen((s) => !s)}
+                style={styles.langHeader}
+                activeOpacity={0.7}
+                testID="lang-toggle"
+              >
+                <Feather name="globe" size={18} color="#EC4899" />
+                <Text style={styles.langHeaderText}>{t('menu.sections.language')}</Text>
+                <Text style={styles.langCurrent}>{currentLangName}</Text>
+                <Feather name={langOpen ? 'chevron-up' : 'chevron-down'} size={18} color="#EC4899" />
+              </TouchableOpacity>
+              {langOpen && (
+                <View style={styles.langList}>
                   {SUPPORTED_LANGUAGES.map((lang) => (
                     <TouchableOpacity
                       key={lang.code}
                       testID={`lang-${lang.code}`}
-                      style={[styles.flagBtn, currentLang === lang.code && styles.flagBtnActive]}
+                      onPress={() => { saveLanguage(lang.code); setLangOpen(false); }}
+                      style={[styles.langItem, currentLang === lang.code && styles.langItemActive]}
                       activeOpacity={0.7}
-                      onPress={() => saveLanguage(lang.code)}
                     >
-                      <Flag code={lang.code} size={32} />
-                      <Text style={[styles.flagLabel, currentLang === lang.code && styles.flagLabelActive]}>
+                      <Text style={[styles.langCode, currentLang === lang.code && styles.langCodeActive]}>
                         {lang.code.toUpperCase()}
                       </Text>
+                      <Text style={[styles.langName, currentLang === lang.code && styles.langNameActive]}>
+                        {lang.name}
+                      </Text>
+                      {currentLang === lang.code && <Feather name="check" size={18} color="#EC4899" />}
                     </TouchableOpacity>
                   ))}
                 </View>
-              </View>
+              )}
 
-              {menuSections.map((section) => (
-                <View key={section.titleKey} style={styles.menuSectionBlock}>
-                  <View style={styles.menuSectionHeader}>
-                    <View style={[styles.menuSectionDot, { backgroundColor: section.color }]} />
-                    <Text style={[styles.menuSectionTitle, { color: section.color }]}>{t(section.titleKey)}</Text>
-                  </View>
-                  {section.items.map((item) => (
+              {/* Collapsible sections */}
+              {menuSections.map((section) => {
+                const isOpen = !!expanded[section.key];
+                const sectionHasPending = section.key === 'agenda' && pendingCount > 0;
+                return (
+                  <View key={section.key} style={styles.menuSectionBlock}>
                     <TouchableOpacity
-                      key={item.route}
-                      testID={`menu-${item.labelKey}`}
-                      style={styles.menuItem}
-                      activeOpacity={0.7}
-                      onPress={() => {
-                        setMenuOpen(false);
-                        if (item.route === '/') return;
-                        router.push(item.route as any);
-                      }}
+                      onPress={() => toggleSection(section.key)}
+                      style={styles.collapsibleHeader}
+                      activeOpacity={0.6}
+                      testID={`section-${section.key}`}
                     >
-                      <View style={{ position: 'relative' }}>
-                        <Feather name={item.icon} size={20} color="#0A0A0A" />
-                        {item.route === '/requests' && pendingCount > 0 && (
-                          <View style={styles.menuItemBadge}>
-                            <Text style={styles.menuItemBadgeText}>{pendingCount > 99 ? '99+' : pendingCount}</Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text style={styles.menuItemText}>{t(item.labelKey)}</Text>
-                      {item.route === '/requests' && pendingCount > 0 && (
-                        <View style={styles.menuItemPill}>
-                          <Text style={styles.menuItemPillText}>{pendingCount}</Text>
+                      <Feather name={section.icon} size={18} color={section.color} />
+                      <Text style={[styles.collapsibleTitle, { color: section.color }]}>{t(section.titleKey)}</Text>
+                      {sectionHasPending && (
+                        <View style={styles.sectionBadge}>
+                          <Text style={styles.sectionBadgeText}>{pendingCount > 99 ? '99+' : pendingCount}</Text>
                         </View>
                       )}
+                      <Feather name={isOpen ? 'chevron-up' : 'chevron-down'} size={18} color={section.color} />
                     </TouchableOpacity>
-                  ))}
-                </View>
-              ))}
+                    {isOpen && section.items.map((item) => (
+                      <TouchableOpacity
+                        key={item.route}
+                        testID={`menu-${item.labelKey}`}
+                        style={styles.menuItem}
+                        activeOpacity={0.7}
+                        onPress={() => {
+                          setMenuOpen(false);
+                          if (item.route === '/') return;
+                          router.push(item.route as any);
+                        }}
+                      >
+                        <View style={{ position: 'relative' }}>
+                          <Feather name={item.icon} size={18} color="#6B7280" />
+                          {item.route === '/requests' && pendingCount > 0 && (
+                            <View style={styles.menuItemBadge}>
+                              <Text style={styles.menuItemBadgeText}>{pendingCount > 99 ? '99+' : pendingCount}</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.menuItemText}>{t(item.labelKey)}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                );
+              })}
             </ScrollView>
           </Pressable>
         </Pressable>
@@ -1137,25 +1171,27 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0A0A0A',
   },
-  menuSectionBlock: { marginBottom: 10 },
+  menuSectionBlock: { marginBottom: 4 },
   menuSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, paddingHorizontal: 2 },
   menuSectionDot: { width: 8, height: 8, borderRadius: 4 },
   menuSectionTitle: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 },
+  collapsibleHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 10, borderRadius: 10, backgroundColor: '#F9FAFB', marginBottom: 2 },
+  collapsibleTitle: { flex: 1, fontSize: 14, fontWeight: '800', letterSpacing: 0.3 },
+  sectionBadge: { backgroundColor: '#DC2626', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 9, minWidth: 18, alignItems: 'center' },
+  sectionBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  langHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 10, borderRadius: 10, backgroundColor: '#FDF2F8', marginBottom: 4 },
+  langHeaderText: { flex: 1, fontSize: 14, fontWeight: '800', color: '#EC4899', letterSpacing: 0.3 },
+  langCurrent: { fontSize: 12, fontWeight: '700', color: '#6B7280' },
+  langList: { paddingLeft: 12, marginBottom: 10, borderLeftWidth: 2, borderLeftColor: '#FBCFE8', marginLeft: 10 },
+  langItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 10, borderRadius: 8 },
+  langItemActive: { backgroundColor: '#FDF2F8' },
+  langCode: { fontSize: 12, fontWeight: '800', color: '#9CA3AF', minWidth: 28, letterSpacing: 1 },
+  langCodeActive: { color: '#EC4899' },
+  langName: { flex: 1, fontSize: 14, fontWeight: '600', color: '#374151' },
+  langNameActive: { color: '#EC4899', fontWeight: '700' },
   flagRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 8, paddingTop: 4 },
-  flagBtn: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: 'transparent',
-    backgroundColor: '#F9FAFB',
-  },
-  flagBtnActive: {
-    borderColor: '#EC4899',
-    backgroundColor: '#FDF2F8',
-  },
+  flagBtn: { flex: 1, alignItems: 'center', gap: 4, paddingVertical: 10, borderRadius: 10, borderWidth: 2, borderColor: 'transparent', backgroundColor: '#F9FAFB' },
+  flagBtnActive: { borderColor: '#EC4899', backgroundColor: '#FDF2F8' },
   flagLabel: { fontSize: 11, fontWeight: '800', color: '#6B7280', letterSpacing: 0.5 },
   flagLabelActive: { color: '#EC4899' },
 });
