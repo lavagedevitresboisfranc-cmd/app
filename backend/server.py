@@ -204,8 +204,8 @@ async def booking_qr_code():
 
 
 @api_router.get("/booking-qr-card")
-async def booking_qr_card(request: Request):
-    """Generate a complete branded QR card as PNG — ready to use on a website."""
+async def booking_qr_card(request: Request, format: str = "png"):
+    """Generate a complete branded QR card — ready to use on a website. Supports ?format=jpeg or ?format=png (default)."""
     from PIL import Image, ImageDraw, ImageFont
     import qrcode
     import io
@@ -330,12 +330,21 @@ async def booking_qr_card(request: Request):
     if tw < W - 40:
         draw.text(((W - tw) / 2, footer_y), footer, fill=(200, 230, 240), font=f_footer)
 
-    # Output PNG
+    # Output PNG or JPEG
+    fmt = (format or "png").lower()
     buf = io.BytesIO()
-    img.save(buf, format="PNG", quality=95)
+    if fmt in ("jpg", "jpeg"):
+        # JPEG doesn't support alpha, so ensure RGB
+        img.convert("RGB").save(buf, format="JPEG", quality=92, optimize=True)
+        media = "image/jpeg"
+        filename = "qr-card-brightcalendar.jpg"
+    else:
+        img.save(buf, format="PNG", quality=95)
+        media = "image/png"
+        filename = "qr-card-brightcalendar.png"
     buf.seek(0)
-    return Response(content=buf.getvalue(), media_type="image/png", headers={
-        "Content-Disposition": "inline; filename=qr-card-brightcalendar.png",
+    return Response(content=buf.getvalue(), media_type=media, headers={
+        "Content-Disposition": f"inline; filename={filename}",
         "Cache-Control": "public, max-age=300",
     })
 
