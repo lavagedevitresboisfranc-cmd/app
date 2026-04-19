@@ -23,7 +23,13 @@
         "backgroundColor": "#FAFAFA"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": ["CAMERA", "RECORD_AUDIO", "READ_EXTERNAL_STORAGE", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_EXTERNAL_STORAGE",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -46,7 +52,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#FAFAFA"
         }
-      ]
+      ],
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true

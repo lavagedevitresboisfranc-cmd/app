@@ -228,6 +228,21 @@ async def business_plan():
     )
 
 
+@api_router.get("/brochure")
+async def brochure():
+    """Serve the BrightCalendar commercial brochure (Word document, for prospects)."""
+    from fastapi.responses import FileResponse
+    doc_path = ROOT_DIR / "assets" / "BrightCalendar_Brochure_Commerciale.docx"
+    if not doc_path.exists():
+        raise HTTPException(status_code=404, detail="Brochure not found")
+    return FileResponse(
+        str(doc_path),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename="BrightCalendar_Brochure_Commerciale.docx",
+        headers={"Content-Disposition": 'attachment; filename="BrightCalendar_Brochure_Commerciale.docx"'}
+    )
+
+
 @api_router.get("/booking-qr-card")
 async def booking_qr_card(request: Request, format: str = "png"):
     """Generate a complete branded QR card — ready to use on a website. Supports ?format=jpeg or ?format=png (default)."""
