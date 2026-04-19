@@ -203,6 +203,16 @@ async def booking_qr_code():
     })
 
 
+@api_router.get("/company-logo")
+async def company_logo():
+    """Serve the company logo (JPEG) for use in campaigns and branding."""
+    from fastapi.responses import FileResponse
+    logo_path = ROOT_DIR / "assets" / "company-logo.jpeg"
+    if not logo_path.exists():
+        raise HTTPException(status_code=404, detail="Logo not found")
+    return FileResponse(str(logo_path), media_type="image/jpeg", headers={"Cache-Control": "public, max-age=3600"})
+
+
 @api_router.get("/booking-qr-card")
 async def booking_qr_card(request: Request, format: str = "png"):
     """Generate a complete branded QR card — ready to use on a website. Supports ?format=jpeg or ?format=png (default)."""

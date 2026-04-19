@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking, Platform,
-  ActivityIndicator, Modal, TextInput, KeyboardAvoidingView,
+  ActivityIndicator, Modal, TextInput, KeyboardAvoidingView, ImageBackground,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -159,7 +159,11 @@ export default function CampaignsScreen() {
             </View>
 
             <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 120 }}>
-              <View style={styles.emailPreviewCard}>
+              <ImageBackground
+                source={{ uri: `${API_URL}/api/company-logo` }}
+                style={styles.emailPreviewCard}
+                imageStyle={{ opacity: 0.08, resizeMode: 'contain' }}
+              >
                 <View style={styles.emailHeader}>
                   <View style={styles.emailRow}>
                     <Text style={styles.emailLbl}>{t('campaigns.from')}</Text>
@@ -189,7 +193,7 @@ export default function CampaignsScreen() {
                     textAlignVertical="top"
                   />
                 </View>
-              </View>
+              </ImageBackground>
 
               <Text style={styles.listTitle}>
                 {t('campaigns.recipients', { selected: selectedCount, total: clients.length })}
@@ -241,6 +245,8 @@ export default function CampaignsScreen() {
         </SafeAreaView>
       </Modal>
     </SafeAreaView>
+  );
+}
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#FAFAFA' },
