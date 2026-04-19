@@ -309,7 +309,7 @@ const styles = StyleSheet.create({
   logoWatermark: {
     width: 160,
     height: 100,
-    opacity: 0.1,
+    opacity: 0.25,
   },
   emailHeader: { padding: 14, backgroundColor: '#F9FAFB', borderBottomWidth: 1, borderBottomColor: '#E5E5E5' },
   emailRow: {
