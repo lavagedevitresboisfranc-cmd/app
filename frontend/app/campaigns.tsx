@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking, Platform,
-  ActivityIndicator, Modal, TextInput, KeyboardAvoidingView, ImageBackground,
+  ActivityIndicator, Modal, TextInput, KeyboardAvoidingView, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -46,8 +46,9 @@ export default function CampaignsScreen() {
   const openPreview = (s: typeof SEASONS[0]) => {
     setExcluded(new Set());
     const bookingUrl = `${API_URL}/api/booking`;
+    const logoUrl = `${API_URL}/api/company-logo`;
     const subject = t(`campaigns.${s.id}.subject`);
-    const body = t(`campaigns.${s.id}.body`, { BOOKING_URL: bookingUrl });
+    const body = t(`campaigns.${s.id}.body`, { BOOKING_URL: bookingUrl, LOGO_URL: logoUrl });
     setPreview({ season: s.id, icon: s.icon, color: s.color, subject, body });
   };
 
@@ -159,11 +160,14 @@ export default function CampaignsScreen() {
             </View>
 
             <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 120 }}>
-              <ImageBackground
-                source={{ uri: `${API_URL}/api/company-logo` }}
-                style={styles.emailPreviewCard}
-                imageStyle={{ opacity: 0.08, resizeMode: 'contain' }}
-              >
+              <View style={styles.emailPreviewCard}>
+                <View pointerEvents="none" style={styles.logoWatermarkWrap}>
+                  <Image
+                    source={{ uri: `${API_URL}/api/company-logo` }}
+                    style={styles.logoWatermark}
+                    resizeMode="contain"
+                  />
+                </View>
                 <View style={styles.emailHeader}>
                   <View style={styles.emailRow}>
                     <Text style={styles.emailLbl}>{t('campaigns.from')}</Text>
@@ -193,7 +197,7 @@ export default function CampaignsScreen() {
                     textAlignVertical="top"
                   />
                 </View>
-              </ImageBackground>
+              </View>
 
               <Text style={styles.listTitle}>
                 {t('campaigns.recipients', { selected: selectedCount, total: clients.length })}
@@ -293,7 +297,18 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 17, fontWeight: '700', color: '#0A0A0A' },
   emailPreviewCard: {
     backgroundColor: '#FFF', borderRadius: 12, borderWidth: 1, borderColor: '#E5E5E5',
-    overflow: 'hidden', marginBottom: 20,
+    overflow: 'hidden', marginBottom: 20, position: 'relative',
+  },
+  logoWatermarkWrap: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 0,
+  },
+  logoWatermark: {
+    width: '50%',
+    height: '50%',
+    opacity: 0.08,
   },
   emailHeader: { padding: 14, backgroundColor: '#F9FAFB', borderBottomWidth: 1, borderBottomColor: '#E5E5E5' },
   emailRow: {
