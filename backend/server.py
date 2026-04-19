@@ -1,5 +1,5 @@
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Request
+from fastapi.responses import HTMLResponse, Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -200,6 +200,143 @@ async def booking_qr_code():
     buf.seek(0)
     return Response(content=buf.getvalue(), media_type="image/png", headers={
         "Content-Disposition": 'inline; filename="brightcalendar-qr.png"'
+    })
+
+
+@api_router.get("/booking-qr-card")
+async def booking_qr_card(request: Request):
+    """Generate a complete branded QR card as PNG — ready to use on a website."""
+    from PIL import Image, ImageDraw, ImageFont
+    import qrcode
+    import io
+
+    # Auto-detect base URL from the incoming request (most reliable)
+    forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host", "")
+    scheme = request.headers.get("x-forwarded-proto", "https")
+    if forwarded_host and "preview" in forwarded_host or "emergent" in forwarded_host:
+        app_url = f"{scheme}://{forwarded_host}"
+    else:
+        app_url = os.environ.get("APP_URL", "").rstrip("/") or "https://booking-hub-406.preview.emergentagent.com"
+    booking_url = f"{app_url}/api/booking"
+
+    # Card dimensions (portrait, web-friendly)
+    W, H = 800, 1100
+
+    # Gradient background — cyan top, deeper cyan bottom
+    img = Image.new("RGB", (W, H), "#0891B2")
+    draw = ImageDraw.Draw(img)
+    top_color = (8, 145, 178)        # #0891B2
+    bot_color = (6, 95, 125)         # darker cyan
+    for y in range(H):
+        ratio = y / H
+        r = int(top_color[0] * (1 - ratio) + bot_color[0] * ratio)
+        g = int(top_color[1] * (1 - ratio) + bot_color[1] * ratio)
+        b = int(top_color[2] * (1 - ratio) + bot_color[2] * ratio)
+        draw.line([(0, y), (W, y)], fill=(r, g, b))
+
+    # Try to find a nice font
+    def _font(size: int, bold: bool = False):
+        candidates = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+        ]
+        for path in candidates:
+            try:
+                return ImageFont.truetype(path, size)
+            except Exception:
+                continue
+        return ImageFont.load_default()
+
+    f_tagline = _font(22, bold=True)
+    f_title = _font(42, bold=True)
+    f_subtitle = _font(22, bold=True)
+    f_hint = _font(18)
+    f_contact = _font(20, bold=True)
+    f_contact_sm = _font(17)
+    f_footer = _font(14)
+
+    def _text_w(text, font):
+        bbox = draw.textbbox((0, 0), text, font=font)
+        return bbox[2] - bbox[0]
+
+    # --- Tagline ---
+    tagline = "LAVAGE DE VITRES BOIS-FRANC"
+    tw = _text_w(tagline, f_tagline)
+    draw.text(((W - tw) / 2, 40), tagline, fill="white", font=f_tagline)
+
+    # --- Title ---
+    title = "Prenez rendez-vous"
+    tw = _text_w(title, f_title)
+    draw.text(((W - tw) / 2, 80), title, fill="white", font=f_title)
+
+    # Small calendar emoji (colored circle indicator)
+    # (skip emoji for PIL compatibility)
+
+    # --- QR Code ---
+    qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=10, border=2)
+    qr.add_data(booking_url)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+    QR_SIZE = 480
+    qr_img = qr_img.resize((QR_SIZE, QR_SIZE), Image.Resampling.LANCZOS)
+
+    # White rounded panel under QR
+    PANEL_PAD = 30
+    panel_x = (W - QR_SIZE - PANEL_PAD * 2) // 2
+    panel_y = 180
+    panel_w = QR_SIZE + PANEL_PAD * 2
+    panel_h = QR_SIZE + PANEL_PAD * 2
+    draw.rounded_rectangle(
+        [panel_x, panel_y, panel_x + panel_w, panel_y + panel_h],
+        radius=24, fill="white"
+    )
+    img.paste(qr_img, (panel_x + PANEL_PAD, panel_y + PANEL_PAD))
+
+    # --- Scan instructions ---
+    scan_y = panel_y + panel_h + 30
+    scan_label = "Scannez avec votre téléphone"
+    tw = _text_w(scan_label, f_subtitle)
+    draw.text(((W - tw) / 2, scan_y), scan_label, fill="white", font=f_subtitle)
+
+    hint = "Ouvrez l'appareil photo et pointez-le vers le QR"
+    tw = _text_w(hint, f_hint)
+    draw.text(((W - tw) / 2, scan_y + 40), hint, fill=(220, 240, 250), font=f_hint)
+
+    # --- Contact panel (white rounded at bottom) ---
+    contact_y = scan_y + 100
+    contact_h = 160
+    contact_pad = 40
+    draw.rounded_rectangle(
+        [contact_pad, contact_y, W - contact_pad, contact_y + contact_h],
+        radius=16, fill="white"
+    )
+
+    phone_text = "☎  514-570-9802"
+    mail_text = "✉  lavagedevitreboisfranc@live.com"
+    web_text = "🌐  Lavagedevitre.org"
+
+    # Render each line centered
+    line_y = contact_y + 20
+    for line, font in [(phone_text, f_contact), (mail_text, f_contact_sm), (web_text, f_contact_sm)]:
+        tw = _text_w(line, font)
+        draw.text(((W - tw) / 2, line_y), line, fill=(8, 145, 178), font=font)
+        line_y += 40
+
+    # --- Footer URL ---
+    footer_y = H - 40
+    footer = booking_url
+    tw = _text_w(footer, f_footer)
+    if tw < W - 40:
+        draw.text(((W - tw) / 2, footer_y), footer, fill=(200, 230, 240), font=f_footer)
+
+    # Output PNG
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", quality=95)
+    buf.seek(0)
+    return Response(content=buf.getvalue(), media_type="image/png", headers={
+        "Content-Disposition": "inline; filename=qr-card-brightcalendar.png",
+        "Cache-Control": "public, max-age=300",
     })
 
 
