@@ -9,6 +9,9 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_ALIGN_VERTICAL
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
+import os
+
+SCREENSHOTS_DIR = '/app/backend/assets/screenshots'
 
 
 BRAND_BLUE = RGBColor(0x08, 0x91, 0xB2)
@@ -161,6 +164,42 @@ def add_hr(doc):
     r = p.add_run('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
     r.font.color.rgb = BRAND_BLUE
     r.font.size = Pt(10)
+
+
+def add_screenshot_gallery(doc, screenshots):
+    """
+    Insert screenshots in a grid (2 columns per row).
+    `screenshots` = list of tuples (filename, caption).
+    """
+    # Process in pairs (2 columns)
+    for i in range(0, len(screenshots), 2):
+        pair = screenshots[i:i + 2]
+        tbl = doc.add_table(rows=2, cols=len(pair))
+        tbl.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        for col_idx, (fname, caption) in enumerate(pair):
+            # Image cell
+            img_cell = tbl.rows[0].cells[col_idx]
+            img_cell.text = ''
+            p = img_cell.paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            full_path = os.path.join(SCREENSHOTS_DIR, fname)
+            if os.path.exists(full_path):
+                run = p.add_run()
+                run.add_picture(full_path, width=Cm(7.2))
+
+            # Caption cell
+            cap_cell = tbl.rows[1].cells[col_idx]
+            cap_cell.text = ''
+            p = cap_cell.paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r = p.add_run(caption)
+            r.bold = True
+            r.font.size = Pt(10)
+            r.font.color.rgb = BRAND_BLUE
+
+        # Spacer after each row
+        add_spacer(doc, 6)
 
 
 # ============================================================
@@ -345,7 +384,43 @@ r.font.color.rgb = GREY
 doc.add_page_break()
 
 # ============================================================
-# PAGE 4 — FORFAITS
+# PAGE 4 — APERÇU VISUEL (Screenshots)
+# ============================================================
+add_heading(doc, "Aperçu de l'application", level=1, color=BRAND_BLUE, center=True)
+add_hr(doc)
+add_spacer(doc, 10)
+
+add_para(doc,
+    "Découvrez BrightCalendar en action — interface mobile soignée, fluide et pensée pour "
+    "être utilisée d'une seule main, sur le terrain.",
+    italic=True, size=11, center=True)
+
+add_spacer(doc, 12)
+
+screenshots = [
+    ('01_calendar.png', '📅 Calendrier principal'),
+    ('06_appointments.png', '📋 Tous les rendez-vous'),
+    ('05_create.png', '➕ Nouveau rendez-vous'),
+    ('03_clients.png', '👥 Base de clients (CRM)'),
+    ('04_estimate.png', '💰 Outil d\'estimation'),
+    ('02_campaigns.png', '✉️ Campagnes marketing'),
+]
+add_screenshot_gallery(doc, screenshots)
+
+add_spacer(doc, 8)
+
+p = doc.add_paragraph()
+p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+r = p.add_run("🎯 Interface conçue pour la productivité sur le terrain")
+r.bold = True
+r.italic = True
+r.font.size = Pt(11)
+r.font.color.rgb = GREEN
+
+doc.add_page_break()
+
+# ============================================================
+# PAGE 5 — FORFAITS
 # ============================================================
 add_heading(doc, "Nos forfaits", level=1, color=BRAND_BLUE, center=True)
 add_hr(doc)

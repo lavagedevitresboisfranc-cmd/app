@@ -52,7 +52,7 @@ html = """
 params = {
     "from": "onboarding@resend.dev",
     "to": ["lavagedevitreboisfranc@live.com"],
-    "subject": "📄 BrightCalendar — Plan & Brochure de commercialisation (PDF + Word)",
+    "subject": "📄 BrightCalendar — Brochure mise à jour avec captures d'écran",
     "html": html,
     "attachments": [
         to_attachment(brochure_pdf),
