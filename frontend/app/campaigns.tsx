@@ -301,14 +301,15 @@ const styles = StyleSheet.create({
   },
   logoWatermarkWrap: {
     ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     alignItems: 'center',
+    paddingBottom: 10,
     zIndex: 0,
   },
   logoWatermark: {
-    width: '50%',
-    height: '50%',
-    opacity: 0.08,
+    width: 160,
+    height: 100,
+    opacity: 0.1,
   },
   emailHeader: { padding: 14, backgroundColor: '#F9FAFB', borderBottomWidth: 1, borderBottomColor: '#E5E5E5' },
   emailRow: {
