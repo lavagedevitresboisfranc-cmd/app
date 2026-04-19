@@ -169,12 +169,46 @@
     "priceSaved": "Precios guardados"
   },
   "campaigns": {
-    "title": "Campañas de correo",
+    "title": "Campañas",
+    "clientsWithEmail": "Clientes con correo",
+    "copyAllEmails": "Copiar todos los correos",
+    "copied": "¡Copiado!",
+    "emailsCopied": "{{count}} correos copiados al portapapeles.",
+    "seasonalCampaigns": "CAMPAÑAS DE TEMPORADA",
+    "previewAndSend": "Vista previa y envío ({{count}} clientes)",
+    "infoText": "Haz clic en una campaña para ver la vista previa, editar el texto y seleccionar destinatarios antes de enviar.",
+    "preview": "Vista previa",
+    "from": "De",
+    "to": "Para",
     "subject": "Asunto",
+    "bccClients": "{{count}} cliente(s) (CCO)",
+    "recipients": "DESTINATARIOS ({{selected}} seleccionado(s) de {{total}})",
+    "tapToExclude": "Toca un cliente para excluirlo del envío",
+    "cancel": "Cancelar",
+    "sendTo": "Enviar a {{count}}",
+    "noRecipients": "Sin destinatarios",
+    "selectAtLeastOne": "Selecciona al menos un cliente.",
+    "errorTitle": "Error",
+    "noMailApp": "No hay aplicación de correo disponible",
+    "cantOpenMail": "No se puede abrir la aplicación de correo",
+    "companyName": "Limpieza de Ventanas Bois-Franc",
+    "spring": {
+      "label": "🌷 Campaña de Primavera",
+      "subject": "Primavera — Limpieza de ventanas",
+      "body": "Hola,\n\n¡Llegó la primavera! Es el momento perfecto para devolver el brillo a tus ventanas después del mal tiempo de invierno.\n\n¡Reserva ahora antes de que mi agenda se llene!\n\n📅 Reserva en línea:\n{{BOOKING_URL}}\n\n📞 514-570-9802\n🌐 Lavagedevitre.org\n\nGracias,\nLimpieza de Ventanas Bois-Franc"
+    },
+    "autumn": {
+      "label": "🍂 Seguimiento de Otoño",
+      "subject": "Prepara tus ventanas para el invierno",
+      "body": "Hola,\n\nAntes de que llegue el invierno, ofrece a tus ventanas una última limpieza para aprovechar la luz durante los meses oscuros.\n\n🍂 PROMO OTOÑO 🍂\n10% de descuento en tu próximo lavado\nCódigo: OTONO10\nVálido hasta el 30 de noviembre\n\n📅 Reserva en línea:\n{{BOOKING_URL}}\n\n📞 514-570-9802\n🌐 Lavagedevitre.org\n\nGracias,\nLimpieza de Ventanas Bois-Franc"
+    },
+    "summer": {
+      "label": "☀️ Campaña de Verano",
+      "subject": "Ventanas limpias para los hermosos días de verano",
+      "body": "Hola,\n\n¡El verano está en su apogeo! Disfruta de tu jardín y patio con ventanas perfectamente limpias.\n\n☀️ ESPECIAL VERANO ☀️\n10% de descuento\nCódigo: VERANO10\n\n📅 Reserva en línea:\n{{BOOKING_URL}}\n\n📞 514-570-9802\n🌐 Lavagedevitre.org\n\nGracias,\nLimpieza de Ventanas Bois-Franc"
+    },
     "message": "Mensaje",
-    "sendTo": "Enviar a",
-    "sendCampaign": "Enviar campaña",
-    "recipients": "destinatarios"
+    "sendCampaign": "Enviar campaña"
   },
   "stats": {
     "title": "Estadísticas",

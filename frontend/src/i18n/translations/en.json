@@ -169,12 +169,46 @@
     "priceSaved": "Prices saved"
   },
   "campaigns": {
-    "title": "Email Campaigns",
+    "title": "Campaigns",
+    "clientsWithEmail": "Clients with email",
+    "copyAllEmails": "Copy all emails",
+    "copied": "Copied!",
+    "emailsCopied": "{{count}} emails copied to clipboard.",
+    "seasonalCampaigns": "SEASONAL CAMPAIGNS",
+    "previewAndSend": "Preview & send ({{count}} clients)",
+    "infoText": "Click on a campaign to see the preview, edit the text, and select recipients before sending.",
+    "preview": "Preview",
+    "from": "From",
+    "to": "To",
     "subject": "Subject",
+    "bccClients": "{{count}} client(s) (BCC)",
+    "recipients": "RECIPIENTS ({{selected}} selected of {{total}})",
+    "tapToExclude": "Tap a client to exclude them from sending",
+    "cancel": "Cancel",
+    "sendTo": "Send to {{count}}",
+    "noRecipients": "No recipients",
+    "selectAtLeastOne": "Select at least one client.",
+    "errorTitle": "Error",
+    "noMailApp": "No email app available",
+    "cantOpenMail": "Cannot open email app",
+    "companyName": "Bois-Franc Window Cleaning",
+    "spring": {
+      "label": "🌷 Spring Campaign",
+      "subject": "Spring — Window Cleaning",
+      "body": "Hello,\n\nSpring is here! It's the perfect time to bring shine back to your windows after the winter weather.\n\nBook now before my schedule fills up!\n\n📅 Book online:\n{{BOOKING_URL}}\n\n📞 514-570-9802\n🌐 Lavagedevitre.org\n\nThank you,\nBois-Franc Window Cleaning"
+    },
+    "autumn": {
+      "label": "🍂 Autumn Follow-up",
+      "subject": "Prepare your windows for winter",
+      "body": "Hello,\n\nBefore winter arrives, give your windows one last cleaning to enjoy the light during the darker months.\n\n🍂 AUTUMN PROMO 🍂\n10% off your next cleaning\nCode: AUTUMN10\nValid until November 30\n\n📅 Book online:\n{{BOOKING_URL}}\n\n📞 514-570-9802\n🌐 Lavagedevitre.org\n\nThank you,\nBois-Franc Window Cleaning"
+    },
+    "summer": {
+      "label": "☀️ Summer Campaign",
+      "subject": "Clean windows for beautiful summer days",
+      "body": "Hello,\n\nSummer is in full swing! Enjoy your yard and patio with perfectly clean windows.\n\n☀️ SUMMER SPECIAL ☀️\n10% off\nCode: SUMMER10\n\n📅 Book online:\n{{BOOKING_URL}}\n\n📞 514-570-9802\n🌐 Lavagedevitre.org\n\nThank you,\nBois-Franc Window Cleaning"
+    },
     "message": "Message",
-    "sendTo": "Send to",
-    "sendCampaign": "Send campaign",
-    "recipients": "recipients"
+    "sendCampaign": "Send campaign"
   },
   "stats": {
     "title": "Statistics",

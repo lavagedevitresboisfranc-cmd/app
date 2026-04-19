@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
 import AppHeader from '../components/AppHeader';
 
@@ -18,81 +19,18 @@ interface ClientRow {
   last_visit: string;
 }
 
-const CAMPAIGNS = [
-  {
-    id: 'printemps',
-    icon: '🌷',
-    label: 'Campagne Printemps',
-    color: '#10B981',
-    subject: 'Printemps — Lavage de vitres',
-    body: `Bonjour,
-
-Le printemps est arrivé! C'est le moment idéal pour redonner de l'éclat à vos fenêtres après les intempéries de l'hiver.
-
-Réservez dès maintenant avant que mon agenda se remplisse!
-
-📅 Prendre rendez-vous en ligne:
-{BOOKING_URL}
-
-📞 514-570-9802
-🌐 Lavagedevitre.org
-
-Merci,
-Lavage de Vitres Bois-Franc`,
-  },
-  {
-    id: 'automne',
-    icon: '🍂',
-    label: 'Relance Automne',
-    color: '#F59E0B',
-    subject: 'Préparez vos fenêtres pour l\'hiver',
-    body: `Bonjour,
-
-Avant que l'hiver n'arrive, offrez à vos fenêtres un dernier nettoyage pour profiter pleinement de la lumière durant les mois sombres.
-
-🍂 PROMO AUTOMNE 🍂
-10% de rabais sur votre prochain lavage
-Code: AUTOMNE10
-Valide jusqu'au 30 novembre
-
-📅 Prendre rendez-vous en ligne:
-{BOOKING_URL}
-
-📞 514-570-9802
-🌐 Lavagedevitre.org
-
-Merci,
-Lavage de Vitres Bois-Franc`,
-  },
-  {
-    id: 'ete',
-    icon: '☀️',
-    label: 'Campagne Été',
-    color: '#EF4444',
-    subject: 'Vitres propres pour les belles journées d\'été',
-    body: `Bonjour,
-
-L'été bat son plein! Profitez de votre cour et de votre patio avec des fenêtres parfaitement propres.
-
-☀️ SPÉCIAL ÉTÉ ☀️
-10% de rabais
-Code: ETE10
-
-📅 Prendre rendez-vous en ligne:
-{BOOKING_URL}
-
-📞 514-570-9802
-🌐 Lavagedevitre.org
-
-Merci,
-Lavage de Vitres Bois-Franc`,
-  },
+type SeasonKey = 'spring' | 'autumn' | 'summer';
+const SEASONS: { id: SeasonKey; icon: string; color: string }[] = [
+  { id: 'spring', icon: '🌷', color: '#10B981' },
+  { id: 'autumn', icon: '🍂', color: '#F59E0B' },
+  { id: 'summer', icon: '☀️', color: '#EF4444' },
 ];
 
 export default function CampaignsScreen() {
+  const { t } = useTranslation();
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [preview, setPreview] = useState<{ campaign: typeof CAMPAIGNS[0]; subject: string; body: string } | null>(null);
+  const [preview, setPreview] = useState<{ season: SeasonKey; icon: string; color: string; subject: string; body: string } | null>(null);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
@@ -105,11 +43,12 @@ export default function CampaignsScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const openPreview = (campaign: typeof CAMPAIGNS[0]) => {
+  const openPreview = (s: typeof SEASONS[0]) => {
     setExcluded(new Set());
     const bookingUrl = `${API_URL}/api/booking`;
-    const body = campaign.body.replace(/\{BOOKING_URL\}/g, bookingUrl);
-    setPreview({ campaign, subject: campaign.subject, body });
+    const subject = t(`campaigns.${s.id}.subject`);
+    const body = t(`campaigns.${s.id}.body`, { BOOKING_URL: bookingUrl });
+    setPreview({ season: s.id, icon: s.icon, color: s.color, subject, body });
   };
 
   const toggleExclude = (email: string) => {
@@ -127,7 +66,7 @@ export default function CampaignsScreen() {
     if (!preview) return;
     const emails = clients.map(c => c.email).filter(e => e && !excluded.has(e));
     if (emails.length === 0) {
-      Alert.alert('Aucun destinataire', 'Sélectionnez au moins un client.');
+      Alert.alert(t('campaigns.noRecipients'), t('campaigns.selectAtLeastOne'));
       return;
     }
     const bcc = emails.join(',');
@@ -137,9 +76,9 @@ export default function CampaignsScreen() {
       if (can) {
         await Linking.openURL(url);
         setPreview(null);
-      } else Alert.alert('Erreur', 'Aucune app courriel disponible');
+      } else Alert.alert(t('campaigns.errorTitle'), t('campaigns.noMailApp'));
     } catch {
-      Alert.alert('Erreur', 'Impossible d\'ouvrir l\'app courriel');
+      Alert.alert(t('campaigns.errorTitle'), t('campaigns.cantOpenMail'));
     }
   };
 
@@ -147,60 +86,57 @@ export default function CampaignsScreen() {
     const emails = clients.map(c => c.email).filter(Boolean).join(', ');
     if (!emails) return;
     await Clipboard.setStringAsync(emails);
-    Alert.alert('Copié!', `${clients.length} courriels copiés dans le presse-papier.`);
+    Alert.alert(t('campaigns.copied'), t('campaigns.emailsCopied', { count: clients.length }));
   };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <AppHeader title="Campagnes" showBack />
+      <AppHeader title={t('campaigns.title')} showBack />
       {loading ? (
         <ActivityIndicator size="large" color="#0891B2" style={{ marginTop: 40 }} />
       ) : (
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
           <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Clients avec courriel</Text>
+            <Text style={styles.summaryLabel}>{t('campaigns.clientsWithEmail')}</Text>
             <Text style={styles.summaryValue}>{clients.length}</Text>
             <TouchableOpacity style={styles.copyBtn} activeOpacity={0.7} onPress={copyAllEmails}>
               <Feather name="copy" size={14} color="#0891B2" />
-              <Text style={styles.copyBtnText}>Copier tous les courriels</Text>
+              <Text style={styles.copyBtnText}>{t('campaigns.copyAllEmails')}</Text>
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.sectionTitle}>CAMPAGNES SAISONNIÈRES</Text>
-          {CAMPAIGNS.map(c => (
+          <Text style={styles.sectionTitle}>{t('campaigns.seasonalCampaigns')}</Text>
+          {SEASONS.map(s => (
             <TouchableOpacity
-              key={c.id}
-              testID={`campaign-${c.id}`}
-              style={[styles.campaignCard, { borderLeftColor: c.color }]}
+              key={s.id}
+              testID={`campaign-${s.id}`}
+              style={[styles.campaignCard, { borderLeftColor: s.color }]}
               activeOpacity={0.7}
-              onPress={() => openPreview(c)}
+              onPress={() => openPreview(s)}
               disabled={clients.length === 0}
             >
               <View style={styles.campaignHead}>
-                <Text style={styles.campaignIcon}>{c.icon}</Text>
+                <Text style={styles.campaignIcon}>{s.icon}</Text>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.campaignLabel}>{c.label}</Text>
-                  <Text style={styles.campaignSubject}>{c.subject}</Text>
+                  <Text style={styles.campaignLabel}>{t(`campaigns.${s.id}.label`)}</Text>
+                  <Text style={styles.campaignSubject}>{t(`campaigns.${s.id}.subject`)}</Text>
                 </View>
-                <Feather name="eye" size={18} color={c.color} />
+                <Feather name="eye" size={18} color={s.color} />
               </View>
-              <View style={[styles.sendPill, { backgroundColor: c.color }]}>
+              <View style={[styles.sendPill, { backgroundColor: s.color }]}>
                 <Feather name="send" size={12} color="#FFF" />
-                <Text style={styles.sendPillText}>Aperçu et envoi ({clients.length} clients)</Text>
+                <Text style={styles.sendPillText}>{t('campaigns.previewAndSend', { count: clients.length })}</Text>
               </View>
             </TouchableOpacity>
           ))}
 
           <View style={styles.infoCard}>
             <Feather name="info" size={16} color="#0891B2" />
-            <Text style={styles.infoText}>
-              Cliquez sur une campagne pour voir l'aperçu, modifier le texte, et sélectionner les destinataires avant d'envoyer.
-            </Text>
+            <Text style={styles.infoText}>{t('campaigns.infoText')}</Text>
           </View>
         </ScrollView>
       )}
 
-      {/* PREVIEW MODAL */}
       <Modal
         visible={preview !== null}
         animationType="slide"
@@ -217,25 +153,24 @@ export default function CampaignsScreen() {
                 <Feather name="x" size={24} color="#0A0A0A" />
               </TouchableOpacity>
               <Text style={styles.modalTitle}>
-                {preview?.campaign.icon} Aperçu
+                {preview?.icon} {t('campaigns.preview')}
               </Text>
               <View style={{ width: 40 }} />
             </View>
 
             <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 120 }}>
-              {/* Email preview card */}
               <View style={styles.emailPreviewCard}>
                 <View style={styles.emailHeader}>
                   <View style={styles.emailRow}>
-                    <Text style={styles.emailLbl}>De</Text>
-                    <Text style={styles.emailVal}>Lavage de Vitres Bois-Franc</Text>
+                    <Text style={styles.emailLbl}>{t('campaigns.from')}</Text>
+                    <Text style={styles.emailVal}>{t('campaigns.companyName')}</Text>
                   </View>
                   <View style={styles.emailRow}>
-                    <Text style={styles.emailLbl}>À</Text>
-                    <Text style={styles.emailVal}>{selectedCount} client{selectedCount > 1 ? 's' : ''} (BCC)</Text>
+                    <Text style={styles.emailLbl}>{t('campaigns.to')}</Text>
+                    <Text style={styles.emailVal}>{t('campaigns.bccClients', { count: selectedCount })}</Text>
                   </View>
                   <View style={[styles.emailRow, { borderBottomWidth: 0 }]}>
-                    <Text style={styles.emailLbl}>Objet</Text>
+                    <Text style={styles.emailLbl}>{t('campaigns.subject')}</Text>
                     <TextInput
                       style={styles.subjectInput}
                       value={preview?.subject || ''}
@@ -256,11 +191,10 @@ export default function CampaignsScreen() {
                 </View>
               </View>
 
-              {/* Recipients list */}
               <Text style={styles.listTitle}>
-                DESTINATAIRES ({selectedCount} sélectionné{selectedCount > 1 ? 's' : ''} sur {clients.length})
+                {t('campaigns.recipients', { selected: selectedCount, total: clients.length })}
               </Text>
-              <Text style={styles.listHint}>Appuyez sur un client pour l'exclure de l'envoi</Text>
+              <Text style={styles.listHint}>{t('campaigns.tapToExclude')}</Text>
               {clients.map((c) => {
                 const isExcluded = excluded.has(c.email);
                 return (
@@ -284,32 +218,29 @@ export default function CampaignsScreen() {
               })}
             </ScrollView>
 
-            {/* Footer actions */}
             <View style={styles.modalFooter}>
               <TouchableOpacity
                 style={[styles.footerBtn, styles.footerBtnCancel]}
                 activeOpacity={0.7}
                 onPress={() => setPreview(null)}
               >
-                <Text style={styles.footerBtnCancelText}>Annuler</Text>
+                <Text style={styles.footerBtnCancelText}>{t('campaigns.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 testID="send-campaign-confirm"
-                style={[styles.footerBtn, { backgroundColor: preview?.campaign.color || '#0891B2' }]}
+                style={[styles.footerBtn, { backgroundColor: preview?.color || '#0891B2' }]}
                 activeOpacity={0.7}
                 onPress={sendCampaign}
                 disabled={selectedCount === 0}
               >
                 <Feather name="send" size={16} color="#FFF" />
-                <Text style={styles.footerBtnText}>Envoyer à {selectedCount}</Text>
+                <Text style={styles.footerBtnText}>{t('campaigns.sendTo', { count: selectedCount })}</Text>
               </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
     </SafeAreaView>
-  );
-}
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#FAFAFA' },
