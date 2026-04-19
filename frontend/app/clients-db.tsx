@@ -1,0 +1,355 @@
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  FlatList,
+  TextInput,
+  ActivityIndicator,
+  RefreshControl,
+  Alert,
+  Platform,
+  KeyboardAvoidingView,
+  Modal,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
+import { useRouter, useFocusEffect } from 'expo-router';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import AppHeader from '../components/AppHeader';
+
+const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+
+interface Client {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  notes: string;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export default function ClientsDbScreen() {
+  const router = useRouter();
+  const [clients, setClients] = useState<Client[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [search, setSearch] = useState('');
+  const [importing, setImporting] = useState(false);
+
+  // Create modal
+  const [showCreate, setShowCreate] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newAddress, setNewAddress] = useState('');
+  const [newNotes, setNewNotes] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  const fetchClients = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/clients-db?limit=2000`);
+      const data = await res.json();
+      setClients(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error('Failed to fetch clients', e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(useCallback(() => { fetchClients(); }, [fetchClients]));
+  useEffect(() => { fetchClients(); }, [fetchClients]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return clients;
+    return clients.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.email.toLowerCase().includes(q) ||
+        c.phone.toLowerCase().includes(q) ||
+        c.address.toLowerCase().includes(q),
+    );
+  }, [clients, search]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchClients();
+    setRefreshing(false);
+  };
+
+  // IMPORT CSV / XLSX
+  const importFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['text/csv', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/*', '*/*'],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets?.length) return;
+
+      const asset = result.assets[0];
+      setImporting(true);
+
+      const formData = new FormData();
+      // In React Native, we pass the file as { uri, name, type }
+      formData.append('file', {
+        uri: asset.uri,
+        name: asset.name || 'upload.csv',
+        type: asset.mimeType || 'text/csv',
+      } as any);
+
+      const res = await fetch(`${API_URL}/api/clients-db/import`, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.detail || 'Erreur import');
+      }
+
+      Alert.alert(
+        '✅ Import terminé',
+        `${data.created} clients créés\n${data.updated} mis à jour\n${data.skipped_duplicates} doublons ignorés\n${data.errors_count} erreurs`,
+      );
+      await fetchClients();
+    } catch (e: any) {
+      Alert.alert('Erreur', e?.message || "Impossible d'importer le fichier");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  // EXPORT CSV
+  const exportCsv = async () => {
+    try {
+      const url = `${API_URL}/api/clients-db/export/csv`;
+      const path = FileSystem.cacheDirectory + `clients_brightcalendar_${Date.now()}.csv`;
+      const dl = await FileSystem.downloadAsync(url, path);
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(dl.uri, { mimeType: 'text/csv', dialogTitle: 'Exporter la liste de clients' });
+      } else {
+        Alert.alert('Fichier téléchargé', `Enregistré à: ${dl.uri}`);
+      }
+    } catch (e: any) {
+      Alert.alert('Erreur', e?.message || 'Export impossible');
+    }
+  };
+
+  // CREATE
+  const createClient = async () => {
+    if (!newName.trim()) {
+      Alert.alert('Erreur', 'Le nom est requis');
+      return;
+    }
+    setCreating(true);
+    try {
+      const res = await fetch(`${API_URL}/api/clients-db`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newName.trim(),
+          email: newEmail.trim(),
+          phone: newPhone.trim(),
+          address: newAddress.trim(),
+          notes: newNotes.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Erreur');
+      // reset
+      setNewName(''); setNewEmail(''); setNewPhone(''); setNewAddress(''); setNewNotes('');
+      setShowCreate(false);
+      await fetchClients();
+      Alert.alert('✅ Client créé', data.name);
+    } catch (e: any) {
+      Alert.alert('Erreur', e?.message || 'Création impossible');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const renderClient = ({ item }: { item: Client }) => (
+    <TouchableOpacity
+      style={styles.card}
+      activeOpacity={0.7}
+      onPress={() => router.push({ pathname: '/client-db-detail', params: { id: item.id } } as any)}
+    >
+      <View style={styles.avatar}>
+        <Text style={styles.avatarText}>
+          {(item.name || '?').charAt(0).toUpperCase()}
+        </Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.name} numberOfLines={1}>{item.name || '(sans nom)'}</Text>
+        {item.email ? <Text style={styles.meta} numberOfLines={1}>✉️ {item.email}</Text> : null}
+        {item.phone ? <Text style={styles.meta} numberOfLines={1}>📞 {item.phone}</Text> : null}
+        {item.tags?.length > 0 && (
+          <View style={styles.tagRow}>
+            {item.tags.slice(0, 3).map((t) => (
+              <View key={t} style={styles.tag}>
+                <Text style={styles.tagText}>{t}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+      <Feather name="chevron-right" size={20} color="#C4C4C4" />
+    </TouchableOpacity>
+  );
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <AppHeader title="Base Clients" showBack />
+
+      {/* Header stats & actions */}
+      <View style={styles.statsRow}>
+        <View style={styles.statBox}>
+          <Text style={styles.statNum}>{clients.length}</Text>
+          <Text style={styles.statLabel}>Clients</Text>
+        </View>
+        <View style={styles.actionBtns}>
+          <TouchableOpacity onPress={() => setShowCreate(true)} style={[styles.actionBtn, { backgroundColor: '#111' }]} activeOpacity={0.8}>
+            <Feather name="user-plus" size={18} color="#fff" />
+            <Text style={styles.actionBtnText}>Nouveau</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.toolRow}>
+        <TouchableOpacity onPress={importFile} style={styles.toolBtn} activeOpacity={0.8} disabled={importing}>
+          {importing ? <ActivityIndicator size="small" color="#0891B2" /> : <Feather name="upload" size={18} color="#0891B2" />}
+          <Text style={styles.toolBtnText}>{importing ? 'Import...' : 'Import CSV/Excel'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={exportCsv} style={styles.toolBtn} activeOpacity={0.8}>
+          <Feather name="download" size={18} color="#0891B2" />
+          <Text style={styles.toolBtnText}>Export CSV</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.searchBox}>
+        <Feather name="search" size={18} color="#6B7280" />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Rechercher nom, courriel, téléphone..."
+          placeholderTextColor="#9CA3AF"
+          value={search}
+          onChangeText={setSearch}
+          autoCorrect={false}
+          autoCapitalize="none"
+        />
+        {search ? (
+          <TouchableOpacity onPress={() => setSearch('')}>
+            <Feather name="x" size={18} color="#6B7280" />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      {loading ? (
+        <View style={styles.empty}>
+          <ActivityIndicator size="large" color="#0891B2" />
+        </View>
+      ) : filtered.length === 0 ? (
+        <View style={styles.empty}>
+          <Feather name="users" size={48} color="#E5E7EB" />
+          <Text style={styles.emptyTitle}>
+            {search ? 'Aucun résultat' : 'Aucun client'}
+          </Text>
+          <Text style={styles.emptyText}>
+            {search
+              ? 'Essayez un autre terme de recherche'
+              : 'Importez votre liste Excel ou ajoutez un client'}
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filtered}
+          keyExtractor={(item) => item.id}
+          renderItem={renderClient}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0891B2" />}
+          ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+        />
+      )}
+
+      {/* Create Modal */}
+      <Modal visible={showCreate} animationType="slide" transparent onRequestClose={() => setShowCreate(false)}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalBox}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Nouveau client</Text>
+              <TouchableOpacity onPress={() => setShowCreate(false)}>
+                <Feather name="x" size={22} color="#111" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.label}>Nom *</Text>
+            <TextInput style={styles.input} placeholder="ex. Jean Tremblay" value={newName} onChangeText={setNewName} />
+
+            <Text style={styles.label}>Courriel</Text>
+            <TextInput style={styles.input} placeholder="jean@exemple.com" value={newEmail} onChangeText={setNewEmail} keyboardType="email-address" autoCapitalize="none" />
+
+            <Text style={styles.label}>Téléphone</Text>
+            <TextInput style={styles.input} placeholder="514-555-1234" value={newPhone} onChangeText={setNewPhone} keyboardType="phone-pad" />
+
+            <Text style={styles.label}>Adresse</Text>
+            <TextInput style={styles.input} placeholder="123 Rue Principale" value={newAddress} onChangeText={setNewAddress} />
+
+            <Text style={styles.label}>Notes</Text>
+            <TextInput style={[styles.input, { minHeight: 60 }]} placeholder="Notes..." value={newNotes} onChangeText={setNewNotes} multiline />
+
+            <TouchableOpacity onPress={createClient} style={styles.saveBtn} activeOpacity={0.8} disabled={creating}>
+              {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Créer</Text>}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#FAFAFA' },
+  statsRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, gap: 12 },
+  statBox: { flex: 1, backgroundColor: '#fff', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB' },
+  statNum: { fontSize: 28, fontWeight: '800', color: '#0891B2' },
+  statLabel: { fontSize: 12, color: '#6B7280', textTransform: 'uppercase', fontWeight: '700', marginTop: 2, letterSpacing: 0.5 },
+  actionBtns: { flex: 1, flexDirection: 'row', gap: 8, justifyContent: 'flex-end' },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10 },
+  actionBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  toolRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 8 },
+  toolBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#A7F3D0' },
+  toolBtnText: { color: '#0891B2', fontWeight: '700', fontSize: 13 },
+  searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fff', marginHorizontal: 16, paddingHorizontal: 12, height: 44, borderRadius: 10, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 12 },
+  searchInput: { flex: 1, fontSize: 15, color: '#111' },
+  card: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', gap: 12 },
+  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#0891B2', justifyContent: 'center', alignItems: 'center' },
+  avatarText: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  name: { fontSize: 16, fontWeight: '700', color: '#111' },
+  meta: { fontSize: 13, color: '#6B7280', marginTop: 2 },
+  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 },
+  tag: { backgroundColor: '#EFF6FF', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+  tagText: { fontSize: 10, color: '#1E40AF', fontWeight: '700', textTransform: 'uppercase' },
+  empty: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#374151', marginTop: 16 },
+  emptyText: { fontSize: 14, color: '#9CA3AF', textAlign: 'center', marginTop: 4 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalBox: { backgroundColor: '#fff', padding: 20, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '90%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: '#111' },
+  label: { fontSize: 12, fontWeight: '700', color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4, marginTop: 10 },
+  input: { borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: '#111', backgroundColor: '#FAFAFA' },
+  saveBtn: { backgroundColor: '#111', padding: 15, borderRadius: 10, alignItems: 'center', marginTop: 20 },
+  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+});

@@ -21,6 +21,7 @@ const menuItems = [
   { icon: 'send' as const, label: 'Campagnes', route: '/campaigns' },
   { icon: 'cloud' as const, label: 'Sauvegarde', route: '/backup' },
   { icon: 'user' as const, label: 'Clients', route: '/client-history' },
+  { icon: 'database' as const, label: 'Base Clients (BD)', route: '/clients-db' },
 ];
 
 export default function AppHeader({ title, showBack }: Props) {
