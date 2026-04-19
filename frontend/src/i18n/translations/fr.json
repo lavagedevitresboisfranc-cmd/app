@@ -195,17 +195,17 @@
     "spring": {
       "label": "🌷 Campagne Printemps",
       "subject": "Printemps — Lavage de vitres",
-      "body": "Bonjour,\n\nLe printemps est arrivé! C'est le moment idéal pour redonner de l'éclat à vos fenêtres après les intempéries de l'hiver.\n\nRéservez dès maintenant avant que mon agenda se remplisse!\n\n📅 Prendre rendez-vous en ligne:\n{{BOOKING_URL}}\n\n— — —\nLavage de Vitres Bois-Franc\n📞 514-570-9802\n🌐 https://Lavagedevitre.org\n🖼️ Notre logo: {{LOGO_URL}}\n\nMerci de votre confiance!"
+      "body": "Bonjour,\n\nLe printemps est arrivé! C'est le moment idéal pour redonner de l'éclat à vos fenêtres après les intempéries de l'hiver.\n\nRéservez dès maintenant avant que mon agenda se remplisse!\n\n📅 Prendre rendez-vous en ligne:\n{{BOOKING_URL}}\n\n— — —\nLavage de Vitres Bois-Franc\n📞 514-570-9802\n🌐 https://Lavagedevitre.org\n\nMerci de votre confiance!"
     },
     "autumn": {
       "label": "🍂 Relance Automne",
       "subject": "Préparez vos fenêtres pour l'hiver",
-      "body": "Bonjour,\n\nAvant que l'hiver n'arrive, offrez à vos fenêtres un dernier nettoyage pour profiter pleinement de la lumière durant les mois sombres.\n\n🍂 PROMO AUTOMNE 🍂\n10% de rabais sur votre prochain lavage\nCode: AUTOMNE10\nValide jusqu'au 30 novembre\n\n📅 Prendre rendez-vous en ligne:\n{{BOOKING_URL}}\n\n— — —\nLavage de Vitres Bois-Franc\n📞 514-570-9802\n🌐 https://Lavagedevitre.org\n🖼️ Notre logo: {{LOGO_URL}}\n\nMerci de votre confiance!"
+      "body": "Bonjour,\n\nAvant que l'hiver n'arrive, offrez à vos fenêtres un dernier nettoyage pour profiter pleinement de la lumière durant les mois sombres.\n\n🍂 PROMO AUTOMNE 🍂\n10% de rabais sur votre prochain lavage\nCode: AUTOMNE10\nValide jusqu'au 30 novembre\n\n📅 Prendre rendez-vous en ligne:\n{{BOOKING_URL}}\n\n— — —\nLavage de Vitres Bois-Franc\n📞 514-570-9802\n🌐 https://Lavagedevitre.org\n\nMerci de votre confiance!"
     },
     "summer": {
       "label": "☀️ Campagne Été",
       "subject": "Vitres propres pour les belles journées d'été",
-      "body": "Bonjour,\n\nL'été bat son plein! Profitez de votre cour et de votre patio avec des fenêtres parfaitement propres.\n\n☀️ SPÉCIAL ÉTÉ ☀️\n10% de rabais\nCode: ETE10\n\n📅 Prendre rendez-vous en ligne:\n{{BOOKING_URL}}\n\n— — —\nLavage de Vitres Bois-Franc\n📞 514-570-9802\n🌐 https://Lavagedevitre.org\n🖼️ Notre logo: {{LOGO_URL}}\n\nMerci de votre confiance!"
+      "body": "Bonjour,\n\nL'été bat son plein! Profitez de votre cour et de votre patio avec des fenêtres parfaitement propres.\n\n☀️ SPÉCIAL ÉTÉ ☀️\n10% de rabais\nCode: ETE10\n\n📅 Prendre rendez-vous en ligne:\n{{BOOKING_URL}}\n\n— — —\nLavage de Vitres Bois-Franc\n📞 514-570-9802\n🌐 https://Lavagedevitre.org\n\nMerci de votre confiance!"
     },
     "message": "Message",
     "sendCampaign": "Envoyer la campagne"

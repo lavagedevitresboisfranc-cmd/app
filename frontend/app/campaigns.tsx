@@ -46,9 +46,8 @@ export default function CampaignsScreen() {
   const openPreview = (s: typeof SEASONS[0]) => {
     setExcluded(new Set());
     const bookingUrl = `${API_URL}/api/booking`;
-    const logoUrl = `${API_URL}/api/company-logo`;
     const subject = t(`campaigns.${s.id}.subject`);
-    const body = t(`campaigns.${s.id}.body`, { BOOKING_URL: bookingUrl, LOGO_URL: logoUrl });
+    const body = t(`campaigns.${s.id}.body`, { BOOKING_URL: bookingUrl });
     setPreview({ season: s.id, icon: s.icon, color: s.color, subject, body });
   };
 
