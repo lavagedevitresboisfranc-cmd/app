@@ -75,6 +75,7 @@ class AppointmentResponse(BaseModel):
     assigned_id: Optional[str] = None
     assigned_color: Optional[str] = None
     client_photo: Optional[str] = None
+    client_id: Optional[str] = None
 
 # --- Request Models ---
 
@@ -108,6 +109,7 @@ class RequestResponse(BaseModel):
     suggested_note: Optional[str] = None
     created_at: str
     request_type: Optional[str] = "rdv"
+    client_id: Optional[str] = None
 
 
 # --- Voice Transcription ---
@@ -245,8 +247,78 @@ h1{{margin:0 0 8px 0;font-size:28px;}}
 async def root():
     return {"message": "Appointment Manager API"}
 
+
+# ============================================================
+# AUTO-LINK HELPER — Phase 4: Link appointments/requests to stored clients
+# ============================================================
+
+async def _auto_link_client(name: str, email: str = "", phone: str = "",
+                             address: str = "", source: str = "appointment") -> Optional[str]:
+    """Find existing client by email/phone, or create a new one. Returns client_id."""
+    import re as _re
+    email_n = (email or "").strip().lower()
+    phone_n = _re.sub(r"\D", "", phone or "")
+    name_t = (name or "").strip()
+
+    existing = None
+    if email_n:
+        existing = await db.clients.find_one({"email_norm": email_n})
+    if not existing and phone_n:
+        existing = await db.clients.find_one({"phone_norm": phone_n})
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    if existing:
+        # Enrich non-empty missing fields
+        update_fields = {"updated_at": now}
+        if phone and not existing.get("phone"):
+            update_fields["phone"] = phone.strip()
+            update_fields["phone_norm"] = phone_n
+        if email and not existing.get("email"):
+            update_fields["email"] = email.strip()
+            update_fields["email_norm"] = email_n
+        if address and not existing.get("address"):
+            update_fields["address"] = address.strip()
+        tags = existing.get("tags", []) or []
+        if source and source not in tags:
+            tags.append(source)
+            update_fields["tags"] = tags
+        if len(update_fields) > 1:
+            await db.clients.update_one({"id": existing["id"]}, {"$set": update_fields})
+        return existing["id"]
+
+    # Only create if we have at least a name or email
+    if not name_t and not email_n:
+        return None
+
+    new_id = str(uuid.uuid4())
+    await db.clients.insert_one({
+        "id": new_id,
+        "name": name_t or email_n or "(sans nom)",
+        "email": (email or "").strip(),
+        "email_norm": email_n,
+        "phone": (phone or "").strip(),
+        "phone_norm": phone_n,
+        "address": (address or "").strip(),
+        "notes": "",
+        "tags": [source] if source else ["auto"],
+        "created_at": now,
+        "updated_at": now,
+    })
+    logger.info(f"Auto-created client '{name_t}' from {source}")
+    return new_id
+
+
 @api_router.post("/appointments", response_model=AppointmentResponse)
 async def create_appointment(data: AppointmentCreate):
+    # Auto-link to stored clients DB
+    client_id = await _auto_link_client(
+        name=data.client_name,
+        email=data.client_email or "",
+        phone=data.client_phone or "",
+        address=data.client_address or "",
+        source="appointment",
+    )
     appointment = {
         "id": str(uuid.uuid4()),
         "title": data.title,
@@ -260,6 +332,7 @@ async def create_appointment(data: AppointmentCreate):
         "price": data.price or 0.0,
         "notes": data.notes or "",
         "status": data.status,
+        "client_id": client_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.appointments.insert_one(appointment)
@@ -305,6 +378,15 @@ async def delete_appointment(appointment_id: str):
 @api_router.post("/requests", response_model=RequestResponse)
 async def create_request(data: RequestCreate):
     """Public endpoint: customers submit appointment requests from website"""
+    # Auto-link to stored clients DB (source based on request_type)
+    source = "booking-est" if (data.request_type or "rdv") == "est" else "booking-rdv"
+    client_id = await _auto_link_client(
+        name=data.customer_name,
+        email=data.customer_email or "",
+        phone=data.customer_phone or "",
+        address=data.customer_address or "",
+        source=source,
+    )
     request_doc = {
         "id": str(uuid.uuid4()),
         "customer_name": data.customer_name,
@@ -318,6 +400,8 @@ async def create_request(data: RequestCreate):
         "suggested_date": None,
         "suggested_time": None,
         "suggested_note": None,
+        "request_type": data.request_type or "rdv",
+        "client_id": client_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.appointment_requests.insert_one(request_doc)
@@ -384,7 +468,7 @@ async def accept_request(request_id: str, data: AcceptRequest = AcceptRequest())
     if req["status"] == "accepted":
         raise HTTPException(status_code=400, detail="Request already accepted")
 
-    # Create appointment from request
+    # Create appointment from request — preserve client_id link from the request
     appointment = {
         "id": str(uuid.uuid4()),
         "title": f"Meeting with {req['customer_name']}",
@@ -398,6 +482,7 @@ async def accept_request(request_id: str, data: AcceptRequest = AcceptRequest())
         "price": data.price or 0.0,
         "notes": req.get("message", ""),
         "status": "upcoming",
+        "client_id": req.get("client_id"),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.appointments.insert_one(appointment)
@@ -753,24 +838,33 @@ async def get_client_db_history(client_id: str):
     if not c:
         raise HTTPException(status_code=404, detail="Client introuvable")
 
-    # Match appointments by email or phone or name
-    conditions = []
+    # Primary match: direct client_id link (set by Phase 4 auto-linking)
+    conditions = [{"client_id": client_id}]
+
+    # Fallback matches (for legacy appointments created before auto-linking)
     if c.get("email"):
         conditions.append({"client_email": {"$regex": f"^{c['email']}$", "$options": "i"}})
     if c.get("phone"):
-        # Normalize both sides
         phone_digits = c.get("phone_norm", "")
-        if phone_digits:
+        if phone_digits and len(phone_digits) >= 7:
             conditions.append({"client_phone": {"$regex": phone_digits[-7:]}})
     if c.get("name"):
         conditions.append({"client_name": {"$regex": f"^{c['name']}$", "$options": "i"}})
 
-    query = {"$or": conditions} if conditions else {"_id": "never_matches"}
+    query = {"$or": conditions}
     appointments = await db.appointments.find(query, {"_id": 0}).sort("date", -1).to_list(500)
+    # Dedup in case multiple conditions match the same doc
+    seen_ids = set()
+    unique = []
+    for a in appointments:
+        if a.get("id") not in seen_ids:
+            unique.append(a)
+            seen_ids.add(a.get("id"))
+
     return {
         "client": _client_to_response(c),
-        "appointments": [AppointmentResponse(**a) for a in appointments],
-        "total": len(appointments),
+        "appointments": [AppointmentResponse(**a) for a in unique],
+        "total": len(unique),
     }
 
 # ============================================================
