@@ -213,6 +213,21 @@ async def company_logo():
     return FileResponse(str(logo_path), media_type="image/jpeg", headers={"Cache-Control": "public, max-age=3600"})
 
 
+@api_router.get("/business-plan")
+async def business_plan():
+    """Serve the BrightCalendar commercialization business plan (Word document)."""
+    from fastapi.responses import FileResponse
+    doc_path = ROOT_DIR / "assets" / "BrightCalendar_Plan_Commercialisation.docx"
+    if not doc_path.exists():
+        raise HTTPException(status_code=404, detail="Business plan not found")
+    return FileResponse(
+        str(doc_path),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename="BrightCalendar_Plan_Commercialisation.docx",
+        headers={"Content-Disposition": 'attachment; filename="BrightCalendar_Plan_Commercialisation.docx"'}
+    )
+
+
 @api_router.get("/booking-qr-card")
 async def booking_qr_card(request: Request, format: str = "png"):
     """Generate a complete branded QR card — ready to use on a website. Supports ?format=jpeg or ?format=png (default)."""
