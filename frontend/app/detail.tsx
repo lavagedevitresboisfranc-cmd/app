@@ -588,78 +588,91 @@ export default function DetailScreen() {
           </View>
         </View>
 
-        {/* Quick Actions */}
+        {/* Quick Actions — Organized by category */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>OUTILS</Text>
-          <View style={styles.statusActions}>
-            <TouchableOpacity
-              testID="share-button"
-              style={[styles.actionBtn, { borderColor: '#0891B2' }]}
-              activeOpacity={0.7}
-              onPress={handleShare}
-            >
-              <Feather name="share" size={18} color="#0891B2" />
-              <Text style={[styles.actionBtnText, { color: '#0891B2' }]}>Partager</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              testID="recurrence-button"
-              style={[styles.actionBtn, { borderColor: '#0891B2' }]}
-              activeOpacity={0.7}
-              onPress={handleRecurrence}
-            >
-              <Feather name="repeat" size={18} color="#0891B2" />
-              <Text style={[styles.actionBtnText, { color: '#0891B2' }]}>Récurrence</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              testID="airdrop-button"
-              style={[styles.actionBtn, { borderColor: '#000000', backgroundColor: '#F5F5F7' }]}
-              activeOpacity={0.7}
-              onPress={handleAirDrop}
-            >
-              <Feather name="send" size={18} color="#000000" />
-              <Text style={[styles.actionBtnText, { color: '#000000' }]}>AirDrop</Text>
-            </TouchableOpacity>
+
+          {/* 💰 FACTURATION */}
+          <Text style={styles.toolGroupTitle}>💰 Facturation</Text>
+          <View style={styles.toolGrid}>
             <TouchableOpacity
               testID="invoice-button"
-              style={[styles.actionBtn, { borderColor: '#0891B2' }]}
+              style={[styles.toolBtn, { borderColor: '#0891B2' }]}
               activeOpacity={0.7}
               onPress={() => Linking.openURL(`${API_URL}/api/invoice/${appointment!.id}`)}
             >
-              <Feather name="file-text" size={18} color="#0891B2" />
-              <Text style={[styles.actionBtnText, { color: '#0891B2' }]}>Facture</Text>
+              <Feather name="file-text" size={20} color="#0891B2" />
+              <Text style={[styles.toolBtnText, { color: '#0891B2' }]}>Facture PDF</Text>
             </TouchableOpacity>
             <TouchableOpacity
               testID="email-invoice-button"
-              style={[styles.actionBtn, { borderColor: '#059669' }]}
+              style={[styles.toolBtn, { borderColor: '#059669' }]}
               activeOpacity={0.7}
               onPress={handleEmailInvoice}
             >
-              <Feather name="mail" size={18} color="#059669" />
-              <Text style={[styles.actionBtnText, { color: '#059669' }]}>Envoyer facture</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              testID="assign-button"
-              style={[styles.actionBtn, { borderColor: appointment.assigned_color || '#7C3AED' }]}
-              activeOpacity={0.7}
-              onPress={handleAssignEmployee}
-            >
-              <Feather name="user-check" size={18} color={appointment.assigned_color || '#7C3AED'} />
-              <Text style={[styles.actionBtnText, { color: appointment.assigned_color || '#7C3AED' }]} numberOfLines={1}>
-                {appointment.assigned_to ? appointment.assigned_to : 'Assigner'}
-              </Text>
+              <Feather name="mail" size={20} color="#059669" />
+              <Text style={[styles.toolBtnText, { color: '#059669' }]}>Envoyer facture</Text>
             </TouchableOpacity>
             <TouchableOpacity
               testID="review-request-button"
-              style={[styles.actionBtn, { borderColor: '#F59E0B' }]}
+              style={[styles.toolBtn, { borderColor: '#F59E0B' }]}
               activeOpacity={0.7}
               onPress={handleReviewRequest}
             >
-              <Feather name="star" size={18} color="#F59E0B" />
-              <Text style={[styles.actionBtnText, { color: '#F59E0B' }]}>Demander avis</Text>
+              <Feather name="star" size={20} color="#F59E0B" />
+              <Text style={[styles.toolBtnText, { color: '#F59E0B' }]}>Demander avis</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Voice Note */}
+          {/* 🔄 PLANIFICATION */}
+          <Text style={styles.toolGroupTitle}>🔄 Planification</Text>
+          <View style={styles.toolGrid}>
+            <TouchableOpacity
+              testID="recurrence-button"
+              style={[styles.toolBtn, { borderColor: '#0891B2' }]}
+              activeOpacity={0.7}
+              onPress={handleRecurrence}
+            >
+              <Feather name="repeat" size={20} color="#0891B2" />
+              <Text style={[styles.toolBtnText, { color: '#0891B2' }]}>Récurrence</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="assign-button"
+              style={[styles.toolBtn, { borderColor: appointment.assigned_color || '#7C3AED' }]}
+              activeOpacity={0.7}
+              onPress={handleAssignEmployee}
+            >
+              <Feather name="user-check" size={20} color={appointment.assigned_color || '#7C3AED'} />
+              <Text style={[styles.toolBtnText, { color: appointment.assigned_color || '#7C3AED' }]} numberOfLines={1}>
+                {appointment.assigned_to ? appointment.assigned_to : 'Assigner'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* 📤 PARTAGE */}
+          <Text style={styles.toolGroupTitle}>📤 Partage & Notes</Text>
+          <View style={styles.toolGrid}>
+            <TouchableOpacity
+              testID="share-button"
+              style={[styles.toolBtn, { borderColor: '#0891B2' }]}
+              activeOpacity={0.7}
+              onPress={handleShare}
+            >
+              <Feather name="share-2" size={20} color="#0891B2" />
+              <Text style={[styles.toolBtnText, { color: '#0891B2' }]}>Partager</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="airdrop-button"
+              style={[styles.toolBtn, { borderColor: '#000000', backgroundColor: '#F5F5F7' }]}
+              activeOpacity={0.7}
+              onPress={handleAirDrop}
+            >
+              <Feather name="send" size={20} color="#000000" />
+              <Text style={[styles.toolBtnText, { color: '#000000' }]}>AirDrop</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* 🎤 Note Vocale — full width, distinct */}
           <View style={styles.voiceSection}>
             <TouchableOpacity
               testID="voice-record-button"
@@ -669,7 +682,7 @@ export default function DetailScreen() {
             >
               <Feather name={isRecording ? 'square' : 'mic'} size={20} color={isRecording ? '#FF3B30' : '#0891B2'} />
               <Text style={[styles.voiceBtnText, isRecording && { color: '#FF3B30' }]}>
-                {isRecording ? 'Arrêter l\'enregistrement' : 'Note vocale'}
+                {isRecording ? 'Arrêter l\'enregistrement' : '🎤 Note vocale'}
               </Text>
             </TouchableOpacity>
             {recordingUri && (
@@ -686,16 +699,19 @@ export default function DetailScreen() {
           </View>
         </View>
 
-        {/* Delete */}
-        <TouchableOpacity
-          testID="delete-button"
-          style={styles.deleteBtn}
-          activeOpacity={0.7}
-          onPress={handleDelete}
-        >
-          <Feather name="trash-2" size={18} color="#FF3B30" />
-          <Text style={styles.deleteBtnText}>Delete Appointment</Text>
-        </TouchableOpacity>
+        {/* ⚠️ ZONE DANGER */}
+        <View style={styles.dangerZone}>
+          <Text style={styles.dangerZoneLabel}>⚠️ ZONE DANGER</Text>
+          <TouchableOpacity
+            testID="delete-button"
+            style={styles.deleteBtn}
+            activeOpacity={0.7}
+            onPress={handleDelete}
+          >
+            <Feather name="trash-2" size={18} color="#FF3B30" />
+            <Text style={styles.deleteBtnText}>Supprimer ce rendez-vous</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -836,20 +852,66 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  // Professional tool organization
+  toolGroupTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#374151',
+    marginTop: 16,
+    marginBottom: 10,
+    letterSpacing: 0.3,
+  },
+  toolGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  toolBtn: {
+    flexGrow: 1,
+    flexBasis: '47%',
+    minHeight: 68,
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    gap: 6,
+    backgroundColor: '#FFF',
+  },
+  toolBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  dangerZone: {
+    marginTop: 24,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#FEE2E2',
+  },
+  dangerZoneLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#DC2626',
+    marginBottom: 10,
+    letterSpacing: 0.5,
+  },
   deleteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#FF3B30',
-    borderRadius: 4,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 10,
     paddingVertical: 14,
     gap: 8,
-    marginTop: 8,
   },
   deleteBtnText: {
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#FF3B30',
   },
   emptyState: {
