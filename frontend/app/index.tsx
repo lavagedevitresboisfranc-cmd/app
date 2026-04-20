@@ -871,8 +871,8 @@ const styles = StyleSheet.create({
     color: '#0891B2',
   },
   headerLogoImage: {
-    width: 180,
-    height: 44,
+    width: 260,
+    height: 68,
   },
   offlineBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
