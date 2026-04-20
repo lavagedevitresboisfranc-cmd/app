@@ -18,6 +18,7 @@
       "newAppointment": "Nouveau RDV",
       "requests": "Demandes",
       "clientsDb": "Base Clients",
+      "clientsArchive": "Corbeille Clients",
       "clientsHistory": "Historique clients",
       "reviews": "Avis clients",
       "estimate": "Estimation",

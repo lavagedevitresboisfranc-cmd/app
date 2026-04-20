@@ -953,12 +953,18 @@ async def create_client_db(data: ClientCreate):
 
 
 @api_router.get("/clients-db", response_model=List[ClientResponse])
-async def list_clients_db(search: Optional[str] = None, limit: int = 500):
-    """List all stored clients with optional search by name/email/phone"""
-    query = {}
+async def list_clients_db(search: Optional[str] = None, limit: int = 500, archived: bool = False):
+    """List all stored clients with optional search by name/email/phone.
+    By default only active (non-archived) clients are returned.
+    Use ?archived=true to list archived (soft-deleted) clients."""
+    query: dict = {}
+    if archived:
+        query["archived"] = True
+    else:
+        query["$or"] = [{"archived": {"$exists": False}}, {"archived": False}]
     if search:
         search_trim = search.strip()
-        query = {
+        search_filter = {
             "$or": [
                 {"name": {"$regex": search_trim, "$options": "i"}},
                 {"email": {"$regex": search_trim, "$options": "i"}},
@@ -966,9 +972,59 @@ async def list_clients_db(search: Optional[str] = None, limit: int = 500):
                 {"address": {"$regex": search_trim, "$options": "i"}},
             ]
         }
+        # Combine with archive filter using $and
+        query = {"$and": [query, search_filter]} if query else search_filter
     cursor = db.clients.find(query, {"_id": 0}).sort("name", 1).limit(max(1, min(limit, 2000)))
     items = await cursor.to_list(2000)
     return [ClientResponse(**_client_to_response(c)) for c in items]
+
+
+# --- BULK ARCHIVE / RESTORE / DELETE endpoints ---------------------------
+
+class ClientBulkIds(BaseModel):
+    ids: List[str]
+
+
+@api_router.post("/clients-db/archive-bulk")
+async def archive_clients_bulk(payload: ClientBulkIds):
+    """Soft-delete multiple clients — moves them to archive (archived=true)."""
+    if not payload.ids:
+        return {"archived": 0}
+    now = datetime.now(timezone.utc).isoformat()
+    res = await db.clients.update_many(
+        {"id": {"$in": payload.ids}},
+        {"$set": {"archived": True, "archived_at": now, "updated_at": now}},
+    )
+    return {"archived": res.modified_count}
+
+
+@api_router.post("/clients-db/restore-bulk")
+async def restore_clients_bulk(payload: ClientBulkIds):
+    """Restore multiple archived clients back to active list."""
+    if not payload.ids:
+        return {"restored": 0}
+    now = datetime.now(timezone.utc).isoformat()
+    res = await db.clients.update_many(
+        {"id": {"$in": payload.ids}},
+        {"$set": {"archived": False, "updated_at": now}, "$unset": {"archived_at": ""}},
+    )
+    return {"restored": res.modified_count}
+
+
+@api_router.post("/clients-db/delete-permanent-bulk")
+async def delete_clients_permanent_bulk(payload: ClientBulkIds):
+    """Permanently delete multiple clients from DB (cannot be undone)."""
+    if not payload.ids:
+        return {"deleted": 0}
+    res = await db.clients.delete_many({"id": {"$in": payload.ids}})
+    return {"deleted": res.deleted_count}
+
+
+@api_router.get("/clients-db/archive/count")
+async def count_archived_clients_db():
+    """Count how many clients are currently in the archive."""
+    count = await db.clients.count_documents({"archived": True})
+    return {"count": count}
 
 
 @api_router.get("/clients-db/count")

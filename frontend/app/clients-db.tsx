@@ -127,6 +127,37 @@ export default function ClientsDbScreen() {
     exitSelectionMode();
   };
 
+  const archiveSelected = () => {
+    if (selectedIds.size === 0) return;
+    Alert.alert(
+      '🗑️ Archiver les clients',
+      `Voulez-vous archiver ${selectedIds.size} client${selectedIds.size > 1 ? 's' : ''} ?\n\nLes clients archivés seront déplacés vers la corbeille et pourront être restaurés ou supprimés définitivement.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Archiver',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const res = await fetch(`${API_URL}/api/clients-db/archive-bulk`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: Array.from(selectedIds) }),
+              });
+              const data = await res.json();
+              if (!res.ok) throw new Error(data.detail || 'Erreur');
+              Alert.alert('✅ Archivé', `${data.archived} client${data.archived > 1 ? 's' : ''} déplacé${data.archived > 1 ? 's' : ''} vers la corbeille.`);
+              exitSelectionMode();
+              await fetchClients();
+            } catch (e: any) {
+              Alert.alert('Erreur', e?.message || 'Archivage impossible');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // IMPORT CSV / XLSX
   const importFile = async () => {
     try {
@@ -320,6 +351,14 @@ export default function ClientsDbScreen() {
           <Feather name="download" size={18} color="#0891B2" />
           <Text style={styles.toolBtnText}>Export CSV</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => router.push('/clients-archive' as any)}
+          style={[styles.toolBtn, { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}
+          activeOpacity={0.8}
+        >
+          <Feather name="archive" size={18} color="#DC2626" />
+          <Text style={[styles.toolBtnText, { color: '#DC2626' }]}>Corbeille</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.searchBox}>
@@ -371,16 +410,26 @@ export default function ClientsDbScreen() {
       {selectionMode && selectedIds.size > 0 && (
         <View style={styles.bottomBar}>
           <Text style={styles.bottomBarText}>
-            {selectedIds.size} client{selectedIds.size > 1 ? 's' : ''} sélectionné{selectedIds.size > 1 ? 's' : ''}
+            {selectedIds.size} client{selectedIds.size > 1 ? 's' : ''}
           </Text>
-          <TouchableOpacity
-            onPress={launchCampaignWithSelection}
-            style={styles.bottomBarBtn}
-            activeOpacity={0.85}
-          >
-            <Feather name="mail" size={18} color="#fff" />
-            <Text style={styles.bottomBarBtnText}>Campagne</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity
+              onPress={archiveSelected}
+              style={[styles.bottomBarBtn, { backgroundColor: '#DC2626' }]}
+              activeOpacity={0.85}
+            >
+              <Feather name="trash-2" size={16} color="#fff" />
+              <Text style={styles.bottomBarBtnText}>Archiver</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={launchCampaignWithSelection}
+              style={styles.bottomBarBtn}
+              activeOpacity={0.85}
+            >
+              <Feather name="mail" size={16} color="#fff" />
+              <Text style={styles.bottomBarBtnText}>Campagne</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
