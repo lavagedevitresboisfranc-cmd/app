@@ -34,6 +34,8 @@ export default function CampaignsScreen() {
   const [loading, setLoading] = useState(true);
   const [preview, setPreview] = useState<{ season: SeasonKey; icon: string; color: string; subject: string; body: string } | null>(null);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const [showRandomModal, setShowRandomModal] = useState(false);
+  const [randomCount, setRandomCount] = useState('25');
 
   // Target emails (from clients-db selection) — only those emails will be used as recipients
   const targetEmailSet = useMemo(() => {
@@ -77,6 +79,30 @@ export default function CampaignsScreen() {
       else next.add(email);
       return next;
     });
+  };
+
+  /** Fisher-Yates shuffle + sélection de N clients aléatoires */
+  const applyRandomSelection = (nTarget: number) => {
+    const emails = clients.map(c => c.email).filter(Boolean);
+    const n = Math.max(1, Math.min(nTarget, emails.length));
+    // Shuffle
+    const shuffled = [...emails];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    const keep = new Set(shuffled.slice(0, n));
+    // Exclure tous sauf les N sélectionnés
+    const toExclude = new Set(emails.filter(e => !keep.has(e)));
+    setExcluded(toExclude);
+    setShowRandomModal(false);
+  };
+
+  const openRandomModal = () => {
+    // Préremplit une valeur raisonnable (ex: 25 ou la moitié)
+    const half = Math.max(10, Math.floor(clients.length / 2));
+    setRandomCount(String(Math.min(25, half)));
+    setShowRandomModal(true);
   };
 
   const selectedCount = clients.length - excluded.size;
@@ -236,7 +262,7 @@ export default function CampaignsScreen() {
               </Text>
               <Text style={styles.listHint}>{t('campaigns.tapToExclude')}</Text>
 
-              {/* Select all / none quick actions */}
+              {/* Select all / none / random quick actions */}
               <View style={styles.recipientActions}>
                 <TouchableOpacity
                   onPress={() => setExcluded(new Set())}
@@ -244,7 +270,7 @@ export default function CampaignsScreen() {
                   activeOpacity={0.7}
                 >
                   <Feather name="check-square" size={16} color="#10B981" />
-                  <Text style={[styles.recipientActionText, { color: '#10B981' }]}>Tout sélectionner</Text>
+                  <Text style={[styles.recipientActionText, { color: '#10B981' }]}>Tout</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => setExcluded(new Set(clients.map(c => c.email).filter(Boolean)))}
@@ -252,7 +278,16 @@ export default function CampaignsScreen() {
                   activeOpacity={0.7}
                 >
                   <Feather name="square" size={16} color="#EF4444" />
-                  <Text style={[styles.recipientActionText, { color: '#EF4444' }]}>Tout désélectionner</Text>
+                  <Text style={[styles.recipientActionText, { color: '#EF4444' }]}>Aucun</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={openRandomModal}
+                  style={[styles.recipientActionBtn, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}
+                  activeOpacity={0.7}
+                  disabled={clients.length === 0}
+                >
+                  <Text style={{ fontSize: 16 }}>🎲</Text>
+                  <Text style={[styles.recipientActionText, { color: '#B45309' }]}>Aléatoire</Text>
                 </TouchableOpacity>
               </View>
 
@@ -301,6 +336,82 @@ export default function CampaignsScreen() {
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
+
+      {/* Random Selection Modal */}
+      <Modal
+        visible={showRandomModal}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setShowRandomModal(false)}
+      >
+        <View style={styles.randomOverlay}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{ width: '100%', alignItems: 'center' }}
+          >
+            <View style={styles.randomCard}>
+              <View style={{ alignItems: 'center', marginBottom: 12 }}>
+                <Text style={{ fontSize: 40 }}>🎲</Text>
+                <Text style={styles.randomTitle}>Sélection aléatoire</Text>
+                <Text style={styles.randomSubtitle}>
+                  Choisir X clients au hasard parmi {clients.length}
+                </Text>
+              </View>
+
+              <Text style={styles.randomLabel}>Préréglages rapides :</Text>
+              <View style={styles.randomPresets}>
+                {[10, 25, 50, 100].filter(n => n <= clients.length).map(n => (
+                  <TouchableOpacity
+                    key={n}
+                    onPress={() => applyRandomSelection(n)}
+                    style={styles.randomPresetBtn}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.randomPresetText}>{n}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <View style={{ height: 12 }} />
+
+              <Text style={styles.randomLabel}>Ou nombre personnalisé :</Text>
+              <View style={styles.randomInputRow}>
+                <TextInput
+                  style={styles.randomInput}
+                  keyboardType="number-pad"
+                  value={randomCount}
+                  onChangeText={(v) => setRandomCount(v.replace(/[^0-9]/g, ''))}
+                  maxLength={5}
+                  placeholder="25"
+                  placeholderTextColor="#9CA3AF"
+                />
+                <TouchableOpacity
+                  onPress={() => {
+                    const n = parseInt(randomCount, 10);
+                    if (!n || n < 1) {
+                      Alert.alert('Nombre invalide', 'Entrez un nombre supérieur à 0.');
+                      return;
+                    }
+                    applyRandomSelection(n);
+                  }}
+                  style={styles.randomApplyBtn}
+                  activeOpacity={0.85}
+                >
+                  <Feather name="shuffle" size={16} color="#fff" />
+                  <Text style={styles.randomApplyText}>Sélectionner</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                onPress={() => setShowRandomModal(false)}
+                style={styles.randomCancelBtn}
+              >
+                <Text style={styles.randomCancelText}>Annuler</Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -326,6 +437,42 @@ const styles = StyleSheet.create({
     gap: 6, paddingVertical: 10, borderRadius: 8, borderWidth: 1,
   },
   recipientActionText: { fontSize: 13, fontWeight: '700' },
+
+  // Random selection modal
+  randomOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center', alignItems: 'center', padding: 24,
+  },
+  randomCard: {
+    backgroundColor: '#FFF', borderRadius: 20, padding: 24,
+    width: '100%', maxWidth: 420,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 20,
+  },
+  randomTitle: { fontSize: 22, fontWeight: '800', color: '#111', marginTop: 6 },
+  randomSubtitle: { fontSize: 13, color: '#6B7280', marginTop: 4, textAlign: 'center' },
+  randomLabel: { fontSize: 13, fontWeight: '700', color: '#374151', marginBottom: 8, marginTop: 4 },
+  randomPresets: { flexDirection: 'row', gap: 8 },
+  randomPresetBtn: {
+    flex: 1, paddingVertical: 14, backgroundColor: '#F3F4F6',
+    borderRadius: 10, alignItems: 'center',
+    borderWidth: 1, borderColor: '#E5E7EB',
+  },
+  randomPresetText: { fontSize: 18, fontWeight: '800', color: '#0891B2' },
+  randomInputRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  randomInput: {
+    flex: 1, height: 48, paddingHorizontal: 16,
+    backgroundColor: '#F9FAFB', borderRadius: 10,
+    borderWidth: 1, borderColor: '#E5E7EB',
+    fontSize: 18, fontWeight: '700', color: '#111', textAlign: 'center',
+  },
+  randomApplyBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#0891B2', paddingHorizontal: 16, height: 48, borderRadius: 10,
+  },
+  randomApplyText: { color: '#FFF', fontSize: 14, fontWeight: '700' },
+  randomCancelBtn: { marginTop: 16, alignItems: 'center', paddingVertical: 10 },
+  randomCancelText: { fontSize: 14, color: '#6B7280', fontWeight: '600' },
+
   summaryCard: {
     backgroundColor: '#FFF', borderRadius: 14, padding: 20, alignItems: 'center',
     marginBottom: 20, borderWidth: 1, borderColor: '#E5E5E5',
