@@ -8,6 +8,7 @@ import { Feather } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import AppHeader from '../components/AppHeader';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -37,6 +38,20 @@ export default function CampaignsScreen() {
   const [showRandomModal, setShowRandomModal] = useState(false);
   const [randomCount, setRandomCount] = useState('25');
 
+  // Scheduling
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState<Date>(() => {
+    const d = new Date();
+    d.setHours(d.getHours() + 1, 0, 0, 0);
+    return d;
+  });
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
+
+  // Global pre-selection for main screen (Tout / Aucun)
+  const [globalMode, setGlobalMode] = useState<'all' | 'none'>('all');
+
   // Target emails (from clients-db selection) — only those emails will be used as recipients
   const targetEmailSet = useMemo(() => {
     if (!params?.targetEmails) return null;
@@ -65,11 +80,64 @@ export default function CampaignsScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const openPreview = (s: typeof SEASONS[0]) => {
-    setExcluded(new Set());
+    // Initialize exclusion based on globalMode: 'all' = empty, 'none' = all excluded
+    if (globalMode === 'none') {
+      setExcluded(new Set(clients.map(c => c.email).filter(Boolean)));
+    } else {
+      setExcluded(new Set());
+    }
     const bookingUrl = `${API_URL}/api/booking`;
     const subject = t(`campaigns.${s.id}.subject`);
     const body = t(`campaigns.${s.id}.body`, { BOOKING_URL: bookingUrl });
     setPreview({ season: s.id, icon: s.icon, color: s.color, subject, body });
+  };
+
+  // Scheduling: save the current campaign to be sent later
+  const saveScheduledCampaign = async () => {
+    if (!preview) return;
+    const recipients = clients
+      .filter(c => !excluded.has(c.email))
+      .map(c => c.email)
+      .filter(Boolean);
+    if (recipients.length === 0) {
+      Alert.alert('Aucun destinataire', "Impossible de planifier une campagne sans destinataire.");
+      return;
+    }
+    const when = scheduleDate.getTime();
+    if (when <= Date.now() + 30_000) {
+      Alert.alert('Date trop proche', "Choisissez une date au moins 1 minute dans le futur.");
+      return;
+    }
+    setScheduling(true);
+    try {
+      const res = await fetch(`${API_URL}/api/scheduled-campaigns`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          season: preview.season,
+          subject: preview.subject,
+          body: preview.body,
+          recipients,
+          scheduled_at: new Date(when).toISOString(),
+          locale: 'fr',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Erreur planification');
+      const dateStr = scheduleDate.toLocaleString('fr-CA', {
+        weekday: 'long', day: 'numeric', month: 'long',
+        hour: '2-digit', minute: '2-digit',
+      });
+      Alert.alert(
+        '📅 Campagne planifiée',
+        `Envoi prévu le ${dateStr}\n\nDestinataires: ${recipients.length}\n\nVous pouvez la consulter dans le menu → Campagnes Planifiées.`,
+        [{ text: 'OK', onPress: () => { setShowScheduleModal(false); setPreview(null); } }]
+      );
+    } catch (e: any) {
+      Alert.alert('Erreur', e?.message || 'Planification impossible');
+    } finally {
+      setScheduling(false);
+    }
   };
 
   const toggleExclude = (email: string) => {
@@ -163,6 +231,36 @@ export default function CampaignsScreen() {
               <Text style={styles.copyBtnText}>{t('campaigns.copyAllEmails')}</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Global selection mode (main screen) + Planifiées link */}
+          <View style={styles.mainActionsRow}>
+            <TouchableOpacity
+              onPress={() => setGlobalMode('all')}
+              style={[styles.mainModeBtn, globalMode === 'all' && styles.mainModeBtnActive]}
+              activeOpacity={0.7}
+            >
+              <Feather name="check-square" size={16} color={globalMode === 'all' ? '#FFF' : '#10B981'} />
+              <Text style={[styles.mainModeText, globalMode === 'all' && { color: '#FFF' }]}>Tout sélectionner</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setGlobalMode('none')}
+              style={[styles.mainModeBtn, globalMode === 'none' && styles.mainModeBtnActiveRed]}
+              activeOpacity={0.7}
+            >
+              <Feather name="square" size={16} color={globalMode === 'none' ? '#FFF' : '#EF4444'} />
+              <Text style={[styles.mainModeText, globalMode === 'none' && { color: '#FFF' }]}>Aucun</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            onPress={() => router.push('/scheduled-campaigns' as any)}
+            style={styles.plannedLink}
+            activeOpacity={0.7}
+          >
+            <Feather name="clock" size={16} color="#B45309" />
+            <Text style={styles.plannedLinkText}>📅 Campagnes Planifiées</Text>
+            <Feather name="chevron-right" size={16} color="#B45309" />
+          </TouchableOpacity>
 
           <Text style={styles.sectionTitle}>{t('campaigns.seasonalCampaigns')}</Text>
           {SEASONS.map(s => (
@@ -316,15 +414,30 @@ export default function CampaignsScreen() {
 
             <View style={styles.modalFooter}>
               <TouchableOpacity
-                style={[styles.footerBtn, styles.footerBtnCancel]}
+                style={[styles.footerBtn, styles.footerBtnCancel, { flex: 0.8 }]}
                 activeOpacity={0.7}
                 onPress={() => setPreview(null)}
               >
                 <Text style={styles.footerBtnCancelText}>{t('campaigns.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
+                style={[styles.footerBtn, { backgroundColor: '#B45309', flex: 1 }]}
+                activeOpacity={0.7}
+                onPress={() => {
+                  // default: 1h in the future
+                  const d = new Date();
+                  d.setHours(d.getHours() + 1, 0, 0, 0);
+                  setScheduleDate(d);
+                  setShowScheduleModal(true);
+                }}
+                disabled={selectedCount === 0}
+              >
+                <Feather name="clock" size={16} color="#FFF" />
+                <Text style={styles.footerBtnText}>Planifier</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 testID="send-campaign-confirm"
-                style={[styles.footerBtn, { backgroundColor: preview?.color || '#0891B2' }]}
+                style={[styles.footerBtn, { backgroundColor: preview?.color || '#0891B2', flex: 1.2 }]}
                 activeOpacity={0.7}
                 onPress={sendCampaign}
                 disabled={selectedCount === 0}
@@ -412,12 +525,164 @@ export default function CampaignsScreen() {
           </KeyboardAvoidingView>
         </View>
       </Modal>
+
+      {/* Schedule Modal */}
+      <Modal
+        visible={showScheduleModal}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setShowScheduleModal(false)}
+      >
+        <View style={styles.randomOverlay}>
+          <View style={styles.randomCard}>
+            <View style={{ alignItems: 'center', marginBottom: 12 }}>
+              <Text style={{ fontSize: 40 }}>📅</Text>
+              <Text style={styles.randomTitle}>Planifier l'envoi</Text>
+              <Text style={styles.randomSubtitle}>
+                {selectedCount} destinataire{selectedCount > 1 ? 's' : ''}
+              </Text>
+            </View>
+
+            <Text style={styles.randomLabel}>Date et heure d'envoi :</Text>
+
+            {/* Cross-platform date picker */}
+            {Platform.OS === 'web' ? (
+              <View style={{ gap: 8, marginBottom: 12 }}>
+                <TextInput
+                  style={[styles.randomInput, { textAlign: 'left', paddingHorizontal: 12 }]}
+                  value={scheduleDate.toISOString().slice(0, 16)}
+                  onChangeText={(v) => {
+                    const d = new Date(v);
+                    if (!isNaN(d.getTime())) setScheduleDate(d);
+                  }}
+                  placeholder="AAAA-MM-JJTHH:MM"
+                  placeholderTextColor="#9CA3AF"
+                />
+                <input
+                  type="datetime-local"
+                  value={(() => {
+                    const pad = (n: number) => String(n).padStart(2, '0');
+                    return `${scheduleDate.getFullYear()}-${pad(scheduleDate.getMonth()+1)}-${pad(scheduleDate.getDate())}T${pad(scheduleDate.getHours())}:${pad(scheduleDate.getMinutes())}`;
+                  })()}
+                  onChange={(e: any) => {
+                    const v = e.target.value;
+                    if (v) {
+                      const d = new Date(v);
+                      if (!isNaN(d.getTime())) setScheduleDate(d);
+                    }
+                  }}
+                  style={{
+                    fontSize: 16, padding: 12, borderRadius: 10,
+                    border: '1px solid #E5E7EB', backgroundColor: '#F9FAFB',
+                  }}
+                />
+              </View>
+            ) : (
+              <View style={{ gap: 8, marginBottom: 12 }}>
+                <TouchableOpacity
+                  onPress={() => setShowDatePicker(true)}
+                  style={[styles.randomInput, { justifyContent: 'center', alignItems: 'center' }]}
+                  activeOpacity={0.7}
+                >
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#111' }}>
+                    📆 {scheduleDate.toLocaleDateString('fr-CA', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setShowTimePicker(true)}
+                  style={[styles.randomInput, { justifyContent: 'center', alignItems: 'center' }]}
+                  activeOpacity={0.7}
+                >
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#111' }}>
+                    🕐 {scheduleDate.toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' })}
+                  </Text>
+                </TouchableOpacity>
+                {showDatePicker && (
+                  <DateTimePicker
+                    value={scheduleDate}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    minimumDate={new Date()}
+                    onChange={(e, d) => {
+                      setShowDatePicker(false);
+                      if (d) {
+                        const newDate = new Date(scheduleDate);
+                        newDate.setFullYear(d.getFullYear(), d.getMonth(), d.getDate());
+                        setScheduleDate(newDate);
+                      }
+                    }}
+                  />
+                )}
+                {showTimePicker && (
+                  <DateTimePicker
+                    value={scheduleDate}
+                    mode="time"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={(e, d) => {
+                      setShowTimePicker(false);
+                      if (d) {
+                        const newDate = new Date(scheduleDate);
+                        newDate.setHours(d.getHours(), d.getMinutes(), 0, 0);
+                        setScheduleDate(newDate);
+                      }
+                    }}
+                  />
+                )}
+              </View>
+            )}
+
+            <Text style={{ fontSize: 12, color: '#6B7280', textAlign: 'center', marginBottom: 12 }}>
+              🕐 Envoi prévu : {scheduleDate.toLocaleString('fr-CA', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}
+            </Text>
+
+            <TouchableOpacity
+              onPress={saveScheduledCampaign}
+              style={[styles.randomApplyBtn, { backgroundColor: '#B45309', paddingVertical: 14 }]}
+              activeOpacity={0.85}
+              disabled={scheduling}
+            >
+              {scheduling ? (
+                <ActivityIndicator size="small" color="#FFF" />
+              ) : (
+                <>
+                  <Feather name="clock" size={16} color="#fff" />
+                  <Text style={styles.randomApplyText}>Planifier l'envoi</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setShowScheduleModal(false)}
+              style={styles.randomCancelBtn}
+            >
+              <Text style={styles.randomCancelText}>Annuler</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#FAFAFA' },
+  mainActionsRow: {
+    flexDirection: 'row', gap: 8, marginBottom: 10, marginTop: 4,
+  },
+  mainModeBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 12, borderRadius: 10, borderWidth: 1.5,
+    borderColor: '#E5E7EB', backgroundColor: '#FFF',
+  },
+  mainModeBtnActive: { backgroundColor: '#10B981', borderColor: '#10B981' },
+  mainModeBtnActiveRed: { backgroundColor: '#EF4444', borderColor: '#EF4444' },
+  mainModeText: { fontSize: 13, fontWeight: '700', color: '#111' },
+  plannedLink: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#FDE68A',
+    paddingHorizontal: 14, paddingVertical: 12, borderRadius: 10, marginBottom: 16,
+  },
+  plannedLinkText: { flex: 1, fontSize: 14, fontWeight: '700', color: '#B45309' },
   targetBanner: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#ECFEFF', borderWidth: 1, borderColor: '#0891B2',

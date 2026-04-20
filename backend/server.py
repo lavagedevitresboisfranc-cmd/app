@@ -2327,8 +2327,8 @@ async def seed_appointments():
     await db.appointments.insert_many(samples)
     return {"message": f"Seeded {len(samples)} appointments for {today}"}
 
-# Include router
-app.include_router(api_router)
+# NOTE: app.include_router(api_router) has been moved to the end of the file
+# (after SCHEDULED CAMPAIGNS endpoints) so new routes are registered.
 
 app.add_middleware(
     CORSMiddleware,
@@ -2353,9 +2353,183 @@ async def shutdown_db_client():
     client.close()
 
 
+# ============================================================
+# SCHEDULED CAMPAIGNS
+# ============================================================
+class ScheduledCampaignCreate(BaseModel):
+    season: str  # spring | autumn | summer
+    subject: str
+    body: str
+    recipients: List[str]  # list of emails (BCC)
+    scheduled_at: str  # ISO datetime
+    locale: Optional[str] = "fr"
+
+
+class ScheduledCampaignResponse(BaseModel):
+    id: str
+    season: str
+    subject: str
+    body: str
+    recipients: List[str]
+    scheduled_at: str
+    status: str  # pending | sent | ready | failed | cancelled
+    error: Optional[str] = None
+    sent_at: Optional[str] = None
+    created_at: str
+
+
+@api_router.post("/scheduled-campaigns", response_model=ScheduledCampaignResponse)
+async def create_scheduled_campaign(payload: ScheduledCampaignCreate):
+    """Plan a campaign to be sent at a future date/time."""
+    if not payload.recipients:
+        raise HTTPException(status_code=400, detail="Aucun destinataire")
+    try:
+        when = datetime.fromisoformat(payload.scheduled_at.replace('Z', '+00:00'))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Format de date invalide (ISO 8601 attendu)")
+    now = datetime.now(timezone.utc)
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    if when <= now:
+        raise HTTPException(status_code=400, detail="La date doit être dans le futur")
+
+    doc = {
+        "id": str(uuid.uuid4()),
+        "season": payload.season,
+        "subject": payload.subject,
+        "body": payload.body,
+        "recipients": payload.recipients,
+        "scheduled_at": when.isoformat(),
+        "status": "pending",
+        "locale": payload.locale or "fr",
+        "created_at": now.isoformat(),
+    }
+    await db.scheduled_campaigns.insert_one(doc)
+    doc.pop("_id", None)
+    return ScheduledCampaignResponse(**doc)
+
+
+@api_router.get("/scheduled-campaigns", response_model=List[ScheduledCampaignResponse])
+async def list_scheduled_campaigns(status: Optional[str] = None):
+    query = {}
+    if status:
+        query["status"] = status
+    cursor = db.scheduled_campaigns.find(query, {"_id": 0}).sort("scheduled_at", 1).limit(500)
+    items = await cursor.to_list(500)
+    return [ScheduledCampaignResponse(**{k: v for k, v in c.items() if k != "locale"}) for c in items]
+
+
+@api_router.delete("/scheduled-campaigns/{campaign_id}")
+async def cancel_scheduled_campaign(campaign_id: str):
+    res = await db.scheduled_campaigns.update_one(
+        {"id": campaign_id, "status": {"$in": ["pending", "ready"]}},
+        {"$set": {"status": "cancelled"}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Campagne introuvable ou déjà envoyée")
+    return {"cancelled": 1}
+
+
+@api_router.post("/scheduled-campaigns/{campaign_id}/mark-sent")
+async def mark_campaign_sent_manually(campaign_id: str):
+    """Called by the app when user has manually sent a 'ready' campaign via mailto:"""
+    now = datetime.now(timezone.utc).isoformat()
+    res = await db.scheduled_campaigns.update_one(
+        {"id": campaign_id},
+        {"$set": {"status": "sent", "sent_at": now}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Campagne introuvable")
+    return {"ok": True}
+
+
+async def _send_scheduled_campaign(doc: dict) -> bool:
+    """Try to send a scheduled campaign via Resend.
+    Returns True on success, False otherwise. Marks status accordingly."""
+    cid = doc["id"]
+    subject = doc["subject"]
+    body = doc["body"]
+    recipients = doc.get("recipients") or []
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    if not recipients:
+        await db.scheduled_campaigns.update_one(
+            {"id": cid},
+            {"$set": {"status": "failed", "error": "Aucun destinataire"}},
+        )
+        return False
+
+    # Convert plain text body to basic HTML (preserve line breaks)
+    html_body = "<div style='font-family: Arial, sans-serif; white-space: pre-wrap;'>" + \
+                body.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;') + \
+                "</div>"
+
+    if not resend.api_key:
+        # No Resend at all → mark as ready for manual sending
+        await db.scheduled_campaigns.update_one(
+            {"id": cid},
+            {"$set": {"status": "ready", "error": "Resend non configuré — envoi manuel requis"}},
+        )
+        return False
+
+    try:
+        # Attempt server-side send via Resend (BCC)
+        await asyncio.to_thread(
+            resend.Emails.send,
+            {
+                "from": "onboarding@resend.dev",
+                "to": ["onboarding@resend.dev"],  # placeholder (Resend requires 'to')
+                "bcc": recipients,
+                "subject": subject,
+                "html": html_body,
+            },
+        )
+        await db.scheduled_campaigns.update_one(
+            {"id": cid},
+            {"$set": {"status": "sent", "sent_at": now_iso, "error": None}},
+        )
+        logger.info(f"Scheduled campaign {cid} sent to {len(recipients)} recipients via Resend")
+        return True
+    except Exception as e:
+        err_msg = str(e)
+        # Sandbox mode (non-verified domain) → mark 'ready' so user can send via mailto:
+        if "only send testing emails" in err_msg.lower() or "verify a domain" in err_msg.lower():
+            await db.scheduled_campaigns.update_one(
+                {"id": cid},
+                {"$set": {"status": "ready", "error": "Domaine non vérifié — envoi manuel via mailto requis"}},
+            )
+            logger.info(f"Scheduled campaign {cid} marked 'ready' (domain not verified)")
+        else:
+            await db.scheduled_campaigns.update_one(
+                {"id": cid},
+                {"$set": {"status": "failed", "error": err_msg[:300]}},
+            )
+            logger.error(f"Scheduled campaign {cid} failed: {err_msg}")
+        return False
+
+
+async def _process_due_campaigns():
+    """Scheduler job: find pending campaigns whose time has come, try to send them."""
+    try:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        cursor = db.scheduled_campaigns.find({
+            "status": "pending",
+            "scheduled_at": {"$lte": now_iso},
+        }, {"_id": 0})
+        due_list = await cursor.to_list(100)
+        if not due_list:
+            return
+        logger.info(f"Processing {len(due_list)} due scheduled campaign(s)")
+        for doc in due_list:
+            await _send_scheduled_campaign(doc)
+    except Exception as e:
+        logger.error(f"Scheduler _process_due_campaigns error: {e}")
+
+
 # Scheduler: auto backup every day at midnight (00:00)
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 scheduler = AsyncIOScheduler(timezone="America/Toronto")
 
@@ -2364,7 +2538,12 @@ scheduler = AsyncIOScheduler(timezone="America/Toronto")
 async def start_scheduler():
     try:
         scheduler.add_job(_create_auto_backup, CronTrigger(hour=0, minute=0), id="daily_backup", replace_existing=True)
+        scheduler.add_job(_process_due_campaigns, IntervalTrigger(minutes=1), id="process_campaigns", replace_existing=True)
         scheduler.start()
-        logger.info("Scheduler started: daily backup @ 00:00")
+        logger.info("Scheduler started: daily backup @ 00:00 + campaigns check every minute")
     except Exception as e:
         logger.error(f"Scheduler failed to start: {e}")
+
+
+# Include router AT THE END so all route definitions are registered
+app.include_router(api_router)
