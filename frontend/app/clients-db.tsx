@@ -43,6 +43,10 @@ export default function ClientsDbScreen() {
   const [search, setSearch] = useState('');
   const [importing, setImporting] = useState(false);
 
+  // Multi-select mode
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
   // Create modal
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
@@ -84,6 +88,43 @@ export default function ClientsDbScreen() {
     setRefreshing(true);
     await fetchClients();
     setRefreshing(false);
+  };
+
+  // SELECTION MODE
+  const enterSelectionMode = () => {
+    setSelectionMode(true);
+    setSelectedIds(new Set());
+  };
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  };
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const selectAllFiltered = () => {
+    setSelectedIds(new Set(filtered.map(c => c.id)));
+  };
+  const deselectAll = () => setSelectedIds(new Set());
+
+  const launchCampaignWithSelection = () => {
+    const selectedClients = clients.filter(c => selectedIds.has(c.id));
+    const emails = selectedClients.map(c => c.email).filter(e => !!e && e.includes('@'));
+    if (emails.length === 0) {
+      Alert.alert('Aucun courriel', "Les clients sélectionnés n'ont pas d'adresse courriel valide.");
+      return;
+    }
+    // Pass selected emails to campaigns screen via params
+    router.push({
+      pathname: '/campaigns',
+      params: { targetEmails: emails.join(','), targetCount: String(emails.length) },
+    } as any);
+    exitSelectionMode();
   };
 
   // IMPORT CSV / XLSX
@@ -177,34 +218,55 @@ export default function ClientsDbScreen() {
     }
   };
 
-  const renderClient = ({ item }: { item: Client }) => (
-    <TouchableOpacity
-      style={styles.card}
-      activeOpacity={0.7}
-      onPress={() => router.push({ pathname: '/client-db-detail', params: { id: item.id } } as any)}
-    >
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>
-          {(item.name || '?').charAt(0).toUpperCase()}
-        </Text>
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.name} numberOfLines={1}>{item.name || '(sans nom)'}</Text>
-        {item.email ? <Text style={styles.meta} numberOfLines={1}>✉️ {item.email}</Text> : null}
-        {item.phone ? <Text style={styles.meta} numberOfLines={1}>📞 {item.phone}</Text> : null}
-        {item.tags?.length > 0 && (
-          <View style={styles.tagRow}>
-            {item.tags.slice(0, 3).map((t) => (
-              <View key={t} style={styles.tag}>
-                <Text style={styles.tagText}>{t}</Text>
-              </View>
-            ))}
+  const renderClient = ({ item }: { item: Client }) => {
+    const isSelected = selectedIds.has(item.id);
+    return (
+      <TouchableOpacity
+        style={[styles.card, selectionMode && isSelected && styles.cardSelected]}
+        activeOpacity={0.7}
+        onPress={() => {
+          if (selectionMode) {
+            toggleSelect(item.id);
+          } else {
+            router.push({ pathname: '/client-db-detail', params: { id: item.id } } as any);
+          }
+        }}
+        onLongPress={() => {
+          if (!selectionMode) {
+            enterSelectionMode();
+            toggleSelect(item.id);
+          }
+        }}
+      >
+        {selectionMode ? (
+          <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+            {isSelected && <Feather name="check" size={16} color="#fff" />}
+          </View>
+        ) : (
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>
+              {(item.name || '?').charAt(0).toUpperCase()}
+            </Text>
           </View>
         )}
-      </View>
-      <Feather name="chevron-right" size={20} color="#C4C4C4" />
-    </TouchableOpacity>
-  );
+        <View style={{ flex: 1 }}>
+          <Text style={styles.name} numberOfLines={1}>{item.name || '(sans nom)'}</Text>
+          {item.email ? <Text style={styles.meta} numberOfLines={1}>✉️ {item.email}</Text> : null}
+          {item.phone ? <Text style={styles.meta} numberOfLines={1}>📞 {item.phone}</Text> : null}
+          {item.tags?.length > 0 && (
+            <View style={styles.tagRow}>
+              {item.tags.slice(0, 3).map((t) => (
+                <View key={t} style={styles.tag}>
+                  <Text style={styles.tagText}>{t}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+        {!selectionMode && <Feather name="chevron-right" size={20} color="#C4C4C4" />}
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -213,14 +275,39 @@ export default function ClientsDbScreen() {
       {/* Header stats & actions */}
       <View style={styles.statsRow}>
         <View style={styles.statBox}>
-          <Text style={styles.statNum}>{clients.length}</Text>
-          <Text style={styles.statLabel}>Clients</Text>
+          <Text style={styles.statNum}>{selectionMode ? selectedIds.size : clients.length}</Text>
+          <Text style={styles.statLabel}>{selectionMode ? 'Sélectionnés' : 'Clients'}</Text>
         </View>
         <View style={styles.actionBtns}>
-          <TouchableOpacity onPress={() => setShowCreate(true)} style={[styles.actionBtn, { backgroundColor: '#111' }]} activeOpacity={0.8}>
-            <Feather name="user-plus" size={18} color="#fff" />
-            <Text style={styles.actionBtnText}>Nouveau</Text>
-          </TouchableOpacity>
+          {selectionMode ? (
+            <>
+              <TouchableOpacity
+                onPress={selectedIds.size === filtered.length ? deselectAll : selectAllFiltered}
+                style={[styles.actionBtn, { backgroundColor: '#0891B2' }]}
+                activeOpacity={0.8}
+              >
+                <Feather name={selectedIds.size === filtered.length ? 'square' : 'check-square'} size={18} color="#fff" />
+                <Text style={styles.actionBtnText}>
+                  {selectedIds.size === filtered.length ? 'Aucun' : 'Tout'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={exitSelectionMode} style={[styles.actionBtn, { backgroundColor: '#6B7280' }]} activeOpacity={0.8}>
+                <Feather name="x" size={18} color="#fff" />
+                <Text style={styles.actionBtnText}>Annuler</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <TouchableOpacity onPress={enterSelectionMode} style={[styles.actionBtn, { backgroundColor: '#0891B2' }]} activeOpacity={0.8}>
+                <Feather name="check-square" size={18} color="#fff" />
+                <Text style={styles.actionBtnText}>Sélection</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowCreate(true)} style={[styles.actionBtn, { backgroundColor: '#111' }]} activeOpacity={0.8}>
+                <Feather name="user-plus" size={18} color="#fff" />
+                <Text style={styles.actionBtnText}>Nouveau</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       </View>
 
@@ -280,6 +367,23 @@ export default function ClientsDbScreen() {
         />
       )}
 
+      {/* Bottom action bar — only in selection mode */}
+      {selectionMode && selectedIds.size > 0 && (
+        <View style={styles.bottomBar}>
+          <Text style={styles.bottomBarText}>
+            {selectedIds.size} client{selectedIds.size > 1 ? 's' : ''} sélectionné{selectedIds.size > 1 ? 's' : ''}
+          </Text>
+          <TouchableOpacity
+            onPress={launchCampaignWithSelection}
+            style={styles.bottomBarBtn}
+            activeOpacity={0.85}
+          >
+            <Feather name="mail" size={18} color="#fff" />
+            <Text style={styles.bottomBarBtnText}>Campagne</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Create Modal */}
       <Modal visible={showCreate} animationType="slide" transparent onRequestClose={() => setShowCreate(false)}>
         <KeyboardAvoidingView
@@ -334,6 +438,25 @@ const styles = StyleSheet.create({
   searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fff', marginHorizontal: 16, paddingHorizontal: 12, height: 44, borderRadius: 10, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 12 },
   searchInput: { flex: 1, fontSize: 15, color: '#111' },
   card: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', gap: 12 },
+  cardSelected: { backgroundColor: '#ECFEFF', borderColor: '#0891B2', borderWidth: 2 },
+  checkbox: {
+    width: 28, height: 28, borderRadius: 8, borderWidth: 2, borderColor: '#CBD5E1',
+    justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff',
+  },
+  checkboxSelected: { backgroundColor: '#0891B2', borderColor: '#0891B2' },
+  bottomBar: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#E5E7EB',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingVertical: 14, paddingBottom: 24,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 10,
+  },
+  bottomBarText: { fontSize: 15, fontWeight: '700', color: '#111' },
+  bottomBarBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#0891B2', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 10,
+  },
+  bottomBarBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#0891B2', justifyContent: 'center', alignItems: 'center' },
   avatarText: { color: '#fff', fontSize: 18, fontWeight: '800' },
   name: { fontSize: 16, fontWeight: '700', color: '#111' },

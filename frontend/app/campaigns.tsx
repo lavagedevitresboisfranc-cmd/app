@@ -1,11 +1,11 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking, Platform,
   ActivityIndicator, Modal, TextInput, KeyboardAvoidingView, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
 import AppHeader from '../components/AppHeader';
@@ -28,16 +28,35 @@ const SEASONS: { id: SeasonKey; icon: string; color: string }[] = [
 
 export default function CampaignsScreen() {
   const { t } = useTranslation();
-  const [clients, setClients] = useState<ClientRow[]>([]);
+  const router = useRouter();
+  const params = useLocalSearchParams<{ targetEmails?: string; targetCount?: string }>();
+  const [allClients, setAllClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [preview, setPreview] = useState<{ season: SeasonKey; icon: string; color: string; subject: string; body: string } | null>(null);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
+
+  // Target emails (from clients-db selection) — only those emails will be used as recipients
+  const targetEmailSet = useMemo(() => {
+    if (!params?.targetEmails) return null;
+    const list = String(params.targetEmails).split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+    return list.length ? new Set(list) : null;
+  }, [params?.targetEmails]);
+
+  // Effective client list: filtered by targetEmails if present
+  const clients = useMemo(() => {
+    if (!targetEmailSet) return allClients;
+    return allClients.filter(c => c.email && targetEmailSet.has(c.email.toLowerCase()));
+  }, [allClients, targetEmailSet]);
+
+  const clearTarget = () => {
+    router.setParams({ targetEmails: '', targetCount: '' } as any);
+  };
 
   const load = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/api/clients/emails`);
       const data = await res.json();
-      setClients(Array.isArray(data) ? data : []);
+      setAllClients(Array.isArray(data) ? data : []);
     } catch { } finally { setLoading(false); }
   }, []);
 
@@ -96,6 +115,20 @@ export default function CampaignsScreen() {
         <ActivityIndicator size="large" color="#0891B2" style={{ marginTop: 40 }} />
       ) : (
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+          {targetEmailSet && (
+            <View style={styles.targetBanner}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.targetBannerTitle}>🎯 Campagne ciblée</Text>
+                <Text style={styles.targetBannerText}>
+                  {clients.length} client{clients.length > 1 ? 's' : ''} sélectionné{clients.length > 1 ? 's' : ''} depuis la base de clients
+                </Text>
+              </View>
+              <TouchableOpacity onPress={clearTarget} style={styles.targetBannerClear} activeOpacity={0.7}>
+                <Feather name="x" size={18} color="#0891B2" />
+              </TouchableOpacity>
+            </View>
+          )}
+
           <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel}>{t('campaigns.clientsWithEmail')}</Text>
             <Text style={styles.summaryValue}>{clients.length}</Text>
@@ -202,6 +235,27 @@ export default function CampaignsScreen() {
                 {t('campaigns.recipients', { selected: selectedCount, total: clients.length })}
               </Text>
               <Text style={styles.listHint}>{t('campaigns.tapToExclude')}</Text>
+
+              {/* Select all / none quick actions */}
+              <View style={styles.recipientActions}>
+                <TouchableOpacity
+                  onPress={() => setExcluded(new Set())}
+                  style={[styles.recipientActionBtn, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}
+                  activeOpacity={0.7}
+                >
+                  <Feather name="check-square" size={16} color="#10B981" />
+                  <Text style={[styles.recipientActionText, { color: '#10B981' }]}>Tout sélectionner</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setExcluded(new Set(clients.map(c => c.email).filter(Boolean)))}
+                  style={[styles.recipientActionBtn, { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}
+                  activeOpacity={0.7}
+                >
+                  <Feather name="square" size={16} color="#EF4444" />
+                  <Text style={[styles.recipientActionText, { color: '#EF4444' }]}>Tout désélectionner</Text>
+                </TouchableOpacity>
+              </View>
+
               {clients.map((c) => {
                 const isExcluded = excluded.has(c.email);
                 return (
@@ -253,6 +307,25 @@ export default function CampaignsScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#FAFAFA' },
+  targetBanner: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#ECFEFF', borderWidth: 1, borderColor: '#0891B2',
+    borderRadius: 12, padding: 14, marginBottom: 14, gap: 10,
+  },
+  targetBannerTitle: { fontSize: 15, fontWeight: '800', color: '#0891B2', marginBottom: 2 },
+  targetBannerText: { fontSize: 13, color: '#0E7490' },
+  targetBannerClear: {
+    width: 32, height: 32, borderRadius: 16, backgroundColor: '#FFF',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  recipientActions: {
+    flexDirection: 'row', gap: 8, marginBottom: 10, marginTop: 4,
+  },
+  recipientActionBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 10, borderRadius: 8, borderWidth: 1,
+  },
+  recipientActionText: { fontSize: 13, fontWeight: '700' },
   summaryCard: {
     backgroundColor: '#FFF', borderRadius: 14, padding: 20, alignItems: 'center',
     marginBottom: 20, borderWidth: 1, borderColor: '#E5E5E5',
