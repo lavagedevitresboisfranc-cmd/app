@@ -21,7 +21,7 @@ export default function BackupScreen() {
       const data = await res.json();
       const json = JSON.stringify(data, null, 2);
       const today = new Date().toISOString().split('T')[0];
-      const fileName = `brightcalendar-backup-${today}.json`;
+      const fileName = `crystaltask-backup-${today}.json`;
 
       if (Platform.OS === 'web') {
         // Web: trigger download

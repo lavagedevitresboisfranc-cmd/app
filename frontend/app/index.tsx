@@ -11,6 +11,7 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Calendar } from 'react-native-calendars';
@@ -522,20 +523,13 @@ export default function CalendarScreen() {
       >
         <Pressable style={styles.menuOverlay} onPress={() => setMenuOpen(false)}>
           <Pressable style={styles.menuDrawer} onPress={(e) => e.stopPropagation()}>
-            {/* Logo in menu - BrightCalendar generic */}
+            {/* CrystalTask logo in menu */}
             <View style={styles.menuLogoRow}>
-              <View style={styles.logoIcon}>
-                <View style={styles.logoWindowGrid}>
-                  <View style={[styles.logoPane, { backgroundColor: '#0891B2' }]} />
-                  <View style={[styles.logoPane, { backgroundColor: '#06B6D4' }]} />
-                  <View style={[styles.logoPane, { backgroundColor: '#06B6D4' }]} />
-                  <View style={[styles.logoPane, { backgroundColor: '#22D3EE' }]} />
-                </View>
-                <View style={styles.logoSparkle}>
-                  <Text style={styles.logoSparkleText}>✦</Text>
-                </View>
-              </View>
-              <Text style={styles.headerTitle}>Bright<Text style={styles.headerTitleAccent}>Calendar</Text></Text>
+              <Image
+                source={require('../assets/images/crystaltask-logo.png')}
+                style={styles.menuLogoImage}
+                resizeMode="contain"
+              />
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
@@ -636,18 +630,11 @@ export default function CalendarScreen() {
           )}
         </TouchableOpacity>
         <View style={styles.logoRow}>
-          <View style={styles.logoIcon}>
-            <View style={styles.logoWindowGrid}>
-              <View style={[styles.logoPane, { backgroundColor: '#0891B2' }]} />
-              <View style={[styles.logoPane, { backgroundColor: '#06B6D4' }]} />
-              <View style={[styles.logoPane, { backgroundColor: '#06B6D4' }]} />
-              <View style={[styles.logoPane, { backgroundColor: '#22D3EE' }]} />
-            </View>
-            <View style={styles.logoSparkle}>
-              <Text style={styles.logoSparkleText}>✦</Text>
-            </View>
-          </View>
-          <Text style={styles.headerTitle}>Bright<Text style={styles.headerTitleAccent}>Calendar</Text></Text>
+          <Image
+            source={require('../assets/images/crystaltask-logo.png')}
+            style={styles.headerLogoImage}
+            resizeMode="contain"
+          />
         </View>
         <TouchableOpacity testID="add-btn" onPress={() => router.push('/create')} style={styles.hamburgerBtn} activeOpacity={0.7}>
           <Feather name="plus" size={24} color="#0891B2" />
@@ -882,6 +869,10 @@ const styles = StyleSheet.create({
   },
   headerTitleAccent: {
     color: '#0891B2',
+  },
+  headerLogoImage: {
+    width: 180,
+    height: 44,
   },
   offlineBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
@@ -1141,13 +1132,21 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   menuLogoRow: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 32,
-    paddingBottom: 20,
+    justifyContent: 'center',
+    marginBottom: 24,
+    paddingBottom: 16,
+    paddingTop: 8,
     borderBottomWidth: 1,
     borderColor: '#E5E5E5',
+    backgroundColor: '#000',
+    marginHorizontal: -20,
+    marginTop: -20,
+    paddingHorizontal: 20,
+  },
+  menuLogoImage: {
+    width: 220,
+    height: 72,
   },
   menuLogoIcon: {
     width: 32,

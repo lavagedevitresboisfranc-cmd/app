@@ -204,7 +204,7 @@ export default function ClientsDbScreen() {
   const exportCsv = async () => {
     try {
       const url = `${API_URL}/api/clients-db/export/csv`;
-      const path = FileSystem.cacheDirectory + `clients_brightcalendar_${Date.now()}.csv`;
+      const path = FileSystem.cacheDirectory + `clients_crystaltask_${Date.now()}.csv`;
       const dl = await FileSystem.downloadAsync(url, path);
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(dl.uri, { mimeType: 'text/csv', dialogTitle: 'Exporter la liste de clients' });
