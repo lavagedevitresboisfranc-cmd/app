@@ -879,10 +879,6 @@ const styles = StyleSheet.create({
   headerTitleAccent: {
     color: '#0891B2',
   },
-  headerLogoImage: {
-    width: 400,
-    height: 180,
-  },
   offlineBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: '#F59E0B', paddingVertical: 6, paddingHorizontal: 12,
