@@ -168,7 +168,7 @@ backend:
 frontend:
   - task: "Revenues screen UI"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/frontend/app/revenues.tsx"
     stuck_count: 0
     priority: "high"
@@ -176,11 +176,14 @@ frontend:
     status_history:
         - working: "NA"
           agent: "main"
-          comment: "Not scheduled for automated testing unless user requests."
+          comment: "New screen at /revenues. Categories: Saison Printemps (🌸), Saison Automne (🍂). Payment methods: E-transfert (📱), Cash (💵), Chèque (📝), Carte de crédit (💳). Hamburger filter button + category modal, Excel export button, FormModal with amount/category/date (DatePicker on native, HTML input on web)/client/payment/description. Long-press on card → delete confirm."
+        - working: true
+          agent: "testing"
+          comment: "✅ PASS - All core functionality verified on mobile viewport (390x844). Header shows '💰 Revenus', dark-green TOTAL card displays '+0.00 $', hamburger filter shows 'Toutes les catégories' by default. Form modal opens with '💰 Nouveau revenu' title and contains all required fields: Montant (numeric), exactly 2 categories (🌸 Saison Printemps, 🍂 Saison Automne), Date field, Client input (optional), exactly 4 payment methods (📱 E-transfert, 💵 Cash, 📝 Chèque, 💳 Carte de crédit), Description field (optional). Form can be filled and submitted. Category filter modal functional. UI is in French as expected."
 
   - task: "Bilan screen UI"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/frontend/app/bilan.tsx"
     stuck_count: 0
     priority: "high"
@@ -188,7 +191,25 @@ frontend:
     status_history:
         - working: "NA"
           agent: "main"
-          comment: "Not scheduled for automated testing unless user requests."
+          comment: "New screen at /bilan. Period chips (Tout, Ce mois, Cette année, 30 jours). Profit card (green if positive, red if negative). Revenue/Expense comparison bars. Per-category breakdown with mini progress bars."
+        - working: true
+          agent: "testing"
+          comment: "✅ PASS - All core functionality verified on mobile viewport (390x844). Header shows '📊 Bilan', 4 period chips present (Tout, Ce mois, Cette année, 30 jours) with 'Ce mois' as default active. Main hero card shows '✅ PROFIT NET' (green) with '+0.00 $' and 'Marge: 0.0%'. Two stat cards below show REVENUS (green, +0.00) and DÉPENSES (red, -0.00). Period chip selection works ('Tout' becomes active when clicked). Pull-to-refresh gesture functional. UI displays correctly in French."
+
+  - task: "Finance section in hamburger menu (index.tsx + AppHeader.tsx)"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Finance section now contains 4 items: Revenus (/revenues), Dépenses (/expenses), Bilan (/bilan), Estimation (/estimate). Previously Finance section was missing from index.tsx drawer. Also added 'Corbeille Clients' to Clients section and 'Campagnes programmées' to Marketing section."
+        - working: true
+          agent: "testing"
+          comment: "✅ PASS - All navigation functionality verified on mobile viewport (390x844). Hamburger menu opens correctly, Finance section (testID: section-finance) expands to show exactly 4 items: Revenus (/revenues), Dépenses (/expenses), Bilan (/bilan), Estimation (/estimate). Navigation to /revenues and /bilan confirmed working. Also verified Corbeille Clients under Clients section and Campagnes programmées under Marketing section are present. Language toggle to French works correctly. All menu items have proper testIDs and function as expected."
 
 metadata:
   created_by: "main_agent"
@@ -197,11 +218,7 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus:
-    - "Revenues CRUD (POST, GET, PUT, DELETE /api/revenues)"
-    - "Revenues stats (GET /api/revenues/stats)"
-    - "Revenues Excel export (GET /api/revenues/export/excel)"
-    - "Finance Bilan (GET /api/finance/bilan)"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -211,3 +228,5 @@ agent_communication:
       message: "Please test the new Revenues module and Bilan endpoint. Focus: 1) CRUD /api/revenues — create valid revenues with categories 'printemps'/'automne' and payment methods 'etransfert'/'cash'/'cheque'/'credit'. Verify invalid category/payment_method returns 400. Test GET list with and without ?category=. Test update and delete. 2) /api/revenues/stats — verify by_category returns BOTH 'printemps' and 'automne' (even with 0 total), by_payment returns all 4 methods, grand_total correct. 3) /api/revenues/export/excel — HTTP 200, correct content-type (.xlsx), file is a valid openpyxl workbook with 'Revenus' and 'Résumé' sheets. Test with and without ?category= filter. 4) /api/finance/bilan — create a few revenues and expenses, verify total_revenues, total_expenses, net_profit (rev-exp), margin_pct. Test with start_date/end_date filters. IMPORTANT: Clean up all test data (revenues + expenses) after testing so the database stays empty. Do not test any pre-existing endpoints unless they broke due to the new changes."
     - agent: "testing"
       message: "All 4 Finance-module backend task groups PASS (79/79 assertions) via /app/backend_test.py against EXPO_PUBLIC_BACKEND_URL. Revenues CRUD: valid POSTs (incl. default payment_method=cash) succeed; amount<=0, invalid category 'hiver', invalid payment_method 'bitcoin' all return 400; GET list sorted by date desc and ?category=printemps filter works; GET/PUT/DELETE 404 on bad ids; DELETE returns {deleted:1}. Stats: by_category always includes both printemps+automne and by_payment always includes all 4 methods (even with 0 / after filter); grand_total equals sum of amounts; date filters honored. Excel export: 200 + correct Content-Type + filename 'revenus_crystaltask_YYYY-MM-DD.xlsx'; valid openpyxl workbook with sheets ['Revenus','Résumé']; headers + emoji labels ('🌸 Saison Printemps','🍂 Saison Automne','📱 E-transfert','💵 Cash','📝 Chèque','💳 Carte de crédit') + TOTAL row present; ?category=printemps produces zero Automne rows; ?start_date/?end_date → 200. Finance Bilan: all required keys present, calculations correct to 2 decimals (net_profit = rev-exp, margin_pct = profit/rev*100), date filters produce correct subsets, edge cases confirmed (only-revenues → margin_pct=100; only-expenses → margin_pct=0 and net_profit negative). Cleanup successful — /api/revenues and /api/expenses both return empty arrays at end of run. No critical issues."
+    - agent: "testing"
+      message: "✅ FRONTEND TESTING COMPLETE - All 3 Finance module frontend tasks PASS on mobile viewport (390x844). 1) Finance section in hamburger menu: All 4 items present (Revenus, Dépenses, Bilan, Estimation), navigation to /revenues and /bilan confirmed, Corbeille Clients and Campagnes programmées also verified. 2) Revenues screen: Header shows '💰 Revenus', TOTAL card displays '+0.00 $', hamburger filter shows 'Toutes les catégories', form modal opens with correct title and all required fields (Montant, exactly 2 categories, Date, Client, exactly 4 payment methods, Description), form submission functional. 3) Bilan screen: Header shows '📊 Bilan', 4 period chips present with 'Ce mois' default active, hero card shows 'PROFIT NET' with amount and margin, REVENUS/DÉPENSES stat cards present, period selection and pull-to-refresh work. UI is in French throughout. No critical issues found."
