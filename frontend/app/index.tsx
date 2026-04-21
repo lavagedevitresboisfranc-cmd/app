@@ -838,7 +838,7 @@ const styles = StyleSheet.create({
   },
   headerLogoImage: {
     width: '100%',
-    aspectRatio: 1492 / 1022,
+    aspectRatio: 678 / 196,
     maxHeight: 140,
   },
   logoIcon: {
