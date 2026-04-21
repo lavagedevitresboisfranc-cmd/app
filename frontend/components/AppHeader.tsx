@@ -77,6 +77,7 @@ const menuSections: MenuSection[] = [
     color: '#64748B',
     items: [
       { icon: 'cloud' as const, labelKey: 'menu.items.backup', route: '/backup' },
+      { icon: 'mail' as const, labelKey: 'menu.items.dnsGuide', route: '/dns-guide' },
     ],
   },
 ];
