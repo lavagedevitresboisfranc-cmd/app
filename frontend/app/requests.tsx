@@ -34,7 +34,7 @@ interface AppointmentRequest {
   request_type?: string;
 }
 
-type FilterType = 'pending' | 'all' | 'alternative_offered' | 'accepted';
+type FilterType = 'pending' | 'all' | 'alternative_offered' | 'accepted' | 'declined';
 
 export default function RequestsScreen() {
   const router = useRouter();
@@ -74,33 +74,38 @@ export default function RequestsScreen() {
   const getStatusColor = (status: string) => {
     if (status === 'accepted') return '#34C759';
     if (status === 'alternative_offered') return '#FF9500';
-    return '#000000';
+    if (status === 'declined') return '#9CA3AF';
+    return '#0891B2';
   };
 
   const getStatusLabel = (status: string) => {
     if (status === 'alternative_offered') return 'Alternative';
+    if (status === 'pending') return 'En attente';
+    if (status === 'accepted') return 'Accepté';
+    if (status === 'declined') return 'Archivé';
     return status;
   };
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr + 'T00:00:00');
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return d.toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' });
   };
 
   const timeAgo = (isoStr: string) => {
     const diff = Date.now() - new Date(isoStr).getTime();
     const mins = Math.floor(diff / 60000);
-    if (mins < 60) return `${mins}m ago`;
+    if (mins < 60) return `il y a ${mins}min`;
     const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h ago`;
-    return `${Math.floor(hrs / 24)}d ago`;
+    if (hrs < 24) return `il y a ${hrs}h`;
+    return `il y a ${Math.floor(hrs / 24)}j`;
   };
 
   const filters: { key: FilterType; label: string }[] = [
-    { key: 'pending', label: 'Pending' },
-    { key: 'alternative_offered', label: 'Suggested' },
-    { key: 'accepted', label: 'Accepted' },
-    { key: 'all', label: 'All' },
+    { key: 'pending', label: 'En attente' },
+    { key: 'alternative_offered', label: 'Alternative' },
+    { key: 'accepted', label: 'Acceptées' },
+    { key: 'declined', label: '🗂️ Archivées' },
+    { key: 'all', label: 'Toutes' },
   ];
 
   const renderRequest = ({ item }: { item: AppointmentRequest }) => (

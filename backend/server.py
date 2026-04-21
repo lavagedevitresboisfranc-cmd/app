@@ -733,11 +733,35 @@ async def suggest_alternative(request_id: str, data: RequestSuggest):
 
 @api_router.delete("/requests/{request_id}")
 async def decline_request(request_id: str):
-    """Decline/delete a request"""
+    """Decline a request — SOFT delete: marks as declined but keeps in DB so it can be recovered."""
+    result = await db.appointment_requests.update_one(
+        {"id": request_id},
+        {"$set": {"status": "declined", "declined_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Request not found")
+    return {"message": "Request declined (soft delete — can be restored)"}
+
+
+@api_router.put("/requests/{request_id}/restore")
+async def restore_request(request_id: str):
+    """Restore a previously declined request → back to pending."""
+    result = await db.appointment_requests.update_one(
+        {"id": request_id},
+        {"$set": {"status": "pending"}, "$unset": {"declined_at": ""}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Request not found")
+    return {"message": "Request restored to pending"}
+
+
+@api_router.delete("/requests/{request_id}/permanent")
+async def delete_request_permanent(request_id: str):
+    """Permanently delete a request (only available from archive)."""
     result = await db.appointment_requests.delete_one({"id": request_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Request not found")
-    return {"message": "Request declined and removed"}
+    return {"message": "Request permanently deleted"}
 
 @api_router.get("/requests/count/pending")
 async def get_pending_count():

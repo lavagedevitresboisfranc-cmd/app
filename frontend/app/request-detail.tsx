@@ -170,21 +170,30 @@ export default function RequestDetailScreen() {
   };
 
   const handleDecline = () => {
-    Alert.alert('Decline Request', 'Are you sure you want to decline this request?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Decline',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            const res = await fetch(`${API_URL}/api/requests/${id}`, { method: 'DELETE' });
-            if (res.ok) router.back();
-          } catch {
-            Alert.alert('Error', 'Failed to decline');
-          }
-        },
-      },
-    ]);
+    const doDecline = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/requests/${id}`, { method: 'DELETE' });
+        if (res.ok) router.back();
+        else Alert.alert('Erreur', 'Archivage impossible');
+      } catch {
+        Alert.alert('Erreur', 'Archivage impossible');
+      }
+    };
+    const msg = 'Êtes-vous certain de vouloir archiver cette demande ?\n\n✅ La demande sera déplacée dans l\'onglet « 🗂️ Archivées » — vous pourrez la restaurer plus tard si nécessaire.';
+    if (Platform.OS === 'web') {
+      // eslint-disable-next-line no-alert
+      if (window.confirm(msg)) doDecline();
+    } else {
+      Alert.alert(
+        'Archiver la demande',
+        msg,
+        [
+          { text: 'Annuler', style: 'cancel' },
+          { text: '🗂️ Archiver', style: 'destructive', onPress: doDecline },
+        ],
+        { cancelable: true }
+      );
+    }
   };
 
   const changeDate = (offset: number) => {
@@ -377,7 +386,7 @@ export default function RequestDetailScreen() {
                 onPress={() => setShowSuggest(true)}
               >
                 <Feather name="repeat" size={18} color="#FF9500" />
-                <Text style={styles.suggestBtnText}>Suggest Alternative</Text>
+                <Text style={styles.suggestBtnText}>Suggérer une alternative</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -387,7 +396,29 @@ export default function RequestDetailScreen() {
                 onPress={handleDecline}
               >
                 <Feather name="x" size={18} color="#FF3B30" />
-                <Text style={styles.declineBtnText}>Decline</Text>
+                <Text style={styles.declineBtnText}>🗂️ Archiver</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Restore button for archived requests */}
+          {request?.status === 'declined' && (
+            <View style={styles.actionButtons}>
+              <TouchableOpacity
+                testID="restore-request-button"
+                style={styles.acceptBtn}
+                activeOpacity={0.7}
+                onPress={async () => {
+                  try {
+                    const res = await fetch(`${API_URL}/api/requests/${id}/restore`, { method: 'PUT' });
+                    if (res.ok) router.back();
+                  } catch {
+                    Alert.alert('Erreur', 'Restauration impossible');
+                  }
+                }}
+              >
+                <Feather name="rotate-ccw" size={20} color="#FFFFFF" />
+                <Text style={styles.acceptBtnText}>Restaurer la demande</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -476,7 +507,7 @@ export default function RequestDetailScreen() {
                 onPress={handleDecline}
               >
                 <Feather name="x" size={18} color="#FF3B30" />
-                <Text style={styles.declineBtnText}>Decline</Text>
+                <Text style={styles.declineBtnText}>🗂️ Archiver</Text>
               </TouchableOpacity>
             </View>
           )}
