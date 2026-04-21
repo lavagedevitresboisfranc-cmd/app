@@ -306,23 +306,35 @@ export default function DetailScreen() {
   };
 
   const handleDelete = () => {
-    Alert.alert('Delete Appointment', 'Are you sure you want to delete this appointment?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            const res = await fetch(`${API_URL}/api/appointments/${id}`, { method: 'DELETE' });
-            if (res.ok) {
-              router.back();
-            }
-          } catch (e) {
-            Alert.alert('Error', 'Failed to delete');
-          }
-        },
-      },
-    ]);
+    const doDelete = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/appointments/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+          router.back();
+        } else {
+          Alert.alert('Erreur', 'La suppression a échoué');
+        }
+      } catch {
+        Alert.alert('Erreur', 'La suppression a échoué');
+      }
+    };
+    if (Platform.OS === 'web') {
+      // React Native Alert buttons are not fully supported on web → fallback to native confirm
+      // eslint-disable-next-line no-alert
+      if (window.confirm('Êtes-vous certain de vouloir supprimer ce rendez-vous ?\n\nCette action est irréversible.')) {
+        doDelete();
+      }
+    } else {
+      Alert.alert(
+        'Supprimer le rendez-vous',
+        'Êtes-vous certain ? Cette action est irréversible.',
+        [
+          { text: 'Annuler', style: 'cancel' },
+          { text: 'Supprimer', style: 'destructive', onPress: doDelete },
+        ],
+        { cancelable: true }
+      );
+    }
   };
 
   const handleStatusChange = async (newStatus: string) => {
@@ -699,9 +711,8 @@ export default function DetailScreen() {
           </View>
         </View>
 
-        {/* ⚠️ ZONE DANGER */}
-        <View style={styles.dangerZone}>
-          <Text style={styles.dangerZoneLabel}>⚠️ ZONE DANGER</Text>
+        {/* Supprimer */}
+        <View style={styles.deleteSection}>
           <TouchableOpacity
             testID="delete-button"
             style={styles.deleteBtn}
@@ -885,18 +896,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
   },
-  dangerZone: {
+  deleteSection: {
     marginTop: 24,
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: '#FEE2E2',
-  },
-  dangerZoneLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#DC2626',
-    marginBottom: 10,
-    letterSpacing: 0.5,
+    borderTopColor: '#F3F4F6',
   },
   deleteBtn: {
     flexDirection: 'row',
