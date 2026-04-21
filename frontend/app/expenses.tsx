@@ -2,12 +2,13 @@ import React, { useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList, TextInput,
   ActivityIndicator, RefreshControl, Alert, Modal, KeyboardAvoidingView,
-  Platform, ScrollView, Image,
+  Platform, ScrollView, Image, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import AppHeader from '../components/AppHeader';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -57,6 +58,7 @@ export default function ExpensesScreen() {
   const [fVendor, setFVendor] = useState('');
   const [fPhoto, setFPhoto] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const [viewPhoto, setViewPhoto] = useState<string | null>(null);
 
@@ -221,16 +223,26 @@ export default function ExpensesScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <AppHeader title="💰 Dépenses" showBack />
 
-      {/* Grand Total + Add button */}
+      {/* Grand Total + Add / Export buttons */}
       <View style={styles.header}>
         <View style={styles.totalBox}>
           <Text style={styles.totalLabel}>TOTAL {filterCategory ? `— ${categoryMeta(filterCategory).label}` : ''}</Text>
           <Text style={styles.totalAmount}>{(filterCategory ? totalVisible : (stats?.grand_total || 0)).toFixed(2)} $</Text>
         </View>
-        <TouchableOpacity style={styles.addBtn} onPress={openNew} activeOpacity={0.85}>
-          <Feather name="plus" size={22} color="#fff" />
-          <Text style={styles.addBtnText}>Ajouter</Text>
-        </TouchableOpacity>
+        <View style={{ gap: 8, justifyContent: 'space-between' }}>
+          <TouchableOpacity style={styles.addBtn} onPress={openNew} activeOpacity={0.85}>
+            <Feather name="plus" size={20} color="#fff" />
+            <Text style={styles.addBtnText}>Ajouter</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.exportBtn}
+            onPress={() => Linking.openURL(`${API_URL}/api/expenses/export/excel${filterCategory ? `?category=${filterCategory}` : ''}`)}
+            activeOpacity={0.85}
+          >
+            <Feather name="download" size={18} color="#059669" />
+            <Text style={styles.exportBtnText}>Excel</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Category filter chips */}
@@ -320,13 +332,47 @@ export default function ExpensesScreen() {
               </View>
               {/* Date */}
               <Text style={styles.label}>Date</Text>
-              <TextInput
-                style={styles.input}
-                value={fDate}
-                onChangeText={setFDate}
-                placeholder="AAAA-MM-JJ"
-                placeholderTextColor="#9CA3AF"
-              />
+              {Platform.OS === 'web' ? (
+                // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                // @ts-ignore — HTML input works on web
+                <input
+                  type="date"
+                  value={fDate}
+                  onChange={(e: any) => setFDate(e.target.value)}
+                  style={{
+                    height: 48, padding: '0 14px',
+                    backgroundColor: '#F9FAFB', borderRadius: 10,
+                    border: '1px solid #E5E7EB', fontSize: 15, color: '#111',
+                  }}
+                />
+              ) : (
+                <>
+                  <TouchableOpacity
+                    onPress={() => setShowDatePicker(true)}
+                    style={[styles.input, { justifyContent: 'center' }]}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={{ fontSize: 15, color: '#111', fontWeight: '600' }}>
+                      📆 {new Date(fDate + 'T00:00:00').toLocaleDateString('fr-CA', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })}
+                    </Text>
+                  </TouchableOpacity>
+                  {showDatePicker && (
+                    <DateTimePicker
+                      value={new Date(fDate + 'T00:00:00')}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      maximumDate={new Date()}
+                      onChange={(e, d) => {
+                        setShowDatePicker(false);
+                        if (d) {
+                          const pad = (n: number) => String(n).padStart(2, '0');
+                          setFDate(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`);
+                        }
+                      }}
+                    />
+                  )}
+                </>
+              )}
               {/* Vendor */}
               <Text style={styles.label}>Commerce (optionnel)</Text>
               <TextInput
@@ -411,8 +457,10 @@ const styles = StyleSheet.create({
   totalBox: { flex: 1, backgroundColor: '#111', padding: 14, borderRadius: 12 },
   totalLabel: { color: '#9CA3AF', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   totalAmount: { color: '#10B981', fontSize: 24, fontWeight: '800', marginTop: 2 },
-  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#0891B2', paddingHorizontal: 18, borderRadius: 12 },
-  addBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#0891B2', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10 },
+  addBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  exportBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#A7F3D0', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10 },
+  exportBtnText: { color: '#059669', fontSize: 13, fontWeight: '700' },
   chipRow: { paddingHorizontal: 16, gap: 8, paddingBottom: 8 },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,

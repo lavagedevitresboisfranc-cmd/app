@@ -2508,6 +2508,144 @@ async def delete_expense(expense_id: str):
     return {"deleted": 1}
 
 
+@api_router.get("/expenses/export/excel")
+async def export_expenses_excel(start_date: Optional[str] = None, end_date: Optional[str] = None, category: Optional[str] = None):
+    """Generates an Excel (.xlsx) export of all expenses with summary sheet."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from fastapi.responses import StreamingResponse
+    import io
+
+    # Build query
+    query: dict = {}
+    if category:
+        query["category"] = category
+    if start_date or end_date:
+        d = {}
+        if start_date: d["$gte"] = start_date
+        if end_date: d["$lte"] = end_date
+        query["date"] = d
+
+    cursor = db.expenses.find(query, {"_id": 0}).sort("date", -1)
+    items = await cursor.to_list(10000)
+
+    CATEGORY_LABELS = {
+        "gas": "⛽ Essence",
+        "resto": "🍽️ Resto",
+        "resin": "🧪 Résine",
+        "equipement": "🔧 Équipement",
+        "reparation": "🛠️ Réparation",
+        "communication": "📞 Communication",
+        "publicite": "📢 Publicité",
+    }
+
+    wb = Workbook()
+    # ---- Sheet 1: Détails ----
+    ws = wb.active
+    ws.title = "Dépenses"
+
+    header = ["Date", "Catégorie", "Montant ($)", "Commerce", "Description"]
+    ws.append(header)
+
+    header_fill = PatternFill(start_color="0891B2", end_color="0891B2", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=12)
+    border = Border(
+        left=Side(style='thin', color='CCCCCC'),
+        right=Side(style='thin', color='CCCCCC'),
+        top=Side(style='thin', color='CCCCCC'),
+        bottom=Side(style='thin', color='CCCCCC'),
+    )
+    for col in range(1, len(header) + 1):
+        cell = ws.cell(row=1, column=col)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = border
+
+    total = 0.0
+    totals_by_cat = {k: 0.0 for k in CATEGORY_LABELS.keys()}
+    for exp in items:
+        row = [
+            exp.get("date", ""),
+            CATEGORY_LABELS.get(exp.get("category", ""), exp.get("category", "")),
+            float(exp.get("amount", 0)),
+            exp.get("vendor", "") or "",
+            exp.get("description", "") or "",
+        ]
+        ws.append(row)
+        amt = float(exp.get("amount", 0))
+        total += amt
+        cat = exp.get("category", "")
+        if cat in totals_by_cat:
+            totals_by_cat[cat] += amt
+
+    # Format currency column
+    for row_idx in range(2, ws.max_row + 1):
+        ws.cell(row=row_idx, column=3).number_format = '"$"#,##0.00'
+        for col in range(1, len(header) + 1):
+            ws.cell(row=row_idx, column=col).border = border
+
+    # Total row
+    total_row = ws.max_row + 2
+    ws.cell(row=total_row, column=2, value="TOTAL").font = Font(bold=True, size=14)
+    total_cell = ws.cell(row=total_row, column=3, value=total)
+    total_cell.font = Font(bold=True, color="10B981", size=14)
+    total_cell.number_format = '"$"#,##0.00'
+
+    # Column widths
+    ws.column_dimensions['A'].width = 14
+    ws.column_dimensions['B'].width = 22
+    ws.column_dimensions['C'].width = 15
+    ws.column_dimensions['D'].width = 24
+    ws.column_dimensions['E'].width = 40
+
+    # ---- Sheet 2: Résumé par catégorie ----
+    ws2 = wb.create_sheet("Résumé")
+    ws2.append(["Catégorie", "Total ($)", "Nombre"])
+    for col in range(1, 4):
+        c = ws2.cell(row=1, column=col)
+        c.fill = header_fill
+        c.font = header_font
+        c.alignment = Alignment(horizontal="center")
+        c.border = border
+
+    for cat_key, label in CATEGORY_LABELS.items():
+        amt = totals_by_cat.get(cat_key, 0)
+        count = sum(1 for e in items if e.get("category") == cat_key)
+        ws2.append([label, amt, count])
+
+    # Format
+    for row_idx in range(2, ws2.max_row + 1):
+        ws2.cell(row=row_idx, column=2).number_format = '"$"#,##0.00'
+        for col in range(1, 4):
+            ws2.cell(row=row_idx, column=col).border = border
+
+    # Grand total row on Résumé
+    ws2.append([])
+    summary_total_row = ws2.max_row + 1
+    ws2.cell(row=summary_total_row, column=1, value="GRAND TOTAL").font = Font(bold=True, size=14)
+    gt = ws2.cell(row=summary_total_row, column=2, value=total)
+    gt.font = Font(bold=True, color="10B981", size=14)
+    gt.number_format = '"$"#,##0.00'
+
+    ws2.column_dimensions['A'].width = 26
+    ws2.column_dimensions['B'].width = 18
+    ws2.column_dimensions['C'].width = 12
+
+    # Output
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    filename = f"depenses_crystaltask_{today}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 # ============================================================
 # SCHEDULED CAMPAIGNS
 # ============================================================
