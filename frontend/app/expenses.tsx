@@ -61,6 +61,7 @@ export default function ExpensesScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   const [viewPhoto, setViewPhoto] = useState<string | null>(null);
+  const [showCategoryMenu, setShowCategoryMenu] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -245,34 +246,108 @@ export default function ExpensesScreen() {
         </View>
       </View>
 
-      {/* Category filter chips */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow} style={{ flexGrow: 0 }}>
+      {/* Category filter - Hamburger menu */}
+      <TouchableOpacity
+        style={styles.hamburgerBtn}
+        onPress={() => setShowCategoryMenu(true)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.hamburgerLeft}>
+          <Feather name="menu" size={22} color="#111" />
+          <View style={styles.hamburgerCurrent}>
+            {filterCategory ? (
+              <>
+                <Text style={{ fontSize: 20 }}>{categoryMeta(filterCategory).icon}</Text>
+                <Text style={styles.hamburgerLabel}>{categoryMeta(filterCategory).label}</Text>
+              </>
+            ) : (
+              <>
+                <Text style={{ fontSize: 20 }}>📋</Text>
+                <Text style={styles.hamburgerLabel}>Toutes les catégories</Text>
+              </>
+            )}
+          </View>
+        </View>
+        <View style={styles.hamburgerRight}>
+          <Text style={styles.hamburgerAmount}>
+            {(filterCategory
+              ? (stats?.by_category[filterCategory]?.total || 0)
+              : (stats?.grand_total || 0)
+            ).toFixed(0)}$
+          </Text>
+          <Feather name="chevron-down" size={20} color="#6B7280" />
+        </View>
+      </TouchableOpacity>
+
+      {/* CATEGORY HAMBURGER MODAL */}
+      <Modal visible={showCategoryMenu} animationType="slide" transparent onRequestClose={() => setShowCategoryMenu(false)}>
         <TouchableOpacity
-          style={[styles.chip, !filterCategory && styles.chipActive]}
-          onPress={() => setFilterCategory(null)}
-          activeOpacity={0.7}
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowCategoryMenu(false)}
         >
-          <Text style={{ fontSize: 16 }}>📋</Text>
-          <Text style={[styles.chipText, !filterCategory && { color: '#fff' }]}>Tout</Text>
-          {stats && <Text style={[styles.chipCount, !filterCategory && { color: '#fff' }]}>{stats.grand_total.toFixed(0)}$</Text>}
+          <TouchableOpacity activeOpacity={1} style={styles.menuCard} onPress={() => {}}>
+            <View style={styles.modalHead}>
+              <Text style={styles.modalTitle}>📂 Filtrer par catégorie</Text>
+              <TouchableOpacity onPress={() => setShowCategoryMenu(false)}>
+                <Feather name="x" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView contentContainerStyle={{ padding: 12, gap: 6 }}>
+              {/* "Toutes" */}
+              <TouchableOpacity
+                style={[styles.menuItem, !filterCategory && styles.menuItemActive]}
+                onPress={() => { setFilterCategory(null); setShowCategoryMenu(false); }}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.menuIconBox, { backgroundColor: '#F3F4F6' }]}>
+                  <Text style={{ fontSize: 22 }}>📋</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.menuItemLabel}>Toutes les catégories</Text>
+                  <Text style={styles.menuItemSub}>
+                    {expenses.length} dépense{expenses.length > 1 ? 's' : ''} visibles
+                  </Text>
+                </View>
+                <Text style={styles.menuItemAmount}>{(stats?.grand_total || 0).toFixed(0)}$</Text>
+                {!filterCategory && <Feather name="check-circle" size={20} color="#10B981" style={{ marginLeft: 8 }} />}
+              </TouchableOpacity>
+              {/* Divider */}
+              <View style={styles.menuDivider} />
+              {/* Categories */}
+              {CATEGORIES.map(cat => {
+                const active = filterCategory === cat.id;
+                const catStats = stats?.by_category[cat.id] || { total: 0, count: 0 };
+                return (
+                  <TouchableOpacity
+                    key={cat.id}
+                    style={[
+                      styles.menuItem,
+                      active && { backgroundColor: cat.bg, borderColor: cat.color },
+                    ]}
+                    onPress={() => { setFilterCategory(cat.id); setShowCategoryMenu(false); }}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.menuIconBox, { backgroundColor: cat.bg }]}>
+                      <Text style={{ fontSize: 22 }}>{cat.icon}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.menuItemLabel, active && { color: cat.color }]}>{cat.label}</Text>
+                      <Text style={styles.menuItemSub}>
+                        {catStats.count} dépense{catStats.count > 1 ? 's' : ''}
+                      </Text>
+                    </View>
+                    <Text style={[styles.menuItemAmount, active && { color: cat.color }]}>
+                      {catStats.total.toFixed(0)}$
+                    </Text>
+                    {active && <Feather name="check-circle" size={20} color={cat.color} style={{ marginLeft: 8 }} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </TouchableOpacity>
         </TouchableOpacity>
-        {CATEGORIES.map(cat => {
-          const active = filterCategory === cat.id;
-          const catStats = stats?.by_category[cat.id] || { total: 0, count: 0 };
-          return (
-            <TouchableOpacity
-              key={cat.id}
-              style={[styles.chip, active && { backgroundColor: cat.color, borderColor: cat.color }]}
-              onPress={() => setFilterCategory(cat.id)}
-              activeOpacity={0.7}
-            >
-              <Text style={{ fontSize: 16 }}>{cat.icon}</Text>
-              <Text style={[styles.chipText, active && { color: '#fff' }]}>{cat.label}</Text>
-              <Text style={[styles.chipCount, active && { color: '#fff' }]}>{catStats.total.toFixed(0)}$</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+      </Modal>
 
       {/* List */}
       {loading ? (
@@ -470,6 +545,30 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: '#111', borderColor: '#111' },
   chipText: { fontSize: 13, fontWeight: '700', color: '#374151' },
   chipCount: { fontSize: 11, color: '#6B7280', fontWeight: '700' },
+  // Hamburger
+  hamburgerBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginHorizontal: 16, marginBottom: 10,
+    backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB',
+    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
+  },
+  hamburgerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  hamburgerCurrent: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+  hamburgerLabel: { fontSize: 15, fontWeight: '700', color: '#111' },
+  hamburgerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  hamburgerAmount: { fontSize: 15, fontWeight: '800', color: '#10B981' },
+  menuCard: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '80%' },
+  menuItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#FAFAFA', borderWidth: 1, borderColor: 'transparent',
+    borderRadius: 12, padding: 12,
+  },
+  menuItemActive: { backgroundColor: '#ECFDF5', borderColor: '#10B981' },
+  menuIconBox: { width: 44, height: 44, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  menuItemLabel: { fontSize: 15, fontWeight: '700', color: '#111' },
+  menuItemSub: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
+  menuItemAmount: { fontSize: 15, fontWeight: '800', color: '#374151' },
+  menuDivider: { height: 1, backgroundColor: '#F3F4F6', marginVertical: 4 },
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: '#374151', marginTop: 16 },
   emptyText: { fontSize: 14, color: '#9CA3AF', textAlign: 'center', marginTop: 4 },
