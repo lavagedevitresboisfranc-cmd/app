@@ -395,6 +395,16 @@ export default function CalendarScreen() {
           return count;
         });
       }
+      // Also fetch alternative_offered for total active
+      const altRes = await fetch(`${API_URL}/api/requests?status=alternative_offered`);
+      if (altRes.ok) {
+        const altData = await altRes.json();
+        const altList = Array.isArray(altData) ? altData : [];
+        const altRdv = altList.filter((r: any) => (r.request_type || 'rdv') === 'rdv').length;
+        const altEst = altList.filter((r: any) => r.request_type === 'est').length;
+        setPendingRdvCount((prev) => prev + altRdv);
+        setPendingEstCount((prev) => prev + altEst);
+      }
       if (apptsRes.ok) {
         const appts = await apptsRes.json();
         const todayStr = new Date().toISOString().slice(0, 10);
@@ -696,7 +706,7 @@ export default function CalendarScreen() {
         <TouchableOpacity
           style={styles.legendBtn}
           activeOpacity={0.7}
-          onPress={() => router.push({ pathname: '/requests', params: { type: 'rdv' } })}
+          onPress={() => router.push({ pathname: '/requests', params: { type: 'rdv', status: 'all' } })}
         >
           <View style={[styles.legendDot, { backgroundColor: '#FF3B30' }]} />
           <Text style={styles.legendLabel}>En attente</Text>
@@ -710,7 +720,7 @@ export default function CalendarScreen() {
         <TouchableOpacity
           style={styles.legendBtn}
           activeOpacity={0.7}
-          onPress={() => router.push({ pathname: '/requests', params: { type: 'est' } })}
+          onPress={() => router.push({ pathname: '/requests', params: { type: 'est', status: 'all' } })}
         >
           <View style={[styles.legendDot, { backgroundColor: '#F59E0B' }]} />
           <Text style={styles.legendLabel}>Estimation</Text>

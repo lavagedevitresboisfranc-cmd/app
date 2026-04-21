@@ -39,11 +39,13 @@ type TypeFilter = 'all' | 'rdv' | 'est';
 
 export default function RequestsScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ type?: string }>();
+  const params = useLocalSearchParams<{ type?: string; status?: string }>();
   const [requests, setRequests] = useState<AppointmentRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [filter, setFilter] = useState<FilterType>('pending');
+  const [filter, setFilter] = useState<FilterType>(
+    (params.status as FilterType) || 'pending'
+  );
   const [typeFilter, setTypeFilter] = useState<TypeFilter>(
     params.type === 'est' ? 'est' : params.type === 'rdv' ? 'rdv' : 'all'
   );
@@ -192,7 +194,7 @@ export default function RequestsScreen() {
         <View style={styles.suggestedRow}>
           <Feather name="arrow-right" size={14} color="#FF9500" />
           <Text style={styles.suggestedText}>
-            Suggested: {formatDate(item.suggested_date)} at {item.suggested_time}
+            Proposé: {formatDate(item.suggested_date)} à {item.suggested_time}
           </Text>
         </View>
       )}
