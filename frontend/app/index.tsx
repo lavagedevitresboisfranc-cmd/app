@@ -829,9 +829,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logoRow: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 10,
+    paddingHorizontal: 8,
+  },
+  headerLogoImage: {
+    width: '100%',
+    aspectRatio: 1492 / 1022,
+    maxHeight: 140,
   },
   logoIcon: {
     width: 36,
