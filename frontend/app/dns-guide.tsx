@@ -5,9 +5,13 @@ import { Feather } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import AppHeader from '../components/AppHeader';
 
-const copy = (text: string) => {
-  Clipboard.setStringAsync(text);
-  Alert.alert('✅ Copié', `"${text}" copié dans le presse-papier`);
+const copy = async (text: string) => {
+  try {
+    await Clipboard.setStringAsync(text);
+    Alert.alert('✅ Copié', `"${text.length > 50 ? text.slice(0, 50) + '...' : text}" copié dans le presse-papier`);
+  } catch {
+    Alert.alert('❌ Erreur', 'Impossible de copier');
+  }
 };
 
 function CopyRow({ label, value }: { label?: string; value: string }) {
