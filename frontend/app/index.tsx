@@ -526,7 +526,7 @@ export default function CalendarScreen() {
             {/* CrystalTask logo in menu */}
             <View style={styles.menuLogoRow}>
               <Image
-                source={require('../assets/images/crystaltask-logo.png')}
+                source={require('../assets/images/crystaltask-logo-transparent.png')}
                 style={styles.menuLogoImage}
                 resizeMode="contain"
               />
@@ -631,7 +631,7 @@ export default function CalendarScreen() {
         </TouchableOpacity>
         <View style={styles.logoRow}>
           <Image
-            source={require('../assets/images/crystaltask-logo.png')}
+            source={require('../assets/images/crystaltask-logo-transparent.png')}
             style={styles.headerLogoImage}
             resizeMode="contain"
           />
@@ -871,8 +871,8 @@ const styles = StyleSheet.create({
     color: '#0891B2',
   },
   headerLogoImage: {
-    width: 260,
-    height: 68,
+    width: 340,
+    height: 90,
   },
   offlineBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
@@ -1139,14 +1139,10 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     borderBottomWidth: 1,
     borderColor: '#E5E5E5',
-    backgroundColor: '#000',
-    marginHorizontal: -20,
-    marginTop: -20,
-    paddingHorizontal: 20,
   },
   menuLogoImage: {
-    width: 220,
-    height: 72,
+    width: 280,
+    height: 90,
   },
   menuLogoIcon: {
     width: 32,
