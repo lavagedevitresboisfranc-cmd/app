@@ -204,7 +204,7 @@ export default function RequestDetailScreen() {
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr + 'T00:00:00');
-    return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    return d.toLocaleDateString('fr-CA', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   };
 
   const formatShortDate = (dateStr: string) => {
@@ -215,11 +215,15 @@ export default function RequestDetailScreen() {
   const getStatusColor = (status: string) => {
     if (status === 'accepted') return '#34C759';
     if (status === 'alternative_offered') return '#FF9500';
-    return '#000000';
+    if (status === 'declined') return '#9CA3AF';
+    return '#0891B2';
   };
 
   const getStatusLabel = (status: string) => {
-    if (status === 'alternative_offered') return 'Alternative Offered';
+    if (status === 'alternative_offered') return 'Alternative proposée';
+    if (status === 'accepted') return 'Accepté';
+    if (status === 'pending') return 'En attente';
+    if (status === 'declined') return 'Archivé';
     return status;
   };
 
@@ -254,6 +258,18 @@ export default function RequestDetailScreen() {
           {/* Customer Info */}
           <Text style={styles.title} testID="request-customer-name">{request.customer_name}</Text>
           <View style={styles.statusRow}>
+            {/* Type badge */}
+            <View style={[styles.statusBadge, {
+              borderColor: request.request_type === 'est' ? '#F59E0B' : '#0891B2',
+              backgroundColor: request.request_type === 'est' ? '#FEF3C7' : '#ECFEFF',
+            }]}>
+              <Text style={[styles.statusBadgeText, {
+                color: request.request_type === 'est' ? '#B45309' : '#0891B2',
+              }]}>
+                {request.request_type === 'est' ? '💰 ESTIMATION' : '📅 RDV'}
+              </Text>
+            </View>
+            {/* Status badge */}
             <View style={[styles.statusBadge, { borderColor: getStatusColor(request.status) }]}>
               <View style={[styles.statusDot, { backgroundColor: getStatusColor(request.status) }]} />
               <Text style={[styles.statusBadgeText, { color: getStatusColor(request.status) }]}>
@@ -313,7 +329,7 @@ export default function RequestDetailScreen() {
             <View style={styles.infoRow}>
               <Feather name="calendar" size={18} color="#737373" />
               <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>PREFERRED DATE & TIME</Text>
+                <Text style={styles.infoLabel}>PRÉFÉRÉ: DATE & HEURE</Text>
                 <Text style={styles.infoValue} testID="request-datetime">
                   {formatDate(request.preferred_date)} at {request.preferred_time}
                 </Text>
@@ -419,6 +435,41 @@ export default function RequestDetailScreen() {
               >
                 <Feather name="rotate-ccw" size={20} color="#FFFFFF" />
                 <Text style={styles.acceptBtnText}>Restaurer la demande</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                testID="permanent-delete-button"
+                style={[styles.declineBtn, { borderColor: '#DC2626' }]}
+                activeOpacity={0.7}
+                onPress={() => {
+                  const msg = '⚠️ ATTENTION — Suppression DÉFINITIVE\n\nCette demande sera supprimée pour toujours et ne pourra PAS être récupérée.\n\nÊtes-vous certain ?';
+                  const doDel = async () => {
+                    try {
+                      const res = await fetch(`${API_URL}/api/requests/${id}/permanent`, { method: 'DELETE' });
+                      if (res.ok) router.back();
+                      else Alert.alert('Erreur', 'Suppression impossible');
+                    } catch {
+                      Alert.alert('Erreur', 'Suppression impossible');
+                    }
+                  };
+                  if (Platform.OS === 'web') {
+                    // eslint-disable-next-line no-alert
+                    if (window.confirm(msg)) doDel();
+                  } else {
+                    Alert.alert(
+                      '⚠️ Supprimer définitivement',
+                      msg,
+                      [
+                        { text: 'Annuler', style: 'cancel' },
+                        { text: '🗑️ Supprimer', style: 'destructive', onPress: doDel },
+                      ],
+                      { cancelable: true }
+                    );
+                  }
+                }}
+              >
+                <Feather name="trash-2" size={18} color="#DC2626" />
+                <Text style={[styles.declineBtnText, { color: '#DC2626' }]}>🗑️ Supprimer définitivement</Text>
               </TouchableOpacity>
             </View>
           )}

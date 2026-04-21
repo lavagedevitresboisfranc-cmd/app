@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Pressable, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Pressable, ScrollView, Image } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -113,13 +113,11 @@ export default function AppHeader({ title, showBack }: Props) {
         <Pressable style={styles.overlay} onPress={() => setMenuOpen(false)}>
           <Pressable style={styles.drawer} onPress={(e) => e.stopPropagation()}>
             <View style={styles.logoRow}>
-              <View style={styles.logoGrid}>
-                <View style={[styles.pane, { backgroundColor: '#0891B2' }]} />
-                <View style={[styles.pane, { backgroundColor: '#06B6D4' }]} />
-                <View style={[styles.pane, { backgroundColor: '#06B6D4' }]} />
-                <View style={[styles.pane, { backgroundColor: '#22D3EE' }]} />
-              </View>
-              <Text style={styles.logoText}>Bright<Text style={{ color: '#0891B2' }}>Calendar</Text></Text>
+              <Image
+                source={require('../assets/images/crystaltask-logo-transparent.png')}
+                style={styles.drawerLogo}
+                resizeMode="contain"
+              />
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
@@ -208,7 +206,11 @@ export default function AppHeader({ title, showBack }: Props) {
               <View style={[styles.paneSmall, { backgroundColor: '#06B6D4' }]} />
               <View style={[styles.paneSmall, { backgroundColor: '#22D3EE' }]} />
             </View>
-            <Text style={styles.logoTextSmall}>Bright<Text style={{ color: '#0891B2' }}>Calendar</Text></Text>
+            <Image
+              source={require('../assets/images/crystaltask-logo-transparent.png')}
+              style={styles.headerLogoImg}
+              resizeMode="contain"
+            />
           </View>
         )}
 
@@ -233,6 +235,8 @@ const styles = StyleSheet.create({
   logoRowSmall: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   logoGridSmall: { width: 24, height: 24, flexDirection: 'row', flexWrap: 'wrap', gap: 1.5, borderRadius: 3 },
   paneSmall: { width: 11, height: 11, borderRadius: 1.5 },
+  drawerLogo: { width: 160, height: 40, alignSelf: 'flex-start' },
+  headerLogoImg: { width: 110, height: 26 },
   logoTextSmall: { fontSize: 18, fontWeight: '800', color: '#0A0A0A' },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', flexDirection: 'row' },
   drawer: { width: 290, backgroundColor: '#FFFFFF', paddingTop: 60, paddingHorizontal: 16, paddingBottom: 20, shadowColor: '#000', shadowOffset: { width: 2, height: 0 }, shadowOpacity: 0.15, shadowRadius: 10, elevation: 10 },
