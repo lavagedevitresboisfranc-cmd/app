@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import AppHeader from '../components/AppHeader';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -35,13 +35,18 @@ interface AppointmentRequest {
 }
 
 type FilterType = 'pending' | 'all' | 'alternative_offered' | 'accepted' | 'declined';
+type TypeFilter = 'all' | 'rdv' | 'est';
 
 export default function RequestsScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ type?: string }>();
   const [requests, setRequests] = useState<AppointmentRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<FilterType>('pending');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>(
+    params.type === 'est' ? 'est' : params.type === 'rdv' ? 'rdv' : 'all'
+  );
 
   const fetchRequests = useCallback(async () => {
     setLoading(true);
@@ -51,18 +56,26 @@ export default function RequestsScreen() {
         : `${API_URL}/api/requests?status=${filter}`;
       const res = await fetch(url);
       const data = await res.json();
-      setRequests(data);
+      // Client-side filter by type
+      const filtered = Array.isArray(data)
+        ? data.filter((r: AppointmentRequest) => {
+            if (typeFilter === 'all') return true;
+            const t = r.request_type || 'rdv';
+            return t === typeFilter;
+          })
+        : [];
+      setRequests(filtered);
     } catch (e) {
       console.error('Failed to fetch requests', e);
     } finally {
       setLoading(false);
     }
-  }, [filter]);
+  }, [filter, typeFilter]);
 
   useFocusEffect(
     useCallback(() => {
       fetchRequests();
-    }, [filter])
+    }, [filter, typeFilter])
   );
 
   const onRefresh = async () => {
@@ -190,6 +203,31 @@ export default function RequestsScreen() {
     <SafeAreaView style={styles.safeArea} testID="requests-screen">
       <AppHeader title="Demandes" />
 
+      {/* Type filter: RDV | Estimation | Toutes */}
+      <View style={styles.typeFilterRow}>
+        <TouchableOpacity
+          style={[styles.typeFilterBtn, typeFilter === 'all' && styles.typeFilterBtnActiveAll]}
+          activeOpacity={0.7}
+          onPress={() => setTypeFilter('all')}
+        >
+          <Text style={[styles.typeFilterText, typeFilter === 'all' && { color: '#fff' }]}>📋 Toutes</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.typeFilterBtn, typeFilter === 'rdv' && styles.typeFilterBtnActiveRdv]}
+          activeOpacity={0.7}
+          onPress={() => setTypeFilter('rdv')}
+        >
+          <Text style={[styles.typeFilterText, typeFilter === 'rdv' && { color: '#fff' }]}>📅 RDV</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.typeFilterBtn, typeFilter === 'est' && styles.typeFilterBtnActiveEst]}
+          activeOpacity={0.7}
+          onPress={() => setTypeFilter('est')}
+        >
+          <Text style={[styles.typeFilterText, typeFilter === 'est' && { color: '#fff' }]}>💰 Estimation</Text>
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.filterRow}>
         {filters.map((f) => (
           <TouchableOpacity
@@ -220,9 +258,9 @@ export default function RequestsScreen() {
           ListEmptyComponent={
             <View style={styles.emptyState} testID="empty-requests">
               <Feather name="inbox" size={48} color="#E5E5E5" />
-              <Text style={styles.emptyTitle}>No requests</Text>
+              <Text style={styles.emptyTitle}>Aucune demande</Text>
               <Text style={styles.emptySubtitle}>
-                {filter === 'pending' ? 'No pending requests right now' : 'No requests found'}
+                {filter === 'pending' ? 'Aucune demande en attente' : 'Aucune demande trouvée'}
               </Text>
             </View>
           }
@@ -271,9 +309,35 @@ const styles = StyleSheet.create({
   },
   filterRow: {
     flexDirection: 'row',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
+    flexWrap: 'wrap',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     gap: 8,
+  },
+  typeFilterRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 4,
+    gap: 8,
+  },
+  typeFilterBtn: {
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+    alignItems: 'center',
+  },
+  typeFilterBtnActiveAll: { backgroundColor: '#111', borderColor: '#111' },
+  typeFilterBtnActiveRdv: { backgroundColor: '#0891B2', borderColor: '#0891B2' },
+  typeFilterBtnActiveEst: { backgroundColor: '#F59E0B', borderColor: '#F59E0B' },
+  typeFilterText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#374151',
   },
   filterBtn: {
     paddingHorizontal: 14,

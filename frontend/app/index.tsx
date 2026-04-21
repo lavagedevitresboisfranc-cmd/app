@@ -122,6 +122,9 @@ export default function CalendarScreen() {
   const toggleSection = (key: string) => setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
   const currentLangName = SUPPORTED_LANGUAGES.find((l) => l.code === currentLang)?.name || 'Français';
   const [pendingCount, setPendingCount] = useState(0);
+  const [pendingRdvCount, setPendingRdvCount] = useState(0);
+  const [pendingEstCount, setPendingEstCount] = useState(0);
+  const [confirmedCount, setConfirmedCount] = useState(0);
   const [prevPendingCount, setPrevPendingCount] = useState(0);
 
   const menuSections: Array<{ key: string; titleKey: string; icon: any; color: string; items: Array<{ icon: any; labelKey: string; route: string }> }> = [
@@ -368,22 +371,37 @@ export default function CalendarScreen() {
     }
   }, []);
 
-  // Fetch pending requests count for badge
+  // Fetch pending requests count for badge (split by type)
   const fetchPendingCount = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/requests?status=pending`);
-      if (res.ok) {
-        const data = await res.json();
-        const count = Array.isArray(data) ? data.length : 0;
+      const [pendingRes, apptsRes] = await Promise.all([
+        fetch(`${API_URL}/api/requests?status=pending`),
+        fetch(`${API_URL}/api/appointments`),
+      ]);
+      if (pendingRes.ok) {
+        const data = await pendingRes.json();
+        const list = Array.isArray(data) ? data : [];
+        const rdvN = list.filter((r: any) => (r.request_type || 'rdv') === 'rdv').length;
+        const estN = list.filter((r: any) => r.request_type === 'est').length;
+        setPendingRdvCount(rdvN);
+        setPendingEstCount(estN);
         setPendingCount((prev) => {
+          const count = list.length;
           if (count > prev && prev > 0) {
-            // New request arrived while app is open
             if (typeof window !== 'undefined' && (window as any).navigator?.vibrate) {
               (window as any).navigator.vibrate(200);
             }
           }
           return count;
         });
+      }
+      if (apptsRes.ok) {
+        const appts = await apptsRes.json();
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const upcoming = (Array.isArray(appts) ? appts : []).filter(
+          (a: any) => a.status === 'upcoming' && a.date >= todayStr
+        ).length;
+        setConfirmedCount(upcoming);
       }
     } catch {}
   }, []);
@@ -661,14 +679,47 @@ export default function CalendarScreen() {
         </View>
       )}
       <View style={styles.legendBar}>
-        <View style={styles.legendItem}>
+        <TouchableOpacity
+          style={styles.legendBtn}
+          activeOpacity={0.7}
+          onPress={() => router.push('/appointments')}
+        >
           <View style={[styles.legendDot, { backgroundColor: '#34C759' }]} />
           <Text style={styles.legendLabel}>Confirmé</Text>
-        </View>
-        <View style={styles.legendItem}>
+          {confirmedCount > 0 && (
+            <View style={[styles.legendBadge, { backgroundColor: '#34C759' }]}>
+              <Text style={styles.legendBadgeText}>{confirmedCount > 99 ? '99+' : confirmedCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.legendBtn}
+          activeOpacity={0.7}
+          onPress={() => router.push({ pathname: '/requests', params: { type: 'rdv' } })}
+        >
           <View style={[styles.legendDot, { backgroundColor: '#FF3B30' }]} />
           <Text style={styles.legendLabel}>En attente</Text>
-        </View>
+          {pendingRdvCount > 0 && (
+            <View style={[styles.legendBadge, { backgroundColor: '#FF3B30' }]}>
+              <Text style={styles.legendBadgeText}>{pendingRdvCount > 99 ? '99+' : pendingRdvCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.legendBtn}
+          activeOpacity={0.7}
+          onPress={() => router.push({ pathname: '/requests', params: { type: 'est' } })}
+        >
+          <View style={[styles.legendDot, { backgroundColor: '#F59E0B' }]} />
+          <Text style={styles.legendLabel}>Estimation</Text>
+          {pendingEstCount > 0 && (
+            <View style={[styles.legendBadge, { backgroundColor: '#F59E0B' }]}>
+              <Text style={styles.legendBadgeText}>{pendingEstCount > 99 ? '99+' : pendingEstCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
       </View>
 
       <View style={styles.toggleRow}>
@@ -918,14 +969,41 @@ const styles = StyleSheet.create({
   menuItemPillText: { color: '#B91C1C', fontSize: 11, fontWeight: '700' },
   legendBar: {
     flexDirection: 'row',
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
     paddingBottom: 12,
-    gap: 16,
+    gap: 8,
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
+  },
+  legendBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+  },
+  legendBadge: {
+    minWidth: 22,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 2,
+  },
+  legendBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
   },
   legendDot: {
     width: 8,
