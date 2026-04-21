@@ -44,9 +44,18 @@ const menuSections: MenuSection[] = [
     icon: 'trending-up' as const,
     color: '#7C3AED',
     items: [
-      { icon: 'dollar-sign' as const, labelKey: 'menu.items.estimate', route: '/estimate' },
       { icon: 'send' as const, labelKey: 'menu.items.campaigns', route: '/campaigns' },
       { icon: 'grid' as const, labelKey: 'menu.items.qr', route: '/qr' },
+    ],
+  },
+  {
+    key: 'finance',
+    titleKey: 'menu.sections.finance',
+    icon: 'dollar-sign' as const,
+    color: '#10B981',
+    items: [
+      { icon: 'credit-card' as const, labelKey: 'menu.items.expenses', route: '/expenses' },
+      { icon: 'dollar-sign' as const, labelKey: 'menu.items.estimate', route: '/estimate' },
     ],
   },
   {

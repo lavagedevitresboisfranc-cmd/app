@@ -2354,6 +2354,161 @@ async def shutdown_db_client():
 
 
 # ============================================================
+# EXPENSES (Dépenses avec catégories et photos de reçus)
+# ============================================================
+VALID_EXPENSE_CATEGORIES = [
+    "gas", "resto", "resin", "equipement", "reparation", "communication", "publicite"
+]
+
+
+class ExpenseCreate(BaseModel):
+    amount: float
+    category: str
+    date: str  # ISO date (YYYY-MM-DD)
+    description: Optional[str] = ""
+    vendor: Optional[str] = ""
+    receipt_photo: Optional[str] = None  # base64 string (data URL or raw)
+
+
+class ExpenseUpdate(BaseModel):
+    amount: Optional[float] = None
+    category: Optional[str] = None
+    date: Optional[str] = None
+    description: Optional[str] = None
+    vendor: Optional[str] = None
+    receipt_photo: Optional[str] = None
+
+
+class ExpenseResponse(BaseModel):
+    id: str
+    amount: float
+    category: str
+    date: str
+    description: str
+    vendor: str
+    receipt_photo: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+def _expense_doc_to_response(doc: dict) -> dict:
+    return {
+        "id": doc.get("id"),
+        "amount": float(doc.get("amount", 0)),
+        "category": doc.get("category", ""),
+        "date": doc.get("date", ""),
+        "description": doc.get("description", "") or "",
+        "vendor": doc.get("vendor", "") or "",
+        "receipt_photo": doc.get("receipt_photo"),
+        "created_at": doc.get("created_at", ""),
+        "updated_at": doc.get("updated_at", ""),
+    }
+
+
+@api_router.post("/expenses", response_model=ExpenseResponse)
+async def create_expense(payload: ExpenseCreate):
+    if payload.amount <= 0:
+        raise HTTPException(status_code=400, detail="Le montant doit être positif")
+    if payload.category not in VALID_EXPENSE_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Catégorie invalide. Valides: {VALID_EXPENSE_CATEGORIES}")
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "id": str(uuid.uuid4()),
+        "amount": float(payload.amount),
+        "category": payload.category,
+        "date": payload.date,
+        "description": payload.description or "",
+        "vendor": payload.vendor or "",
+        "receipt_photo": payload.receipt_photo,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.expenses.insert_one(doc)
+    return ExpenseResponse(**_expense_doc_to_response(doc))
+
+
+@api_router.get("/expenses", response_model=List[ExpenseResponse])
+async def list_expenses(category: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None, limit: int = 500):
+    query: dict = {}
+    if category:
+        query["category"] = category
+    if start_date or end_date:
+        date_q = {}
+        if start_date:
+            date_q["$gte"] = start_date
+        if end_date:
+            date_q["$lte"] = end_date
+        query["date"] = date_q
+    cursor = db.expenses.find(query, {"_id": 0}).sort("date", -1).limit(max(1, min(limit, 2000)))
+    items = await cursor.to_list(2000)
+    return [ExpenseResponse(**_expense_doc_to_response(it)) for it in items]
+
+
+@api_router.get("/expenses/stats")
+async def expenses_stats(start_date: Optional[str] = None, end_date: Optional[str] = None):
+    """Returns total amount per category and grand total."""
+    match_q: dict = {}
+    if start_date or end_date:
+        date_q = {}
+        if start_date:
+            date_q["$gte"] = start_date
+        if end_date:
+            date_q["$lte"] = end_date
+        match_q["date"] = date_q
+
+    pipeline = [
+        {"$match": match_q} if match_q else {"$match": {}},
+        {"$group": {"_id": "$category", "total": {"$sum": "$amount"}, "count": {"$sum": 1}}},
+    ]
+    cursor = db.expenses.aggregate(pipeline)
+    by_category = {}
+    grand_total = 0.0
+    async for row in cursor:
+        cat = row.get("_id") or "autre"
+        total = float(row.get("total", 0))
+        by_category[cat] = {"total": total, "count": row.get("count", 0)}
+        grand_total += total
+
+    # Fill missing categories with 0
+    for c in VALID_EXPENSE_CATEGORIES:
+        if c not in by_category:
+            by_category[c] = {"total": 0.0, "count": 0}
+
+    return {"by_category": by_category, "grand_total": grand_total}
+
+
+@api_router.get("/expenses/{expense_id}", response_model=ExpenseResponse)
+async def get_expense(expense_id: str):
+    doc = await db.expenses.find_one({"id": expense_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Dépense introuvable")
+    return ExpenseResponse(**_expense_doc_to_response(doc))
+
+
+@api_router.put("/expenses/{expense_id}", response_model=ExpenseResponse)
+async def update_expense(expense_id: str, payload: ExpenseUpdate):
+    update = {k: v for k, v in payload.dict(exclude_unset=True).items() if v is not None}
+    if "category" in update and update["category"] not in VALID_EXPENSE_CATEGORIES:
+        raise HTTPException(status_code=400, detail="Catégorie invalide")
+    if not update:
+        raise HTTPException(status_code=400, detail="Aucune modification")
+    update["updated_at"] = datetime.now(timezone.utc).isoformat()
+    res = await db.expenses.update_one({"id": expense_id}, {"$set": update})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Dépense introuvable")
+    updated = await db.expenses.find_one({"id": expense_id}, {"_id": 0})
+    return ExpenseResponse(**_expense_doc_to_response(updated))
+
+
+@api_router.delete("/expenses/{expense_id}")
+async def delete_expense(expense_id: str):
+    res = await db.expenses.delete_one({"id": expense_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Dépense introuvable")
+    return {"deleted": 1}
+
+
+# ============================================================
 # SCHEDULED CAMPAIGNS
 # ============================================================
 class ScheduledCampaignCreate(BaseModel):

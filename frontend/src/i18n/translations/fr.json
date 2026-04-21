@@ -10,7 +10,8 @@
       "marketing": "Marketing",
       "team": "Équipe & Stats",
       "system": "Système",
-      "language": "Langue"
+      "language": "Langue",
+      "finance": "Finance"
     },
     "items": {
       "calendar": "Calendrier",
@@ -26,7 +27,8 @@
       "qr": "QR Code client",
       "employees": "Employés",
       "stats": "Statistiques",
-      "backup": "Sauvegarde"
+      "backup": "Sauvegarde",
+      "expenses": "Dépenses"
     }
   },
   "common": {
