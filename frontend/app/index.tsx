@@ -144,6 +144,7 @@ export default function CalendarScreen() {
       color: '#D97706',
       items: [
         { icon: 'database' as const, labelKey: 'menu.items.clientsDb', route: '/clients-db' },
+        { icon: 'archive' as const, labelKey: 'menu.items.clientsArchive', route: '/clients-archive' },
         { icon: 'user' as const, labelKey: 'menu.items.clientsHistory', route: '/client-history' },
         { icon: 'star' as const, labelKey: 'menu.items.reviews', route: '/reviews' },
       ],
@@ -154,9 +155,19 @@ export default function CalendarScreen() {
       icon: 'trending-up' as const,
       color: '#7C3AED',
       items: [
-        { icon: 'dollar-sign' as const, labelKey: 'menu.items.estimate', route: '/estimate' },
         { icon: 'send' as const, labelKey: 'menu.items.campaigns', route: '/campaigns' },
+        { icon: 'clock' as const, labelKey: 'menu.items.scheduledCampaigns', route: '/scheduled-campaigns' },
         { icon: 'grid' as const, labelKey: 'menu.items.qr', route: '/qr' },
+      ],
+    },
+    {
+      key: 'finance',
+      titleKey: 'menu.sections.finance',
+      icon: 'dollar-sign' as const,
+      color: '#10B981',
+      items: [
+        { icon: 'credit-card' as const, labelKey: 'menu.items.expenses', route: '/expenses' },
+        { icon: 'dollar-sign' as const, labelKey: 'menu.items.estimate', route: '/estimate' },
       ],
     },
     {
