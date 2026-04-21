@@ -13,20 +13,15 @@ import AppHeader from '../components/AppHeader';
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 const CATEGORIES: { id: string; label: string; icon: string; color: string; bg: string }[] = [
-  { id: 'residentiel', label: 'Résidentiel', icon: '🏠', color: '#10B981', bg: '#ECFDF5' },
-  { id: 'commercial',  label: 'Commercial',  icon: '🏢', color: '#0891B2', bg: '#ECFEFF' },
-  { id: 'industriel',  label: 'Industriel',  icon: '🏭', color: '#7C3AED', bg: '#F3E8FF' },
-  { id: 'saisonnier',  label: 'Saisonnier',  icon: '🍂', color: '#F59E0B', bg: '#FEF3C7' },
-  { id: 'pourboire',   label: 'Pourboire',   icon: '💵', color: '#EC4899', bg: '#FCE7F3' },
-  { id: 'autre',       label: 'Autre',       icon: '📝', color: '#64748B', bg: '#F1F5F9' },
+  { id: 'printemps', label: 'Saison Printemps', icon: '🌸', color: '#EC4899', bg: '#FCE7F3' },
+  { id: 'automne',   label: 'Saison Automne',   icon: '🍂', color: '#F59E0B', bg: '#FEF3C7' },
 ];
 
 const PAYMENTS: { id: string; label: string; icon: string }[] = [
-  { id: 'cash',    label: 'Comptant', icon: '💵' },
-  { id: 'cheque',  label: 'Chèque',   icon: '📝' },
-  { id: 'interac', label: 'Interac',  icon: '📱' },
-  { id: 'carte',   label: 'Carte',    icon: '💳' },
-  { id: 'autre',   label: 'Autre',    icon: '🔹' },
+  { id: 'etransfert', label: 'E-transfert',     icon: '📱' },
+  { id: 'cash',       label: 'Cash',            icon: '💵' },
+  { id: 'cheque',     label: 'Chèque',          icon: '📝' },
+  { id: 'credit',     label: 'Carte de crédit', icon: '💳' },
 ];
 
 interface Revenue {
@@ -58,7 +53,7 @@ export default function RevenuesScreen() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Revenue | null>(null);
   const [fAmount, setFAmount] = useState('');
-  const [fCategory, setFCategory] = useState<string>('residentiel');
+  const [fCategory, setFCategory] = useState<string>('printemps');
   const [fDate, setFDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [fDescription, setFDescription] = useState('');
   const [fClient, setFClient] = useState('');

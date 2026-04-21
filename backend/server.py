@@ -2650,9 +2650,9 @@ async def export_expenses_excel(start_date: Optional[str] = None, end_date: Opti
 # REVENUES (Revenus / Encaissements)
 # ============================================================
 VALID_REVENUE_CATEGORIES = [
-    "residentiel", "commercial", "industriel", "saisonnier", "pourboire", "autre"
+    "printemps", "automne"
 ]
-VALID_PAYMENT_METHODS = ["cash", "cheque", "interac", "carte", "autre"]
+VALID_PAYMENT_METHODS = ["etransfert", "cash", "cheque", "credit"]
 
 
 class RevenueCreate(BaseModel):
@@ -2836,19 +2836,14 @@ async def export_revenues_excel(start_date: Optional[str] = None, end_date: Opti
     items = await cursor.to_list(10000)
 
     CATEGORY_LABELS = {
-        "residentiel": "🏠 Résidentiel",
-        "commercial": "🏢 Commercial",
-        "industriel": "🏭 Industriel",
-        "saisonnier": "🍂 Saisonnier",
-        "pourboire": "💵 Pourboire",
-        "autre": "📝 Autre",
+        "printemps": "🌸 Saison Printemps",
+        "automne": "🍂 Saison Automne",
     }
     PAYMENT_LABELS = {
-        "cash": "💵 Comptant",
+        "etransfert": "📱 E-transfert",
+        "cash": "💵 Cash",
         "cheque": "📝 Chèque",
-        "interac": "📱 Interac",
-        "carte": "💳 Carte",
-        "autre": "🔹 Autre",
+        "credit": "💳 Carte de crédit",
     }
 
     wb = Workbook()

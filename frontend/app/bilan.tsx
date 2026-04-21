@@ -20,12 +20,8 @@ interface Bilan {
 }
 
 const REV_LABELS: Record<string, { label: string; icon: string; color: string }> = {
-  residentiel: { label: 'Résidentiel', icon: '🏠', color: '#10B981' },
-  commercial: { label: 'Commercial', icon: '🏢', color: '#0891B2' },
-  industriel: { label: 'Industriel', icon: '🏭', color: '#7C3AED' },
-  saisonnier: { label: 'Saisonnier', icon: '🍂', color: '#F59E0B' },
-  pourboire: { label: 'Pourboire', icon: '💵', color: '#EC4899' },
-  autre: { label: 'Autre', icon: '📝', color: '#64748B' },
+  printemps: { label: 'Saison Printemps', icon: '🌸', color: '#EC4899' },
+  automne: { label: 'Saison Automne', icon: '🍂', color: '#F59E0B' },
 };
 
 const EXP_LABELS: Record<string, { label: string; icon: string; color: string }> = {
