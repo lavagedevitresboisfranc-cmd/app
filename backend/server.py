@@ -2647,6 +2647,354 @@ async def export_expenses_excel(start_date: Optional[str] = None, end_date: Opti
 
 
 # ============================================================
+# REVENUES (Revenus / Encaissements)
+# ============================================================
+VALID_REVENUE_CATEGORIES = [
+    "residentiel", "commercial", "industriel", "saisonnier", "pourboire", "autre"
+]
+VALID_PAYMENT_METHODS = ["cash", "cheque", "interac", "carte", "autre"]
+
+
+class RevenueCreate(BaseModel):
+    amount: float
+    category: str
+    date: str  # YYYY-MM-DD
+    description: Optional[str] = ""
+    client_name: Optional[str] = ""
+    payment_method: Optional[str] = "cash"
+    appointment_id: Optional[str] = None
+
+
+class RevenueUpdate(BaseModel):
+    amount: Optional[float] = None
+    category: Optional[str] = None
+    date: Optional[str] = None
+    description: Optional[str] = None
+    client_name: Optional[str] = None
+    payment_method: Optional[str] = None
+    appointment_id: Optional[str] = None
+
+
+class RevenueResponse(BaseModel):
+    id: str
+    amount: float
+    category: str
+    date: str
+    description: str
+    client_name: str
+    payment_method: str
+    appointment_id: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+def _revenue_doc_to_response(doc: dict) -> dict:
+    return {
+        "id": doc.get("id"),
+        "amount": float(doc.get("amount", 0)),
+        "category": doc.get("category", ""),
+        "date": doc.get("date", ""),
+        "description": doc.get("description", "") or "",
+        "client_name": doc.get("client_name", "") or "",
+        "payment_method": doc.get("payment_method", "cash") or "cash",
+        "appointment_id": doc.get("appointment_id"),
+        "created_at": doc.get("created_at", ""),
+        "updated_at": doc.get("updated_at", ""),
+    }
+
+
+@api_router.post("/revenues", response_model=RevenueResponse)
+async def create_revenue(payload: RevenueCreate):
+    if payload.amount <= 0:
+        raise HTTPException(status_code=400, detail="Le montant doit être positif")
+    if payload.category not in VALID_REVENUE_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Catégorie invalide. Valides: {VALID_REVENUE_CATEGORIES}")
+    pm = payload.payment_method or "cash"
+    if pm not in VALID_PAYMENT_METHODS:
+        raise HTTPException(status_code=400, detail=f"Mode de paiement invalide. Valides: {VALID_PAYMENT_METHODS}")
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "id": str(uuid.uuid4()),
+        "amount": float(payload.amount),
+        "category": payload.category,
+        "date": payload.date,
+        "description": payload.description or "",
+        "client_name": payload.client_name or "",
+        "payment_method": pm,
+        "appointment_id": payload.appointment_id,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.revenues.insert_one(doc)
+    return RevenueResponse(**_revenue_doc_to_response(doc))
+
+
+@api_router.get("/revenues", response_model=List[RevenueResponse])
+async def list_revenues(category: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None, limit: int = 500):
+    query: dict = {}
+    if category:
+        query["category"] = category
+    if start_date or end_date:
+        date_q = {}
+        if start_date: date_q["$gte"] = start_date
+        if end_date: date_q["$lte"] = end_date
+        query["date"] = date_q
+    cursor = db.revenues.find(query, {"_id": 0}).sort("date", -1).limit(max(1, min(limit, 2000)))
+    items = await cursor.to_list(2000)
+    return [RevenueResponse(**_revenue_doc_to_response(it)) for it in items]
+
+
+@api_router.get("/revenues/stats")
+async def revenues_stats(start_date: Optional[str] = None, end_date: Optional[str] = None):
+    match_q: dict = {}
+    if start_date or end_date:
+        date_q = {}
+        if start_date: date_q["$gte"] = start_date
+        if end_date: date_q["$lte"] = end_date
+        match_q["date"] = date_q
+    pipeline = [
+        {"$match": match_q} if match_q else {"$match": {}},
+        {"$group": {"_id": "$category", "total": {"$sum": "$amount"}, "count": {"$sum": 1}}},
+    ]
+    cursor = db.revenues.aggregate(pipeline)
+    by_category = {}
+    grand_total = 0.0
+    async for row in cursor:
+        cat = row.get("_id") or "autre"
+        total = float(row.get("total", 0))
+        by_category[cat] = {"total": total, "count": row.get("count", 0)}
+        grand_total += total
+    for c in VALID_REVENUE_CATEGORIES:
+        if c not in by_category:
+            by_category[c] = {"total": 0.0, "count": 0}
+    # Also return payment-method breakdown
+    pm_pipeline = [
+        {"$match": match_q} if match_q else {"$match": {}},
+        {"$group": {"_id": "$payment_method", "total": {"$sum": "$amount"}, "count": {"$sum": 1}}},
+    ]
+    pm_cursor = db.revenues.aggregate(pm_pipeline)
+    by_payment = {}
+    async for row in pm_cursor:
+        pm = row.get("_id") or "cash"
+        by_payment[pm] = {"total": float(row.get("total", 0)), "count": row.get("count", 0)}
+    for pm in VALID_PAYMENT_METHODS:
+        if pm not in by_payment:
+            by_payment[pm] = {"total": 0.0, "count": 0}
+    return {"by_category": by_category, "by_payment": by_payment, "grand_total": grand_total}
+
+
+@api_router.get("/revenues/{revenue_id}", response_model=RevenueResponse)
+async def get_revenue(revenue_id: str):
+    doc = await db.revenues.find_one({"id": revenue_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Revenu introuvable")
+    return RevenueResponse(**_revenue_doc_to_response(doc))
+
+
+@api_router.put("/revenues/{revenue_id}", response_model=RevenueResponse)
+async def update_revenue(revenue_id: str, payload: RevenueUpdate):
+    update = {k: v for k, v in payload.dict(exclude_unset=True).items() if v is not None}
+    if "category" in update and update["category"] not in VALID_REVENUE_CATEGORIES:
+        raise HTTPException(status_code=400, detail="Catégorie invalide")
+    if "payment_method" in update and update["payment_method"] not in VALID_PAYMENT_METHODS:
+        raise HTTPException(status_code=400, detail="Mode de paiement invalide")
+    if not update:
+        raise HTTPException(status_code=400, detail="Aucune modification")
+    update["updated_at"] = datetime.now(timezone.utc).isoformat()
+    res = await db.revenues.update_one({"id": revenue_id}, {"$set": update})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Revenu introuvable")
+    updated = await db.revenues.find_one({"id": revenue_id}, {"_id": 0})
+    return RevenueResponse(**_revenue_doc_to_response(updated))
+
+
+@api_router.delete("/revenues/{revenue_id}")
+async def delete_revenue(revenue_id: str):
+    res = await db.revenues.delete_one({"id": revenue_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Revenu introuvable")
+    return {"deleted": 1}
+
+
+@api_router.get("/revenues/export/excel")
+async def export_revenues_excel(start_date: Optional[str] = None, end_date: Optional[str] = None, category: Optional[str] = None):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from fastapi.responses import StreamingResponse
+    import io
+
+    query: dict = {}
+    if category:
+        query["category"] = category
+    if start_date or end_date:
+        d = {}
+        if start_date: d["$gte"] = start_date
+        if end_date: d["$lte"] = end_date
+        query["date"] = d
+
+    cursor = db.revenues.find(query, {"_id": 0}).sort("date", -1)
+    items = await cursor.to_list(10000)
+
+    CATEGORY_LABELS = {
+        "residentiel": "🏠 Résidentiel",
+        "commercial": "🏢 Commercial",
+        "industriel": "🏭 Industriel",
+        "saisonnier": "🍂 Saisonnier",
+        "pourboire": "💵 Pourboire",
+        "autre": "📝 Autre",
+    }
+    PAYMENT_LABELS = {
+        "cash": "💵 Comptant",
+        "cheque": "📝 Chèque",
+        "interac": "📱 Interac",
+        "carte": "💳 Carte",
+        "autre": "🔹 Autre",
+    }
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Revenus"
+
+    header = ["Date", "Catégorie", "Montant ($)", "Client", "Paiement", "Description"]
+    ws.append(header)
+    header_fill = PatternFill(start_color="10B981", end_color="10B981", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=12)
+    border = Border(
+        left=Side(style='thin', color='CCCCCC'), right=Side(style='thin', color='CCCCCC'),
+        top=Side(style='thin', color='CCCCCC'), bottom=Side(style='thin', color='CCCCCC'),
+    )
+    for col in range(1, len(header) + 1):
+        c = ws.cell(row=1, column=col)
+        c.fill = header_fill; c.font = header_font
+        c.alignment = Alignment(horizontal="center", vertical="center"); c.border = border
+
+    total = 0.0
+    totals_by_cat = {k: 0.0 for k in CATEGORY_LABELS}
+    for rev in items:
+        row = [
+            rev.get("date", ""),
+            CATEGORY_LABELS.get(rev.get("category", ""), rev.get("category", "")),
+            float(rev.get("amount", 0)),
+            rev.get("client_name", "") or "",
+            PAYMENT_LABELS.get(rev.get("payment_method", "cash"), rev.get("payment_method", "")),
+            rev.get("description", "") or "",
+        ]
+        ws.append(row)
+        amt = float(rev.get("amount", 0))
+        total += amt
+        cat = rev.get("category", "")
+        if cat in totals_by_cat:
+            totals_by_cat[cat] += amt
+
+    for row_idx in range(2, ws.max_row + 1):
+        ws.cell(row=row_idx, column=3).number_format = '"$"#,##0.00'
+        for col in range(1, len(header) + 1):
+            ws.cell(row=row_idx, column=col).border = border
+
+    total_row = ws.max_row + 2
+    ws.cell(row=total_row, column=2, value="TOTAL").font = Font(bold=True, size=14)
+    tc = ws.cell(row=total_row, column=3, value=total)
+    tc.font = Font(bold=True, color="10B981", size=14)
+    tc.number_format = '"$"#,##0.00'
+
+    ws.column_dimensions['A'].width = 14
+    ws.column_dimensions['B'].width = 22
+    ws.column_dimensions['C'].width = 15
+    ws.column_dimensions['D'].width = 26
+    ws.column_dimensions['E'].width = 16
+    ws.column_dimensions['F'].width = 40
+
+    # Summary sheet
+    ws2 = wb.create_sheet("Résumé")
+    ws2.append(["Catégorie", "Total ($)", "Nombre"])
+    for col in range(1, 4):
+        c = ws2.cell(row=1, column=col)
+        c.fill = header_fill; c.font = header_font
+        c.alignment = Alignment(horizontal="center"); c.border = border
+    for key, label in CATEGORY_LABELS.items():
+        amt = totals_by_cat.get(key, 0)
+        count = sum(1 for r in items if r.get("category") == key)
+        ws2.append([label, amt, count])
+    for row_idx in range(2, ws2.max_row + 1):
+        ws2.cell(row=row_idx, column=2).number_format = '"$"#,##0.00'
+        for col in range(1, 4):
+            ws2.cell(row=row_idx, column=col).border = border
+    ws2.append([])
+    stot_row = ws2.max_row + 1
+    ws2.cell(row=stot_row, column=1, value="GRAND TOTAL").font = Font(bold=True, size=14)
+    gt = ws2.cell(row=stot_row, column=2, value=total)
+    gt.font = Font(bold=True, color="10B981", size=14)
+    gt.number_format = '"$"#,##0.00'
+    ws2.column_dimensions['A'].width = 26
+    ws2.column_dimensions['B'].width = 18
+    ws2.column_dimensions['C'].width = 12
+
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+    today = datetime.now().strftime("%Y-%m-%d")
+    filename = f"revenus_crystaltask_{today}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ============================================================
+# BILAN FINANCIER (Finance balance = Revenus - Dépenses)
+# ============================================================
+@api_router.get("/finance/bilan")
+async def finance_bilan(start_date: Optional[str] = None, end_date: Optional[str] = None):
+    """Returns total revenues, total expenses, net profit, and breakdown for a period."""
+    q_exp: dict = {}
+    q_rev: dict = {}
+    if start_date or end_date:
+        d = {}
+        if start_date: d["$gte"] = start_date
+        if end_date: d["$lte"] = end_date
+        q_exp["date"] = dict(d)
+        q_rev["date"] = dict(d)
+
+    # Expenses
+    exp_pipeline = [
+        {"$match": q_exp} if q_exp else {"$match": {}},
+        {"$group": {"_id": "$category", "total": {"$sum": "$amount"}, "count": {"$sum": 1}}},
+    ]
+    rev_pipeline = [
+        {"$match": q_rev} if q_rev else {"$match": {}},
+        {"$group": {"_id": "$category", "total": {"$sum": "$amount"}, "count": {"$sum": 1}}},
+    ]
+
+    exp_by_cat = {}
+    total_expenses = 0.0
+    async for row in db.expenses.aggregate(exp_pipeline):
+        cat = row.get("_id") or "autre"
+        total = float(row.get("total", 0))
+        exp_by_cat[cat] = {"total": total, "count": row.get("count", 0)}
+        total_expenses += total
+
+    rev_by_cat = {}
+    total_revenues = 0.0
+    async for row in db.revenues.aggregate(rev_pipeline):
+        cat = row.get("_id") or "autre"
+        total = float(row.get("total", 0))
+        rev_by_cat[cat] = {"total": total, "count": row.get("count", 0)}
+        total_revenues += total
+
+    net_profit = total_revenues - total_expenses
+    margin = (net_profit / total_revenues * 100.0) if total_revenues > 0 else 0.0
+
+    return {
+        "period": {"start_date": start_date, "end_date": end_date},
+        "total_revenues": round(total_revenues, 2),
+        "total_expenses": round(total_expenses, 2),
+        "net_profit": round(net_profit, 2),
+        "margin_pct": round(margin, 2),
+        "revenues_by_category": rev_by_cat,
+        "expenses_by_category": exp_by_cat,
+    }
+
+
+# ============================================================
 # SCHEDULED CAMPAIGNS
 # ============================================================
 class ScheduledCampaignCreate(BaseModel):

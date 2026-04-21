@@ -29,7 +29,9 @@
       "employees": "Employees",
       "stats": "Statistics",
       "backup": "Backup",
-      "expenses": "Expenses"
+      "expenses": "Expenses",
+      "revenues": "Revenue",
+      "bilan": "Balance Sheet"
     }
   },
   "common": {

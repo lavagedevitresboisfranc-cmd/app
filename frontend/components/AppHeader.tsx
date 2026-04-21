@@ -54,7 +54,9 @@ const menuSections: MenuSection[] = [
     icon: 'dollar-sign' as const,
     color: '#10B981',
     items: [
+      { icon: 'trending-up' as const, labelKey: 'menu.items.revenues', route: '/revenues' },
       { icon: 'credit-card' as const, labelKey: 'menu.items.expenses', route: '/expenses' },
+      { icon: 'pie-chart' as const, labelKey: 'menu.items.bilan', route: '/bilan' },
       { icon: 'dollar-sign' as const, labelKey: 'menu.items.estimate', route: '/estimate' },
     ],
   },
