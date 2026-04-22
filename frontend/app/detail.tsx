@@ -310,12 +310,21 @@ export default function DetailScreen() {
       try {
         const res = await fetch(`${API_URL}/api/appointments/${id}`, { method: 'DELETE' });
         if (res.ok) {
-          router.back();
+          // Navigate to home page (more reliable than back() — works even with empty history stack)
+          if (Platform.OS === 'web') {
+            // On web, show a quick success hint via console (alerts would block navigation)
+            try { router.replace('/' as any); } catch { router.push('/' as any); }
+          } else {
+            Alert.alert('✅ Rendez-vous archivé', 'Il est maintenant dans les Archives RDV et peut être restauré à tout moment.', [
+              { text: 'OK', onPress: () => { try { router.replace('/' as any); } catch { router.push('/' as any); } } },
+            ]);
+          }
         } else {
-          Alert.alert('Erreur', 'L\'archivage a échoué');
+          const errText = await res.text().catch(() => '');
+          Alert.alert('Erreur', `L'archivage a échoué (${res.status}).\n${errText.slice(0, 120)}`);
         }
-      } catch {
-        Alert.alert('Erreur', 'L\'archivage a échoué');
+      } catch (e: any) {
+        Alert.alert('Erreur réseau', e?.message || "L'archivage a échoué. Vérifiez votre connexion.");
       }
     };
     if (Platform.OS === 'web') {
