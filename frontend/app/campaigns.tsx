@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking, Platform,
   ActivityIndicator, Modal, TextInput, KeyboardAvoidingView, Image,
@@ -9,9 +9,11 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import AppHeader from '../components/AppHeader';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+const CAMPAIGN_TARGET_KEY = '@crystaltask:campaign_target_emails';
 
 interface ClientRow {
   email: string;
@@ -30,13 +32,16 @@ const SEASONS: { id: SeasonKey; icon: string; color: string }[] = [
 export default function CampaignsScreen() {
   const { t } = useTranslation();
   const router = useRouter();
-  const params = useLocalSearchParams<{ targetEmails?: string; targetCount?: string }>();
+  const params = useLocalSearchParams<{ targetEmails?: string; targetCount?: string; targetFromStorage?: string }>();
   const [allClients, setAllClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [preview, setPreview] = useState<{ season: SeasonKey; icon: string; color: string; subject: string; body: string } | null>(null);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [showRandomModal, setShowRandomModal] = useState(false);
   const [randomCount, setRandomCount] = useState('25');
+
+  // Target emails loaded from AsyncStorage (bypasses URL length limits)
+  const [storedTargetEmails, setStoredTargetEmails] = useState<string[] | null>(null);
 
   // Scheduling
   const [showScheduleModal, setShowScheduleModal] = useState(false);
@@ -52,12 +57,38 @@ export default function CampaignsScreen() {
   // Global pre-selection for main screen (Tout / Aucun)
   const [globalMode, setGlobalMode] = useState<'all' | 'none'>('all');
 
+  // Load stored target emails when flag is present
+  useEffect(() => {
+    if (params?.targetFromStorage === '1') {
+      (async () => {
+        try {
+          const raw = await AsyncStorage.getItem(CAMPAIGN_TARGET_KEY);
+          if (raw) {
+            const list = JSON.parse(raw);
+            if (Array.isArray(list) && list.length > 0) {
+              setStoredTargetEmails(list.map((e: string) => String(e).toLowerCase()));
+            }
+          }
+        } catch (e) {
+          console.error('Failed to load campaign target emails', e);
+        }
+      })();
+    } else {
+      setStoredTargetEmails(null);
+    }
+  }, [params?.targetFromStorage]);
+
   // Target emails (from clients-db selection) — only those emails will be used as recipients
   const targetEmailSet = useMemo(() => {
+    // New mechanism: AsyncStorage (handles unlimited emails)
+    if (storedTargetEmails && storedTargetEmails.length > 0) {
+      return new Set(storedTargetEmails);
+    }
+    // Legacy fallback: URL params (small selections only)
     if (!params?.targetEmails) return null;
     const list = String(params.targetEmails).split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
     return list.length ? new Set(list) : null;
-  }, [params?.targetEmails]);
+  }, [storedTargetEmails, params?.targetEmails]);
 
   // Effective client list: filtered by targetEmails if present
   const clients = useMemo(() => {
@@ -65,8 +96,12 @@ export default function CampaignsScreen() {
     return allClients.filter(c => c.email && targetEmailSet.has(c.email.toLowerCase()));
   }, [allClients, targetEmailSet]);
 
-  const clearTarget = () => {
-    router.setParams({ targetEmails: '', targetCount: '' } as any);
+  const clearTarget = async () => {
+    try {
+      await AsyncStorage.removeItem(CAMPAIGN_TARGET_KEY);
+    } catch { }
+    setStoredTargetEmails(null);
+    router.setParams({ targetEmails: '', targetCount: '', targetFromStorage: '' } as any);
   };
 
   const load = useCallback(async () => {

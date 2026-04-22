@@ -1652,20 +1652,66 @@ async def import_backup(body: dict):
 
 @api_router.get("/clients/emails")
 async def get_client_emails():
-    """Get unique client emails for email campaigns"""
-    cursor = db.appointments.find({"client_email": {"$nin": [None, ""]}}, {"_id": 0, "client_email": 1, "client_name": 1, "client_phone": 1, "date": 1})
+    """Get unique client emails for email campaigns.
+    Pulls from BOTH the Clients database (CRM) AND past appointments, merged by email."""
     seen = {}
+
+    # 1) Primary source: Clients CRM database (includes CSV imports, manually added clients)
+    try:
+        clients_cursor = db.clients.find(
+            {
+                "email": {"$nin": [None, ""]},
+                # Exclude archived/deleted clients
+                "$and": [
+                    {"$or": [{"archived": {"$ne": True}}, {"archived": {"$exists": False}}]},
+                    {"$or": [{"status": {"$ne": "archived"}}, {"status": {"$exists": False}}]},
+                ],
+            },
+            {"_id": 0, "email": 1, "name": 1, "phone": 1, "created_at": 1, "updated_at": 1},
+        )
+        async for doc in clients_cursor:
+            email_raw = (doc.get("email") or "").strip()
+            if not email_raw or "@" not in email_raw:
+                continue
+            key = email_raw.lower()
+            if key in seen:
+                continue
+            seen[key] = {
+                "email": email_raw,
+                "name": doc.get("name", "") or "",
+                "phone": doc.get("phone", "") or "",
+                "last_visit": doc.get("updated_at") or doc.get("created_at") or "",
+            }
+    except Exception as e:
+        # If clients collection doesn't exist or query fails, fall through to appointments
+        print(f"[clients/emails] Clients CRM query failed: {e}")
+
+    # 2) Secondary source: Appointments (for legacy clients not yet in CRM)
+    cursor = db.appointments.find(
+        {"client_email": {"$nin": [None, ""]}},
+        {"_id": 0, "client_email": 1, "client_name": 1, "client_phone": 1, "date": 1},
+    )
     async for doc in cursor:
-        email = (doc.get("client_email") or "").strip().lower()
-        if not email or email in seen:
+        email_raw = (doc.get("client_email") or "").strip()
+        if not email_raw or "@" not in email_raw:
             continue
-        seen[email] = {
-            "email": doc.get("client_email"),
-            "name": doc.get("client_name", ""),
-            "phone": doc.get("client_phone", ""),
-            "last_visit": doc.get("date", ""),
+        key = email_raw.lower()
+        if key in seen:
+            # Update last_visit if appointment date is more recent
+            appt_date = doc.get("date", "")
+            if appt_date and appt_date > str(seen[key].get("last_visit", "")):
+                seen[key]["last_visit"] = appt_date
+            continue
+        seen[key] = {
+            "email": email_raw,
+            "name": doc.get("client_name", "") or "",
+            "phone": doc.get("client_phone", "") or "",
+            "last_visit": doc.get("date", "") or "",
         }
-    return list(seen.values())
+
+    # Sort by name for stable ordering
+    result = sorted(seen.values(), key=lambda c: (c.get("name") or "").lower())
+    return result
 
 
 # --- Invoice PDF ---

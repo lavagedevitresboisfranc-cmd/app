@@ -16,6 +16,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const CAMPAIGN_TARGET_KEY = '@crystaltask:campaign_target_emails';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
@@ -129,17 +132,23 @@ export default function ClientsDbScreen() {
     setSelectedIds(new Set(eligible.map(c => c.id)));
   };
 
-  const launchCampaignWithSelection = () => {
+  const launchCampaignWithSelection = async () => {
     const selectedClients = clients.filter(c => selectedIds.has(c.id));
     const emails = selectedClients.map(c => c.email).filter(e => !!e && e.includes('@'));
     if (emails.length === 0) {
       Alert.alert('Aucun courriel', "Les clients sélectionnés n'ont pas d'adresse courriel valide.");
       return;
     }
-    // Pass selected emails to campaigns screen via params
+    try {
+      // Store the full list in AsyncStorage to bypass URL length limits (iOS Safari truncates at ~2000 chars)
+      await AsyncStorage.setItem(CAMPAIGN_TARGET_KEY, JSON.stringify(emails));
+    } catch (e) {
+      console.error('Failed to store campaign targets', e);
+    }
+    // Pass only the count via params; the campaigns screen reads the full list from AsyncStorage
     router.push({
       pathname: '/campaigns',
-      params: { targetEmails: emails.join(','), targetCount: String(emails.length) },
+      params: { targetFromStorage: '1', targetCount: String(emails.length) },
     } as any);
     exitSelectionMode();
   };
@@ -320,65 +329,70 @@ export default function ClientsDbScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <AppHeader title="Base Clients" showBack />
 
-      {/* Header stats & actions */}
-      <View style={styles.statsRow}>
-        <View style={styles.statBox}>
-          <Text style={styles.statNum}>{selectionMode ? selectedIds.size : clients.length}</Text>
-          <Text style={styles.statLabel}>{selectionMode ? 'Sélectionnés' : 'Clients'}</Text>
-        </View>
-        <View style={styles.actionBtns}>
-          {selectionMode ? (
-            <>
-              <TouchableOpacity
-                onPress={selectedIds.size === filtered.length ? deselectAll : selectAllFiltered}
-                style={[styles.actionBtn, { backgroundColor: '#0891B2' }]}
-                activeOpacity={0.8}
-              >
-                <Feather name={selectedIds.size === filtered.length ? 'square' : 'check-square'} size={18} color="#fff" />
-                <Text style={styles.actionBtnText}>
-                  {selectedIds.size === filtered.length ? 'Aucun' : 'Tout'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={exitSelectionMode} style={[styles.actionBtn, { backgroundColor: '#6B7280' }]} activeOpacity={0.8}>
-                <Feather name="x" size={18} color="#fff" />
-                <Text style={styles.actionBtnText}>Annuler</Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <TouchableOpacity onPress={enterCampaignMode} style={[styles.actionBtn, { backgroundColor: '#7C3AED' }]} activeOpacity={0.8}>
-                <Feather name="send" size={18} color="#fff" />
-                <Text style={styles.actionBtnText}>Campagne</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={enterSelectionMode} style={[styles.actionBtn, { backgroundColor: '#0891B2' }]} activeOpacity={0.8}>
-                <Feather name="check-square" size={18} color="#fff" />
-                <Text style={styles.actionBtnText}>Sélection</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setShowCreate(true)} style={[styles.actionBtn, { backgroundColor: '#111' }]} activeOpacity={0.8}>
-                <Feather name="user-plus" size={18} color="#fff" />
-                <Text style={styles.actionBtnText}>Nouveau</Text>
-              </TouchableOpacity>
-            </>
-          )}
+      {/* Compact stat pill */}
+      <View style={styles.statPillRow}>
+        <View style={styles.statPill}>
+          <Text style={styles.statPillNum}>{selectionMode ? selectedIds.size : clients.length}</Text>
+          <Text style={styles.statPillLabel}>
+            {selectionMode ? (selectedIds.size > 1 ? 'sélectionnés' : 'sélectionné') : 'clients'}
+          </Text>
         </View>
       </View>
 
+      {/* Primary actions (equal width) */}
+      <View style={styles.primaryRow}>
+        {selectionMode ? (
+          <>
+            <TouchableOpacity
+              onPress={selectedIds.size === filtered.length ? deselectAll : selectAllFiltered}
+              style={[styles.primaryBtn, { backgroundColor: '#0891B2' }]}
+              activeOpacity={0.8}
+            >
+              <Feather name={selectedIds.size === filtered.length ? 'square' : 'check-square'} size={18} color="#fff" />
+              <Text style={styles.primaryBtnText}>
+                {selectedIds.size === filtered.length ? 'Aucun' : 'Tout'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={exitSelectionMode} style={[styles.primaryBtn, { backgroundColor: '#6B7280' }]} activeOpacity={0.8}>
+              <Feather name="x" size={18} color="#fff" />
+              <Text style={styles.primaryBtnText}>Annuler</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <TouchableOpacity onPress={enterCampaignMode} style={[styles.primaryBtn, { backgroundColor: '#7C3AED' }]} activeOpacity={0.8}>
+              <Feather name="send" size={18} color="#fff" />
+              <Text style={styles.primaryBtnText}>Campagne</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={enterSelectionMode} style={[styles.primaryBtn, { backgroundColor: '#0891B2' }]} activeOpacity={0.8}>
+              <Feather name="check-square" size={18} color="#fff" />
+              <Text style={styles.primaryBtnText}>Sélection</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowCreate(true)} style={[styles.primaryBtn, { backgroundColor: '#111' }]} activeOpacity={0.8}>
+              <Feather name="user-plus" size={18} color="#fff" />
+              <Text style={styles.primaryBtnText}>Nouveau</Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+
+      {/* Secondary tools (icon-only on small screens) */}
       <View style={styles.toolRow}>
         <TouchableOpacity onPress={importFile} style={styles.toolBtn} activeOpacity={0.8} disabled={importing}>
-          {importing ? <ActivityIndicator size="small" color="#0891B2" /> : <Feather name="upload" size={18} color="#0891B2" />}
-          <Text style={styles.toolBtnText}>{importing ? 'Import...' : 'Import CSV/Excel'}</Text>
+          {importing ? <ActivityIndicator size="small" color="#0891B2" /> : <Feather name="upload" size={16} color="#0891B2" />}
+          <Text style={styles.toolBtnText} numberOfLines={1}>{importing ? 'Import…' : 'Import'}</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={exportCsv} style={styles.toolBtn} activeOpacity={0.8}>
-          <Feather name="download" size={18} color="#0891B2" />
-          <Text style={styles.toolBtnText}>Export CSV</Text>
+          <Feather name="download" size={16} color="#0891B2" />
+          <Text style={styles.toolBtnText} numberOfLines={1}>Export</Text>
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => router.push('/clients-archive' as any)}
           style={[styles.toolBtn, { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}
           activeOpacity={0.8}
         >
-          <Feather name="archive" size={18} color="#DC2626" />
-          <Text style={[styles.toolBtnText, { color: '#DC2626' }]}>Corbeille</Text>
+          <Feather name="archive" size={16} color="#DC2626" />
+          <Text style={[styles.toolBtnText, { color: '#DC2626' }]} numberOfLines={1}>Corbeille</Text>
         </TouchableOpacity>
       </View>
 
@@ -510,6 +524,14 @@ const styles = StyleSheet.create({
   statBox: { flex: 1, backgroundColor: '#fff', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB' },
   statNum: { fontSize: 28, fontWeight: '800', color: '#0891B2' },
   statLabel: { fontSize: 12, color: '#6B7280', textTransform: 'uppercase', fontWeight: '700', marginTop: 2, letterSpacing: 0.5 },
+  // New compact layout
+  statPillRow: { flexDirection: 'row', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 6 },
+  statPill: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
+  statPillNum: { fontSize: 26, fontWeight: '800', color: '#0891B2' },
+  statPillLabel: { fontSize: 13, color: '#6B7280', fontWeight: '600', textTransform: 'lowercase' },
+  primaryRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 10 },
+  primaryBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 10 },
+  primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
   actionBtns: { flex: 1, flexDirection: 'row', gap: 8, justifyContent: 'flex-end' },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10 },
   actionBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
