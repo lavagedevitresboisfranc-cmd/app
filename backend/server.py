@@ -6,6 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import asyncio
+import base64
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional
@@ -3120,6 +3121,16 @@ class ScheduledCampaignResponse(BaseModel):
     created_at: str
 
 
+@api_router.post("/campaigns/preview-html", response_class=HTMLResponse)
+async def preview_campaign_html(payload: dict):
+    """Render the rich HTML campaign email (as it will appear in recipients' inbox).
+    Accepts {body: str, subject: str}. Returns a full HTML page for preview."""
+    body = payload.get("body", "") or ""
+    subject = payload.get("subject", "Aperçu campagne") or "Aperçu campagne"
+    html = _build_seasonal_campaign_html(body, subject)
+    return HTMLResponse(content=html)
+
+
 @api_router.post("/scheduled-campaigns", response_model=ScheduledCampaignResponse)
 async def create_scheduled_campaign(payload: ScheduledCampaignCreate):
     """Plan a campaign to be sent at a future date/time."""
@@ -3185,6 +3196,132 @@ async def mark_campaign_sent_manually(campaign_id: str):
     return {"ok": True}
 
 
+def _load_asset_base64(filename: str, mime: str = "image/jpeg") -> str:
+    """Load an asset file and return it as a base64 data URI for inline email embedding."""
+    try:
+        p = ROOT_DIR / "assets" / filename
+        if not p.exists():
+            return ""
+        with open(p, "rb") as f:
+            raw = f.read()
+        b64 = base64.b64encode(raw).decode("ascii")
+        return f"data:{mime};base64,{b64}"
+    except Exception as e:
+        logger.warning(f"Failed to load asset {filename}: {e}")
+        return ""
+
+
+def _build_seasonal_campaign_html(plain_body: str, subject: str) -> str:
+    """Convert the plain text seasonal campaign body into a rich HTML email with:
+    - Large watermark logo in the background
+    - Clickable links (auto-linkify Lavagedevitre.org, phone numbers)
+    - Embedded QR code for booking
+    - Clean typography and spacing
+    """
+    logo_data_uri = _load_asset_base64("company-logo.jpeg", "image/jpeg")
+    qr_data_uri = _load_asset_base64("booking_qr.jpeg", "image/jpeg")
+
+    # Escape HTML-sensitive chars first
+    safe = plain_body.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+    # Auto-linkify — use token placeholders to avoid double-wrapping
+    import re as _re
+    WEBSITE_LINK = '<a href="https://Lavagedevitre.org" style="color:#0891B2;text-decoration:underline;font-weight:700;">Lavagedevitre.org</a>'
+    PHONE_LINK = '<a href="tel:+15145709802" style="color:#0891B2;text-decoration:none;font-weight:700;">514-570-9802</a>'
+
+    # 1) Replace https://Lavagedevitre.org (with/without trailing slash) → token1
+    safe = _re.sub(r'https?://Lavagedevitre\.org/?', '§§LINK_URL§§', safe, flags=_re.IGNORECASE)
+    # 2) Replace bare Lavagedevitre.org → token2
+    safe = _re.sub(r'\bLavagedevitre\.org\b', '§§LINK_BARE§§', safe, flags=_re.IGNORECASE)
+    # 3) Replace phone → token
+    safe = safe.replace("514-570-9802", '§§PHONE§§')
+
+    # Preserve line breaks FIRST (before swapping tokens since tokens contain no newlines)
+    safe = safe.replace("\n", "<br>")
+
+    # Now swap tokens with final HTML links
+    safe = safe.replace('§§LINK_URL§§', WEBSITE_LINK)
+    safe = safe.replace('§§LINK_BARE§§', WEBSITE_LINK)
+    safe = safe.replace('§§PHONE§§', PHONE_LINK)
+
+    # QR section — only include if QR image loaded
+    qr_section = ""
+    if qr_data_uri:
+        qr_section = f"""
+        <div style="text-align:center;margin:24px 0 8px 0;">
+          <div style="display:inline-block;padding:12px;background:#FFFFFF;border-radius:16px;box-shadow:0 4px 14px rgba(8,145,178,0.15);border:1px solid #E5E7EB;">
+            <img src="{qr_data_uri}" alt="QR code pour prendre rendez-vous"
+                 style="width:220px;height:220px;display:block;border-radius:8px;" />
+          </div>
+          <p style="margin:12px 0 0 0;font-size:13px;color:#6B7280;font-weight:600;">
+            📱 Scannez pour prendre rendez-vous
+          </p>
+        </div>
+        """
+
+    # Logo watermark in background (enlarged, low opacity, centered)
+    bg_style = ""
+    if logo_data_uri:
+        bg_style = (
+            f"background-image:url('{logo_data_uri}');"
+            f"background-repeat:no-repeat;"
+            f"background-position:center center;"
+            f"background-size:82% auto;"
+        )
+
+    # Full HTML email
+    html = f"""<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{subject}</title>
+</head>
+<body style="margin:0;padding:0;background:#F3F4F6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F3F4F6;padding:20px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#FFFFFF;border-radius:16px;overflow:hidden;box-shadow:0 6px 28px rgba(0,0,0,0.08);">
+          <!-- Top accent bar -->
+          <tr>
+            <td style="height:6px;background:linear-gradient(90deg,#0891B2,#06B6D4,#22D3EE);"></td>
+          </tr>
+
+          <!-- Content with watermark logo -->
+          <tr>
+            <td style="padding:40px 32px;{bg_style}">
+              <div style="background:rgba(255,255,255,0.82);border-radius:12px;padding:20px;">
+                <div style="font-size:16px;line-height:1.75;color:#1F2937;">
+                  {safe}
+                </div>
+
+                {qr_section}
+              </div>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding:18px 32px;background:#0F172A;text-align:center;">
+              <p style="margin:0;font-size:12px;color:#94A3B8;">
+                Cet email a été envoyé par Lavage de Vitres Bois-Franc.
+              </p>
+              <p style="margin:4px 0 0 0;font-size:12px;color:#94A3B8;">
+                🌐 <a href="https://Lavagedevitre.org" style="color:#22D3EE;text-decoration:none;">Lavagedevitre.org</a>
+                &nbsp;·&nbsp;
+                📞 <a href="tel:+15145709802" style="color:#22D3EE;text-decoration:none;">514-570-9802</a>
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+    return html
+
+
 async def _send_scheduled_campaign(doc: dict) -> bool:
     """Try to send a scheduled campaign via Resend.
     Returns True on success, False otherwise. Marks status accordingly."""
@@ -3201,10 +3338,8 @@ async def _send_scheduled_campaign(doc: dict) -> bool:
         )
         return False
 
-    # Convert plain text body to basic HTML (preserve line breaks)
-    html_body = "<div style='font-family: Arial, sans-serif; white-space: pre-wrap;'>" + \
-                body.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;') + \
-                "</div>"
+    # Build a rich HTML email: clickable Lavagedevitre.org link, QR code, enlarged watermark logo
+    html_body = _build_seasonal_campaign_html(body, subject)
 
     if not resend.api_key:
         # No Resend at all → mark as ready for manual sending

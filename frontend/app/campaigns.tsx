@@ -390,6 +390,38 @@ export default function CampaignsScreen() {
                 </View>
               </View>
 
+              {/* Visual HTML preview button */}
+              <TouchableOpacity
+                onPress={async () => {
+                  if (!preview) return;
+                  try {
+                    const res = await fetch(`${API_URL}/api/campaigns/preview-html`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ body: preview.body, subject: preview.subject }),
+                    });
+                    const html = await res.text();
+                    if (Platform.OS === 'web') {
+                      const win = window.open('', '_blank');
+                      if (win) { win.document.open(); win.document.write(html); win.document.close(); }
+                    } else {
+                      // On native, open via Linking with a data URL (best effort)
+                      const dataUrl = 'data:text/html;base64,' + (typeof btoa !== 'undefined' ? btoa(unescape(encodeURIComponent(html))) : '');
+                      Linking.openURL(dataUrl).catch(() => {
+                        Alert.alert('Aperçu', 'Ouvrez depuis le navigateur web pour voir l\'aperçu visuel complet.');
+                      });
+                    }
+                  } catch {
+                    Alert.alert('Erreur', 'Impossible de charger l\'aperçu visuel.');
+                  }
+                }}
+                style={styles.visualPreviewBtn}
+                activeOpacity={0.8}
+              >
+                <Feather name="eye" size={18} color="#fff" />
+                <Text style={styles.visualPreviewText}>Aperçu visuel (avec QR + logo)</Text>
+              </TouchableOpacity>
+
               <Text style={styles.listTitle}>
                 {t('campaigns.recipients', { selected: selectedCount, total: clients.length })}
               </Text>
@@ -839,6 +871,12 @@ const styles = StyleSheet.create({
   emailVal: { flex: 1, fontSize: 14, color: '#0A0A0A', paddingVertical: 4 },
   subjectInput: { flex: 1, fontSize: 14, color: '#0A0A0A', padding: 4, fontWeight: '600' },
   emailBody: { padding: 14, minHeight: 200 },
+  visualPreviewBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, backgroundColor: '#7C3AED', paddingVertical: 12, borderRadius: 10,
+    marginHorizontal: 16, marginBottom: 12,
+  },
+  visualPreviewText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   bodyInput: {
     fontSize: 14, color: '#0A0A0A', lineHeight: 22, minHeight: 220,
     textAlignVertical: 'top',
