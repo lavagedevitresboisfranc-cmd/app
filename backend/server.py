@@ -750,7 +750,8 @@ async def accept_request(request_id: str, data: AcceptRequest = AcceptRequest())
 
 @api_router.put("/requests/{request_id}/suggest", response_model=RequestResponse)
 async def suggest_alternative(request_id: str, data: RequestSuggest):
-    """Suggest an alternative date/time for a request"""
+    """Suggest an alternative date/time for a request.
+    Also sends an email to the CLIENT with the new proposal."""
     req = await db.appointment_requests.find_one({"id": request_id}, {"_id": 0})
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
@@ -764,6 +765,116 @@ async def suggest_alternative(request_id: str, data: RequestSuggest):
             "suggested_note": data.note or "",
         }}
     )
+
+    # Send email to CLIENT with the proposed alternative
+    client_email = req.get("customer_email", "").strip()
+    if client_email and resend.api_key:
+        try:
+            client_name = req.get("customer_name", "")
+            original_date = req.get("preferred_date", "")
+            original_time = req.get("preferred_time", "")
+            new_date = data.suggested_date
+            new_time = data.suggested_time
+            note = (data.note or "").strip()
+
+            # Format dates nicely
+            def _fmt_date(d: str) -> str:
+                try:
+                    dt = datetime.fromisoformat(d)
+                    months_fr = ["janvier", "février", "mars", "avril", "mai", "juin",
+                                 "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+                    return f"{dt.day} {months_fr[dt.month - 1]} {dt.year}"
+                except Exception:
+                    return d
+
+            note_block = ""
+            if note:
+                safe_note = note.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br>')
+                note_block = f"""
+                <div style="background:#FEF3C7;border-left:4px solid #F59E0B;padding:14px 16px;border-radius:8px;margin:20px 0;">
+                    <p style="margin:0 0 4px 0;color:#92400E;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">💬 Message de Lavage de Vitres Bois-Franc</p>
+                    <p style="margin:0;color:#78350F;font-size:15px;line-height:1.6;">{safe_note}</p>
+                </div>
+                """
+
+            # Build email
+            html = f"""<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#F3F4F6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F3F4F6;padding:20px 0;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#FFFFFF;border-radius:16px;overflow:hidden;box-shadow:0 6px 28px rgba(0,0,0,0.08);">
+        <tr><td style="height:6px;background:linear-gradient(90deg,#F59E0B,#FBBF24,#FCD34D);"></td></tr>
+        <tr><td style="padding:32px 28px 8px 28px;">
+          <p style="margin:0;font-size:28px;">📅</p>
+          <h1 style="margin:8px 0 4px 0;color:#111827;font-size:22px;">Nouvelle proposition de rendez-vous</h1>
+          <p style="margin:0;color:#6B7280;font-size:14px;">Bonjour {client_name},</p>
+        </td></tr>
+        <tr><td style="padding:12px 28px 0 28px;">
+          <p style="margin:0 0 16px 0;color:#374151;font-size:15px;line-height:1.6;">
+            Merci pour votre demande de rendez-vous. La date et l'heure que vous avez proposées ne sont malheureusement pas disponibles.<br><br>
+            <strong>Je vous propose la nouvelle date suivante :</strong>
+          </p>
+
+          <!-- New proposed slot — highlighted -->
+          <div style="background:linear-gradient(135deg,#ECFDF5,#D1FAE5);border:2px solid #10B981;border-radius:12px;padding:20px;text-align:center;margin:8px 0 20px 0;">
+            <p style="margin:0 0 6px 0;color:#047857;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">✅ Nouvelle proposition</p>
+            <p style="margin:0;color:#065F46;font-size:22px;font-weight:800;">{_fmt_date(new_date)}</p>
+            <p style="margin:4px 0 0 0;color:#065F46;font-size:18px;font-weight:600;">à {new_time}</p>
+          </div>
+
+          <!-- Original request — muted -->
+          <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:12px 16px;margin:0 0 20px 0;">
+            <p style="margin:0;color:#6B7280;font-size:12px;">
+              <span style="text-decoration:line-through;">Demande initiale : {_fmt_date(original_date)} à {original_time}</span>
+            </p>
+          </div>
+
+          {note_block}
+
+          <p style="margin:20px 0 8px 0;color:#374151;font-size:15px;line-height:1.6;">
+            <strong>Est-ce que cette nouvelle date vous convient ?</strong><br>
+            Merci de me confirmer par retour de courriel ou par téléphone.
+          </p>
+        </td></tr>
+
+        <!-- Contact card -->
+        <tr><td style="padding:0 28px 24px 28px;">
+          <div style="background:#F3F4F6;border-radius:12px;padding:16px;text-align:center;">
+            <p style="margin:0 0 8px 0;color:#111827;font-size:15px;font-weight:700;">Lavage de Vitres Bois-Franc</p>
+            <p style="margin:0 0 4px 0;">
+              <a href="tel:+15145709802" style="color:#0891B2;text-decoration:none;font-size:15px;font-weight:600;">📞 514-570-9802</a>
+            </p>
+            <p style="margin:0;">
+              <a href="https://Lavagedevitre.org" style="color:#0891B2;text-decoration:none;font-size:15px;font-weight:600;">🌐 Lavagedevitre.org</a>
+            </p>
+          </div>
+        </td></tr>
+
+        <!-- Footer -->
+        <tr><td style="padding:16px 28px;background:#0F172A;text-align:center;">
+          <p style="margin:0;font-size:12px;color:#94A3B8;">Merci de votre confiance!</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+
+            from_addr = os.environ.get("RESEND_FROM") or "onboarding@resend.dev"
+            await asyncio.to_thread(
+                resend.Emails.send,
+                {
+                    "from": from_addr,
+                    "to": [client_email],
+                    "reply_to": NOTIFY_EMAIL if NOTIFY_EMAIL else None,
+                    "subject": f"Nouvelle proposition de rendez-vous — {_fmt_date(new_date)} à {new_time}",
+                    "html": html,
+                },
+            )
+            logger.info(f"Alternative offer email sent to client {client_email}")
+        except Exception as e:
+            logger.error(f"Failed to send alternative-offer email to {client_email}: {e}")
 
     updated = await db.appointment_requests.find_one({"id": request_id}, {"_id": 0})
     return RequestResponse(**updated)
