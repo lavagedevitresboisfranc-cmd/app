@@ -76,6 +76,7 @@ class AppointmentResponse(BaseModel):
     assigned_color: Optional[str] = None
     client_photo: Optional[str] = None
     client_id: Optional[str] = None
+    archived_at: Optional[str] = None
 
 # --- Request Models ---
 
