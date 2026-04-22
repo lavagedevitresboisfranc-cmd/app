@@ -170,6 +170,123 @@ export default function DetailScreen() {
     } catch { Alert.alert('Erreur', 'Impossible d\'ouvrir l\'app courriel'); }
   };
 
+  // --- Retard / Replanifier ---
+  const _formatTimeForClient = () => {
+    if (!appointment) return '';
+    const { date, time_slot } = appointment;
+    try {
+      const d = new Date(date);
+      const months = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+                      'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+      return `${d.getDate()} ${months[d.getMonth()]} à ${time_slot}`;
+    } catch {
+      return `${date} à ${time_slot}`;
+    }
+  };
+
+  const _buildDelayMessage = (minutes: number): { subject: string; body: string } => {
+    if (!appointment) return { subject: '', body: '' };
+    const name = appointment.client_name || '';
+    const when = _formatTimeForClient();
+    const delayText = minutes >= 60
+      ? `d'environ ${Math.round(minutes / 60)} h${minutes >= 120 ? 'eures' : 'eure'}`
+      : `d'environ ${minutes} minutes`;
+    const subject = `Léger retard — ${_formatTimeForClient()}`;
+    const body = `Bonjour ${name},\n\nJe vous écris pour vous informer que je serai en retard ${delayText} pour notre rendez-vous prévu le ${when}.\n\nToutes mes excuses pour l'inconvénient. Je vous préviens dès que je suis en route.\n\nMerci de votre compréhension!\n— Lavage de Vitres Bois-Franc\n📞 514-570-9802`;
+    return { subject, body };
+  };
+
+  const _buildRescheduleMessage = (): { subject: string; body: string } => {
+    if (!appointment) return { subject: '', body: '' };
+    const name = appointment.client_name || '';
+    const when = _formatTimeForClient();
+    const subject = `Reporter votre rendez-vous — ${_formatTimeForClient()}`;
+    const body = `Bonjour ${name},\n\nMalheureusement, je dois reporter notre rendez-vous prévu le ${when}.\n\nJe vous propose les disponibilités suivantes:\n• Option 1: ______________\n• Option 2: ______________\n• Option 3: ______________\n\nLaquelle vous conviendrait le mieux? Ou dites-moi votre préférence et je fais de mon mieux pour m'adapter.\n\nMerci de votre compréhension!\n— Lavage de Vitres Bois-Franc\n📞 514-570-9802`;
+    return { subject, body };
+  };
+
+  const _sendSms = async (message: string) => {
+    if (!appointment) return;
+    const phone = (appointment.client_phone || '').replace(/\D/g, '');
+    if (!phone) {
+      Alert.alert('Téléphone manquant', 'Ce client n\'a pas de numéro de téléphone.');
+      return;
+    }
+    const sep = Platform.OS === 'ios' ? '&' : '?';
+    const url = `sms:${phone}${sep}body=${encodeURIComponent(message)}`;
+    try {
+      const can = await Linking.canOpenURL(url);
+      if (can) { await Linking.openURL(url); }
+      else {
+        // Fallback on web: copy to clipboard
+        Alert.alert('SMS non disponible', 'Envoyez ce message manuellement depuis votre téléphone.\n\n' + message.slice(0, 200));
+      }
+    } catch {
+      Alert.alert('Erreur', 'Impossible d\'ouvrir l\'app SMS.');
+    }
+  };
+
+  const _sendEmail = async (subject: string, body: string) => {
+    if (!appointment) return;
+    const email = (appointment.client_email || '').trim();
+    if (!email) {
+      Alert.alert('Courriel manquant', 'Ce client n\'a pas d\'adresse courriel.');
+      return;
+    }
+    const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    try {
+      const can = await Linking.canOpenURL(url);
+      if (can) { await Linking.openURL(url); }
+      else { Alert.alert('Erreur', 'Aucune app courriel disponible.'); }
+    } catch {
+      Alert.alert('Erreur', 'Impossible d\'ouvrir l\'app courriel.');
+    }
+  };
+
+  const handleDelay = (channel: 'sms' | 'email') => {
+    // Step 1: choose delay duration
+    const presets: { label: string; minutes: number }[] = [
+      { label: '⏱️ 15 minutes', minutes: 15 },
+      { label: '⏱️ 30 minutes', minutes: 30 },
+      { label: '⏱️ 1 heure', minutes: 60 },
+      { label: '⏱️ 2 heures', minutes: 120 },
+    ];
+    const send = (minutes: number) => {
+      const { subject, body } = _buildDelayMessage(minutes);
+      if (channel === 'sms') {
+        _sendSms(body);
+      } else {
+        _sendEmail(subject, body);
+      }
+    };
+    if (Platform.OS === 'web') {
+      // eslint-disable-next-line no-alert
+      const input = window.prompt('Retard de combien de minutes ?\n(15, 30, 60, 120, ou tout autre nombre)', '30');
+      if (!input) return;
+      const m = parseInt(input, 10);
+      if (!isNaN(m) && m > 0) send(m);
+    } else {
+      Alert.alert(
+        'Retard — durée approximative',
+        `Quel retard prévoyez-vous pour ${appointment?.client_name} ?`,
+        [
+          ...presets.map((p) => ({ text: p.label, onPress: () => send(p.minutes) })),
+          { text: 'Annuler', style: 'cancel' as const },
+        ],
+        { cancelable: true }
+      );
+    }
+  };
+
+  const handleReschedule = (channel: 'sms' | 'email') => {
+    const { subject, body } = _buildRescheduleMessage();
+    if (channel === 'sms') {
+      _sendSms(body);
+    } else {
+      _sendEmail(subject, body);
+    }
+  };
+
   const fetchAppointment = async () => {
     setLoading(true);
     try {
@@ -690,6 +807,49 @@ export default function DetailScreen() {
             >
               <Feather name="send" size={20} color="#000000" />
               <Text style={[styles.toolBtnText, { color: '#000000' }]}>AirDrop</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* ⏰ Retard / Replanifier */}
+          <Text style={styles.toolGroupTitle}>⏰ Retard / Replanifier</Text>
+          <View style={styles.toolGrid}>
+            <TouchableOpacity
+              testID="delay-sms-button"
+              style={[styles.toolBtn, { borderColor: '#F59E0B', backgroundColor: '#FEF3C7' }]}
+              activeOpacity={0.7}
+              onPress={() => handleDelay('sms')}
+            >
+              <Feather name="message-circle" size={20} color="#B45309" />
+              <Text style={[styles.toolBtnText, { color: '#B45309' }]}>SMS retard</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="delay-email-button"
+              style={[styles.toolBtn, { borderColor: '#F59E0B', backgroundColor: '#FEF3C7' }]}
+              activeOpacity={0.7}
+              onPress={() => handleDelay('email')}
+            >
+              <Feather name="mail" size={20} color="#B45309" />
+              <Text style={[styles.toolBtnText, { color: '#B45309' }]}>Email retard</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.toolGrid}>
+            <TouchableOpacity
+              testID="reschedule-sms-button"
+              style={[styles.toolBtn, { borderColor: '#7C3AED', backgroundColor: '#F5F3FF' }]}
+              activeOpacity={0.7}
+              onPress={() => handleReschedule('sms')}
+            >
+              <Feather name="message-circle" size={20} color="#6D28D9" />
+              <Text style={[styles.toolBtnText, { color: '#6D28D9' }]}>SMS replanifier</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="reschedule-email-button"
+              style={[styles.toolBtn, { borderColor: '#7C3AED', backgroundColor: '#F5F3FF' }]}
+              activeOpacity={0.7}
+              onPress={() => handleReschedule('email')}
+            >
+              <Feather name="mail" size={20} color="#6D28D9" />
+              <Text style={[styles.toolBtnText, { color: '#6D28D9' }]}>Email replanifier</Text>
             </TouchableOpacity>
           </View>
 
