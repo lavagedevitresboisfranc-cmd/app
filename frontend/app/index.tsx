@@ -917,6 +917,17 @@ const styles = StyleSheet.create({
     maxHeight: 98,
     alignSelf: 'center',
   },
+  headerIconImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 7,
+  },
+  headerBrandText: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0A0A0A',
+    letterSpacing: 0.3,
+  },
   logoIcon: {
     width: 36,
     height: 36,
@@ -1239,13 +1250,26 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   menuLogoRow: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 10,
     marginBottom: 24,
     paddingBottom: 16,
     paddingTop: 8,
     borderBottomWidth: 1,
     borderColor: '#E5E5E5',
+  },
+  menuIconImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+  },
+  menuBrandText: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#0A0A0A',
+    letterSpacing: 0.3,
   },
   menuLogoImage: {
     width: 280,
