@@ -4,6 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { saveLanguage, SUPPORTED_LANGUAGES } from '../src/i18n';
+import { useTheme } from '../src/theme/ThemeContext';
 
 interface Props {
   title?: string;
@@ -79,6 +80,7 @@ const menuSections: MenuSection[] = [
     items: [
       { icon: 'cloud' as const, labelKey: 'menu.items.backup', route: '/backup' },
       { icon: 'mail' as const, labelKey: 'menu.items.dnsGuide', route: '/dns-guide' },
+      { icon: 'settings' as const, labelKey: 'menu.items.settings', route: '/settings' },
     ],
   },
 ];
@@ -86,6 +88,7 @@ const menuSections: MenuSection[] = [
 export default function AppHeader({ title, showBack }: Props) {
   const router = useRouter();
   const { t, i18n } = useTranslation();
+  const { colors, isDark } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ agenda: true });
   const [langOpen, setLangOpen] = useState(false);
@@ -112,11 +115,11 @@ export default function AppHeader({ title, showBack }: Props) {
     <>
       <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
         <Pressable style={styles.overlay} onPress={() => setMenuOpen(false)}>
-          <Pressable style={styles.drawer} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.logoRow}>
+          <Pressable style={[styles.drawer, { backgroundColor: colors.card }]} onPress={(e) => e.stopPropagation()}>
+            <View style={[styles.logoRow, { borderBottomColor: colors.border }]}>
               <Image
                 source={require('../assets/images/crystaltask-logo-transparent.png')}
-                style={styles.drawerLogo}
+                style={[styles.drawerLogo, isDark && { opacity: 0.95 }]}
                 resizeMode="contain"
               />
             </View>
@@ -180,8 +183,8 @@ export default function AppHeader({ title, showBack }: Props) {
                           activeOpacity={0.7}
                           onPress={() => goTo(item.route)}
                         >
-                          <Feather name={item.icon} size={18} color="#6B7280" />
-                          <Text style={styles.menuItemText}>{t(item.labelKey)}</Text>
+                          <Feather name={item.icon} size={18} color={colors.textMuted} />
+                          <Text style={[styles.menuItemText, { color: colors.text }]}>{t(item.labelKey)}</Text>
                         </TouchableOpacity>
                       ))}
                   </View>
@@ -192,13 +195,13 @@ export default function AppHeader({ title, showBack }: Props) {
         </Pressable>
       </Modal>
 
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: colors.bg, borderBottomColor: colors.border }]}>
         <TouchableOpacity testID="hamburger-menu" onPress={() => setMenuOpen(true)} style={styles.btn} activeOpacity={0.7}>
-          <Feather name="menu" size={24} color="#0A0A0A" />
+          <Feather name="menu" size={24} color={colors.text} />
         </TouchableOpacity>
 
         {title ? (
-          <Text style={styles.title}>{title}</Text>
+          <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
         ) : (
           <View style={styles.logoRowSmall}>
             <View style={styles.logoGridSmall}>
@@ -209,7 +212,7 @@ export default function AppHeader({ title, showBack }: Props) {
             </View>
             <Image
               source={require('../assets/images/crystaltask-logo-transparent.png')}
-              style={styles.headerLogoImg}
+              style={[styles.headerLogoImg, isDark && { opacity: 0.95 }]}
               resizeMode="contain"
             />
           </View>
@@ -217,11 +220,11 @@ export default function AppHeader({ title, showBack }: Props) {
 
         {showBack ? (
           <TouchableOpacity testID="back-btn" onPress={() => router.back()} style={styles.btn} activeOpacity={0.7}>
-            <Feather name="arrow-left" size={22} color="#0A0A0A" />
+            <Feather name="arrow-left" size={22} color={colors.text} />
           </TouchableOpacity>
         ) : (
           <TouchableOpacity testID="add-btn" onPress={() => router.push('/create')} style={styles.btn} activeOpacity={0.7}>
-            <Feather name="plus" size={24} color="#0891B2" />
+            <Feather name="plus" size={24} color={colors.primary} />
           </TouchableOpacity>
         )}
       </View>

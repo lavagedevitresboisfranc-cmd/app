@@ -14,6 +14,7 @@ import {
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../src/theme/ThemeContext';
 import { Calendar } from 'react-native-calendars';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -102,6 +103,7 @@ const formatWeekRange = (days: string[]) => {
 };
 
 export default function CalendarScreen() {
+  const { colors, isDark } = useTheme();
   const router = useRouter();
   const { t, i18n } = useTranslation();
   const currentLang = i18n.language || 'fr';
@@ -556,7 +558,7 @@ export default function CalendarScreen() {
     }));
 
   return (
-    <SafeAreaView style={styles.safeArea} testID="calendar-screen">
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]} testID="calendar-screen">
       {/* Hamburger Menu Modal */}
       <Modal
         visible={menuOpen}
