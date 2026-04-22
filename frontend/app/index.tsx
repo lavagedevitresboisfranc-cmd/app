@@ -136,6 +136,7 @@ export default function CalendarScreen() {
       items: [
         { icon: 'calendar' as const, labelKey: 'menu.items.calendar', route: '/' },
         { icon: 'list' as const, labelKey: 'menu.items.allAppointments', route: '/appointments' },
+        { icon: 'archive' as const, labelKey: 'menu.items.appointmentsArchive', route: '/appointments-archive' },
         { icon: 'plus-circle' as const, labelKey: 'menu.items.newAppointment', route: '/create' },
         { icon: 'inbox' as const, labelKey: 'menu.items.requests', route: '/requests' },
       ],

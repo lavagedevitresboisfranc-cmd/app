@@ -105,6 +105,21 @@
 user_problem_statement: "Add a Revenues/Income module to complement the Expenses module. Categories: Saison Printemps, Saison Automne. Payment methods: E-transfert, Cash, Chèque, Carte de crédit. Plus a Balance Sheet (Bilan) endpoint combining revenues - expenses."
 
 backend:
+  - task: "Soft-delete for appointments (DELETE /api/appointments/{id} → status=archived)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Changed DELETE /api/appointments/{id} from hard-delete to soft-delete: now sets status='archived' + archived_at timestamp instead of removing the document. GET /api/appointments now excludes archived by default; pass ?include_archived=true or ?status=archived to see them. Added POST /api/appointments/{id}/restore to restore archived → status='upcoming'. Added DELETE /api/appointments/{id}/permanent for explicit hard-delete. Goal: prevent accidental data loss on confirmed appointments."
+        - working: true
+          agent: "testing"
+          comment: "19/19 assertions PASS via /app/backend_test.py against EXPO_PUBLIC_BACKEND_URL. Full soft-delete flow verified: (1) POST creates upcoming appt, (2) shows in default list, (3a) DELETE /{id} → 200 with exact shape {'message':'Appointment archived','archived':true} and (3b) record remains in DB with status='archived'; (4) hidden from default GET /appointments; (5) ?include_archived=true → id present; (6a) ?status=archived → id present and all returned items are archived; (6b) ?status=upcoming → id absent; (7) GET /{id} still returns appt with status='archived'; (8) POST /restore → 200 with status='upcoming' and archived_at unset on doc; (9) reappears in default list; (10) re-archive then DELETE /{id}/permanent → 200 with exact shape {'message':'Appointment permanently deleted'}, subsequent GET /{id} → 404, and ?include_archived=true no longer lists id; (11) all 3 unknown-id paths (DELETE, POST /restore, DELETE /permanent) → 404. Minor: `AppointmentResponse` Pydantic model does not declare an `archived_at` field, so the archived_at timestamp is stripped from JSON responses even though it IS stored in MongoDB (restore's $unset works correctly, confirming the value exists server-side). If the frontend needs to display 'archived on <date>' it will need `archived_at` added to the response model. Test appointment + auto-linked client cleaned up at end of run."
+
   - task: "Revenues CRUD (POST, GET, PUT, DELETE /api/revenues)"
     implemented: true
     working: true
@@ -218,7 +233,8 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "Soft-delete for appointments (DELETE /api/appointments/{id} → status=archived)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -229,4 +245,4 @@ agent_communication:
     - agent: "testing"
       message: "All 4 Finance-module backend task groups PASS (79/79 assertions) via /app/backend_test.py against EXPO_PUBLIC_BACKEND_URL. Revenues CRUD: valid POSTs (incl. default payment_method=cash) succeed; amount<=0, invalid category 'hiver', invalid payment_method 'bitcoin' all return 400; GET list sorted by date desc and ?category=printemps filter works; GET/PUT/DELETE 404 on bad ids; DELETE returns {deleted:1}. Stats: by_category always includes both printemps+automne and by_payment always includes all 4 methods (even with 0 / after filter); grand_total equals sum of amounts; date filters honored. Excel export: 200 + correct Content-Type + filename 'revenus_crystaltask_YYYY-MM-DD.xlsx'; valid openpyxl workbook with sheets ['Revenus','Résumé']; headers + emoji labels ('🌸 Saison Printemps','🍂 Saison Automne','📱 E-transfert','💵 Cash','📝 Chèque','💳 Carte de crédit') + TOTAL row present; ?category=printemps produces zero Automne rows; ?start_date/?end_date → 200. Finance Bilan: all required keys present, calculations correct to 2 decimals (net_profit = rev-exp, margin_pct = profit/rev*100), date filters produce correct subsets, edge cases confirmed (only-revenues → margin_pct=100; only-expenses → margin_pct=0 and net_profit negative). Cleanup successful — /api/revenues and /api/expenses both return empty arrays at end of run. No critical issues."
     - agent: "testing"
-      message: "✅ FRONTEND TESTING COMPLETE - All 3 Finance module frontend tasks PASS on mobile viewport (390x844). 1) Finance section in hamburger menu: All 4 items present (Revenus, Dépenses, Bilan, Estimation), navigation to /revenues and /bilan confirmed, Corbeille Clients and Campagnes programmées also verified. 2) Revenues screen: Header shows '💰 Revenus', TOTAL card displays '+0.00 $', hamburger filter shows 'Toutes les catégories', form modal opens with correct title and all required fields (Montant, exactly 2 categories, Date, Client, exactly 4 payment methods, Description), form submission functional. 3) Bilan screen: Header shows '📊 Bilan', 4 period chips present with 'Ce mois' default active, hero card shows 'PROFIT NET' with amount and margin, REVENUS/DÉPENSES stat cards present, period selection and pull-to-refresh work. UI is in French throughout. No critical issues found."
+      message: "✅ SOFT-DELETE for /api/appointments PASS — 19/19 assertions via /app/backend_test.py against EXPO_PUBLIC_BACKEND_URL. Full lifecycle verified end-to-end: create → default list visible → DELETE /{id} returns exactly {'message':'Appointment archived','archived':true} (HTTP 200) and record stays in DB with status='archived'; default GET hides it; ?include_archived=true and ?status=archived both include it; ?status=upcoming excludes it; GET /{id} still returns status='archived'; POST /{id}/restore returns status='upcoming' and removes archived_at from the doc (confirmed by re-querying); default list re-includes; re-archive then DELETE /{id}/permanent returns {'message':'Appointment permanently deleted'} and subsequent GET /{id} → 404 and include_archived=true list no longer contains it; all three unknown-id routes return 404. Test data + auto-linked client cleaned up — DB left clean. Minor observation (not a blocker): `AppointmentResponse` Pydantic model has no `archived_at` field, so the timestamp is stripped from JSON responses (it is stored correctly in Mongo — restore's $unset confirms). If the UI needs to show 'archived on ...' the field should be added to AppointmentResponse."

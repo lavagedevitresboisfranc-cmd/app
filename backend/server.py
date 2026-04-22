@@ -555,12 +555,19 @@ async def create_appointment(data: AppointmentCreate):
     return AppointmentResponse(**{k: v for k, v in appointment.items() if k != "_id"})
 
 @api_router.get("/appointments", response_model=List[AppointmentResponse])
-async def get_appointments(date: Optional[str] = None, status: Optional[str] = None):
+async def get_appointments(
+    date: Optional[str] = None,
+    status: Optional[str] = None,
+    include_archived: bool = False,
+):
     query = {}
     if date:
         query["date"] = date
     if status:
         query["status"] = status
+    elif not include_archived:
+        # By default, exclude archived appointments from the main calendar
+        query["status"] = {"$ne": "archived"}
     appointments = await db.appointments.find(query, {"_id": 0}).sort("date", 1).to_list(1000)
     return [AppointmentResponse(**a) for a in appointments]
 
@@ -584,10 +591,38 @@ async def update_appointment(appointment_id: str, data: AppointmentUpdate):
 
 @api_router.delete("/appointments/{appointment_id}")
 async def delete_appointment(appointment_id: str):
+    """Soft-delete: marks the appointment as archived instead of removing it.
+    Use DELETE /appointments/{id}/permanent to hard-delete (cannot be restored)."""
+    result = await db.appointments.update_one(
+        {"id": appointment_id},
+        {"$set": {"status": "archived", "archived_at": datetime.utcnow().isoformat()}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    return {"message": "Appointment archived", "archived": True}
+
+@api_router.post("/appointments/{appointment_id}/restore", response_model=AppointmentResponse)
+async def restore_appointment(appointment_id: str):
+    """Restore a previously archived appointment back to 'upcoming' status."""
+    appointment = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if not appointment:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    if appointment.get("status") != "archived":
+        return AppointmentResponse(**appointment)
+    await db.appointments.update_one(
+        {"id": appointment_id},
+        {"$set": {"status": "upcoming"}, "$unset": {"archived_at": ""}},
+    )
+    appointment = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    return AppointmentResponse(**appointment)
+
+@api_router.delete("/appointments/{appointment_id}/permanent")
+async def permanent_delete_appointment(appointment_id: str):
+    """Hard-delete an appointment permanently. Use with caution — cannot be undone."""
     result = await db.appointments.delete_one({"id": appointment_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Appointment not found")
-    return {"message": "Appointment deleted"}
+    return {"message": "Appointment permanently deleted"}
 
 # --- Request Routes (public + admin) ---
 

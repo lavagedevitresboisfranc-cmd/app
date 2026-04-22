@@ -16,6 +16,7 @@
     "items": {
       "calendar": "Calendrier",
       "allAppointments": "Tous les RDV",
+      "appointmentsArchive": "Archives RDV",
       "newAppointment": "Nouveau RDV",
       "requests": "Demandes",
       "clientsDb": "Base Clients",

@@ -16,6 +16,7 @@
     "items": {
       "calendar": "Calendar",
       "allAppointments": "All Appointments",
+      "appointmentsArchive": "Appointments Trash",
       "newAppointment": "New Appointment",
       "requests": "Requests",
       "clientsDb": "Clients Database",

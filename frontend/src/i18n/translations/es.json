@@ -16,6 +16,7 @@
     "items": {
       "calendar": "Calendario",
       "allAppointments": "Todas las citas",
+      "appointmentsArchive": "Papelera de Citas",
       "newAppointment": "Nueva cita",
       "requests": "Solicitudes",
       "clientsDb": "Base de Clientes",

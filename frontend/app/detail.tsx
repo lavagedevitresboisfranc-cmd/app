@@ -312,25 +312,25 @@ export default function DetailScreen() {
         if (res.ok) {
           router.back();
         } else {
-          Alert.alert('Erreur', 'La suppression a échoué');
+          Alert.alert('Erreur', 'L\'archivage a échoué');
         }
       } catch {
-        Alert.alert('Erreur', 'La suppression a échoué');
+        Alert.alert('Erreur', 'L\'archivage a échoué');
       }
     };
     if (Platform.OS === 'web') {
       // React Native Alert buttons are not fully supported on web → fallback to native confirm
       // eslint-disable-next-line no-alert
-      if (window.confirm('Êtes-vous certain de vouloir supprimer ce rendez-vous ?\n\nCette action est irréversible.')) {
+      if (window.confirm('Archiver ce rendez-vous ?\n\nIl sera masqué du calendrier mais pourra être restauré depuis les Archives.')) {
         doDelete();
       }
     } else {
       Alert.alert(
-        'Supprimer le rendez-vous',
-        'Êtes-vous certain ? Cette action est irréversible.',
+        'Archiver le rendez-vous',
+        'Il sera masqué du calendrier mais pourra être restauré depuis les Archives.',
         [
           { text: 'Annuler', style: 'cancel' },
-          { text: 'Supprimer', style: 'destructive', onPress: doDelete },
+          { text: 'Archiver', style: 'destructive', onPress: doDelete },
         ],
         { cancelable: true }
       );
@@ -720,7 +720,7 @@ export default function DetailScreen() {
             onPress={handleDelete}
           >
             <Feather name="trash-2" size={18} color="#FF3B30" />
-            <Text style={styles.deleteBtnText}>Supprimer ce rendez-vous</Text>
+            <Text style={styles.deleteBtnText}>Archiver ce rendez-vous</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
