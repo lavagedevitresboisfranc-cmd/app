@@ -45,6 +45,7 @@ export default function ClientsDbScreen() {
 
   // Multi-select mode
   const [selectionMode, setSelectionMode] = useState(false);
+  const [campaignMode, setCampaignMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Create modal
@@ -98,6 +99,7 @@ export default function ClientsDbScreen() {
   const exitSelectionMode = () => {
     setSelectionMode(false);
     setSelectedIds(new Set());
+    setCampaignMode(false);
   };
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -111,6 +113,21 @@ export default function ClientsDbScreen() {
     setSelectedIds(new Set(filtered.map(c => c.id)));
   };
   const deselectAll = () => setSelectedIds(new Set());
+
+  // Enter "Campaign" mode: selection mode + pre-select everyone with a valid email
+  const enterCampaignMode = () => {
+    const eligible = filtered.filter(c => !!c.email && c.email.includes('@'));
+    if (eligible.length === 0) {
+      Alert.alert(
+        'Aucun courriel valide',
+        "Aucun client dans la liste n'a d'adresse courriel valide. Ajoutez des courriels avant d'envoyer une campagne."
+      );
+      return;
+    }
+    setSelectionMode(true);
+    setCampaignMode(true);
+    setSelectedIds(new Set(eligible.map(c => c.id)));
+  };
 
   const launchCampaignWithSelection = () => {
     const selectedClients = clients.filter(c => selectedIds.has(c.id));
@@ -329,6 +346,10 @@ export default function ClientsDbScreen() {
             </>
           ) : (
             <>
+              <TouchableOpacity onPress={enterCampaignMode} style={[styles.actionBtn, { backgroundColor: '#7C3AED' }]} activeOpacity={0.8}>
+                <Feather name="send" size={18} color="#fff" />
+                <Text style={styles.actionBtnText}>Campagne</Text>
+              </TouchableOpacity>
               <TouchableOpacity onPress={enterSelectionMode} style={[styles.actionBtn, { backgroundColor: '#0891B2' }]} activeOpacity={0.8}>
                 <Feather name="check-square" size={18} color="#fff" />
                 <Text style={styles.actionBtnText}>Sélection</Text>
@@ -378,6 +399,17 @@ export default function ClientsDbScreen() {
           </TouchableOpacity>
         ) : null}
       </View>
+
+      {/* Campaign mode banner */}
+      {campaignMode && (
+        <View style={styles.campaignBanner}>
+          <Feather name="send" size={16} color="#7C3AED" />
+          <Text style={styles.campaignBannerText}>
+            Mode Campagne — {selectedIds.size} client{selectedIds.size > 1 ? 's' : ''} avec courriel sélectionné{selectedIds.size > 1 ? 's' : ''}.
+            Décochez ceux à exclure, puis tapez « Campagne ».
+          </Text>
+        </View>
+      )}
 
       {loading ? (
         <View style={styles.empty}>
@@ -485,6 +517,12 @@ const styles = StyleSheet.create({
   toolBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#A7F3D0' },
   toolBtnText: { color: '#0891B2', fontWeight: '700', fontSize: 13 },
   searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fff', marginHorizontal: 16, paddingHorizontal: 12, height: 44, borderRadius: 10, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 12 },
+  campaignBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#F5F3FF', borderWidth: 1, borderColor: '#DDD6FE',
+    marginHorizontal: 16, marginBottom: 10, padding: 10, borderRadius: 10,
+  },
+  campaignBannerText: { flex: 1, fontSize: 12, color: '#5B21B6', fontWeight: '600', lineHeight: 16 },
   searchInput: { flex: 1, fontSize: 15, color: '#111' },
   card: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', gap: 12 },
   cardSelected: { backgroundColor: '#ECFEFF', borderColor: '#0891B2', borderWidth: 2 },
