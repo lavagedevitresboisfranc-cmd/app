@@ -772,6 +772,145 @@ export default function ExpensesScreen() {
                 </>}
               </TouchableOpacity>
             </View>
+
+            {/* === SCAN OVERLAY (absolute, inside form modal — avoids nested-Modal iOS bug) === */}
+            {scanModalOpen && (
+              <View style={styles.scanOverlay}>
+                <View style={styles.scanHeader}>
+                  <TouchableOpacity
+                    testID="scan-close"
+                    onPress={() => setScanModalOpen(false)}
+                    style={styles.scanHeaderBtn}
+                    activeOpacity={0.7}
+                  >
+                    <Feather name="x" size={22} color="#0A0A0A" />
+                  </TouchableOpacity>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.scanHeaderTitle}>Scanner Reçu / Facture</Text>
+                    <Text style={styles.scanHeaderSub}>
+                      {scanPages.length === 0
+                        ? 'Prenez une ou plusieurs photos'
+                        : `${scanPages.length} page${scanPages.length > 1 ? 's' : ''} ajoutée${scanPages.length > 1 ? 's' : ''}`}
+                    </Text>
+                  </View>
+                </View>
+
+                <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+                  <View style={styles.scanActionsRow}>
+                    <TouchableOpacity
+                      testID="scan-camera"
+                      style={[styles.scanActionBtn, { backgroundColor: '#0891B2' }]}
+                      onPress={() => scanAddPage(true)}
+                      disabled={scanning || scanPages.length >= 20}
+                      activeOpacity={0.85}
+                    >
+                      <Feather name="camera" size={20} color="#FFFFFF" />
+                      <Text style={styles.scanActionText}>
+                        {scanning ? '...' : 'Caméra'}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      testID="scan-gallery"
+                      style={[styles.scanActionBtn, { backgroundColor: '#F3F4F6' }]}
+                      onPress={() => scanAddPage(false)}
+                      disabled={scanning || scanPages.length >= 20}
+                      activeOpacity={0.85}
+                    >
+                      <Feather name="image" size={20} color="#374151" />
+                      <Text style={[styles.scanActionText, { color: '#374151' }]}>
+                        Galerie
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {scanPages.length >= 20 && (
+                    <Text style={styles.scanWarn}>⚠️ Maximum 20 pages atteint</Text>
+                  )}
+
+                  {scanPages.length === 0 ? (
+                    <View style={styles.scanEmpty}>
+                      <Feather name="file-plus" size={48} color="#D1D5DB" />
+                      <Text style={styles.scanEmptyTitle}>Aucune page ajoutée</Text>
+                      <Text style={styles.scanEmptyDesc}>
+                        Utilisez la caméra pour photographier chaque page du reçu/facture,
+                        puis générez un PDF unique.
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={{ gap: 10, marginTop: 14 }}>
+                      {scanPages.map((page, idx) => (
+                        <View key={`${idx}-${page.slice(-12)}`} style={styles.pageRow}>
+                          <Image source={{ uri: page }} style={styles.pageThumb} resizeMode="cover" />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.pageNumber}>Page {idx + 1}</Text>
+                            <Text style={styles.pageSize}>
+                              ≈ {Math.round(page.length / 1024)} KB
+                            </Text>
+                          </View>
+                          <View style={styles.pageControls}>
+                            <TouchableOpacity
+                              onPress={() => movePage(idx, -1)}
+                              disabled={idx === 0}
+                              style={[styles.pageCtrlBtn, idx === 0 && { opacity: 0.3 }]}
+                              activeOpacity={0.7}
+                            >
+                              <Feather name="chevron-up" size={18} color="#374151" />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => movePage(idx, 1)}
+                              disabled={idx === scanPages.length - 1}
+                              style={[styles.pageCtrlBtn, idx === scanPages.length - 1 && { opacity: 0.3 }]}
+                              activeOpacity={0.7}
+                            >
+                              <Feather name="chevron-down" size={18} color="#374151" />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => removeScanPage(idx)}
+                              style={[styles.pageCtrlBtn, { backgroundColor: '#FEF2F2' }]}
+                              activeOpacity={0.7}
+                            >
+                              <Feather name="trash-2" size={16} color="#DC2626" />
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </ScrollView>
+
+                <View style={styles.scanFooter}>
+                  <TouchableOpacity
+                    testID="scan-cancel"
+                    style={[styles.scanFooterBtn, { backgroundColor: '#F3F4F6' }]}
+                    onPress={() => setScanModalOpen(false)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.scanFooterBtnText}>Annuler</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    testID="scan-generate-pdf"
+                    style={[
+                      styles.scanFooterBtn,
+                      { backgroundColor: scanPages.length === 0 ? '#A3A3A3' : '#10B981', flex: 1.8 },
+                    ]}
+                    onPress={generatePdfFromScan}
+                    disabled={scanPages.length === 0 || generatingPdf}
+                    activeOpacity={0.85}
+                  >
+                    {generatingPdf ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <>
+                        <Feather name="file-text" size={18} color="#FFFFFF" />
+                        <Text style={[styles.scanFooterBtnText, { color: '#FFFFFF' }]}>
+                          Générer PDF ({scanPages.length})
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -788,152 +927,8 @@ export default function ExpensesScreen() {
         </View>
       </Modal>
 
-      {/* SCAN MULTI-PAGE MODAL */}
-      <Modal
-        visible={scanModalOpen}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setScanModalOpen(false)}
-      >
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-          <View style={styles.scanHeader}>
-            <TouchableOpacity
-              testID="scan-close"
-              onPress={() => setScanModalOpen(false)}
-              style={styles.scanHeaderBtn}
-              activeOpacity={0.7}
-            >
-              <Feather name="x" size={22} color="#0A0A0A" />
-            </TouchableOpacity>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.scanHeaderTitle}>Scanner Reçu / Facture</Text>
-              <Text style={styles.scanHeaderSub}>
-                {scanPages.length === 0
-                  ? 'Prenez une ou plusieurs photos'
-                  : `${scanPages.length} page${scanPages.length > 1 ? 's' : ''} ajoutée${scanPages.length > 1 ? 's' : ''}`}
-              </Text>
-            </View>
-          </View>
-
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
-            {/* Add page buttons */}
-            <View style={styles.scanActionsRow}>
-              <TouchableOpacity
-                testID="scan-camera"
-                style={[styles.scanActionBtn, { backgroundColor: '#0891B2' }]}
-                onPress={() => scanAddPage(true)}
-                disabled={scanning || scanPages.length >= 20}
-                activeOpacity={0.85}
-              >
-                <Feather name="camera" size={20} color="#FFFFFF" />
-                <Text style={styles.scanActionText}>
-                  {scanning ? '...' : 'Caméra'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                testID="scan-gallery"
-                style={[styles.scanActionBtn, { backgroundColor: '#F3F4F6' }]}
-                onPress={() => scanAddPage(false)}
-                disabled={scanning || scanPages.length >= 20}
-                activeOpacity={0.85}
-              >
-                <Feather name="image" size={20} color="#374151" />
-                <Text style={[styles.scanActionText, { color: '#374151' }]}>
-                  Galerie
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {scanPages.length >= 20 && (
-              <Text style={styles.scanWarn}>⚠️ Maximum 20 pages atteint</Text>
-            )}
-
-            {/* Pages list */}
-            {scanPages.length === 0 ? (
-              <View style={styles.scanEmpty}>
-                <Feather name="file-plus" size={48} color="#D1D5DB" />
-                <Text style={styles.scanEmptyTitle}>Aucune page ajoutée</Text>
-                <Text style={styles.scanEmptyDesc}>
-                  Utilisez la caméra pour photographier chaque page du reçu/facture,
-                  puis générez un PDF unique.
-                </Text>
-              </View>
-            ) : (
-              <View style={{ gap: 10, marginTop: 14 }}>
-                {scanPages.map((page, idx) => (
-                  <View key={`${idx}-${page.slice(-12)}`} style={styles.pageRow}>
-                    <Image source={{ uri: page }} style={styles.pageThumb} resizeMode="cover" />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.pageNumber}>Page {idx + 1}</Text>
-                      <Text style={styles.pageSize}>
-                        ≈ {Math.round(page.length / 1024)} KB
-                      </Text>
-                    </View>
-                    <View style={styles.pageControls}>
-                      <TouchableOpacity
-                        onPress={() => movePage(idx, -1)}
-                        disabled={idx === 0}
-                        style={[styles.pageCtrlBtn, idx === 0 && { opacity: 0.3 }]}
-                        activeOpacity={0.7}
-                      >
-                        <Feather name="chevron-up" size={18} color="#374151" />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => movePage(idx, 1)}
-                        disabled={idx === scanPages.length - 1}
-                        style={[styles.pageCtrlBtn, idx === scanPages.length - 1 && { opacity: 0.3 }]}
-                        activeOpacity={0.7}
-                      >
-                        <Feather name="chevron-down" size={18} color="#374151" />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => removeScanPage(idx)}
-                        style={[styles.pageCtrlBtn, { backgroundColor: '#FEF2F2' }]}
-                        activeOpacity={0.7}
-                      >
-                        <Feather name="trash-2" size={16} color="#DC2626" />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            )}
-          </ScrollView>
-
-          {/* Footer actions */}
-          <View style={styles.scanFooter}>
-            <TouchableOpacity
-              testID="scan-cancel"
-              style={[styles.scanFooterBtn, { backgroundColor: '#F3F4F6' }]}
-              onPress={() => setScanModalOpen(false)}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.scanFooterBtnText}>Annuler</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              testID="scan-generate-pdf"
-              style={[
-                styles.scanFooterBtn,
-                { backgroundColor: scanPages.length === 0 ? '#A3A3A3' : '#10B981', flex: 1.8 },
-              ]}
-              onPress={generatePdfFromScan}
-              disabled={scanPages.length === 0 || generatingPdf}
-              activeOpacity={0.85}
-            >
-              {generatingPdf ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <Feather name="file-text" size={18} color="#FFFFFF" />
-                  <Text style={[styles.scanFooterBtnText, { color: '#FFFFFF' }]}>
-                    Générer PDF ({scanPages.length})
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </Modal>
+      {/* SCAN MULTI-PAGE VIEW is rendered INSIDE the form modal (below) as an absolute overlay.
+          This avoids iOS's limitation of not allowing stacked Modals. */}
 
       {/* PDF VIEWER (mobile fallback) */}
       <Modal visible={!!viewPdf} transparent={false} animationType="slide" onRequestClose={() => setViewPdf(null)}>
@@ -1066,6 +1061,25 @@ const styles = StyleSheet.create({
   pdfBadgeInCard: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FEE2E2', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, borderWidth: 1, borderColor: '#FECACA', marginLeft: 6 },
   pdfBadgeInCardText: { fontSize: 11, fontWeight: '800', color: '#DC2626', letterSpacing: 0.5 },
   // Scan multi-page modal
+  scanOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#FFFFFF',
+    zIndex: 100,
+    ...Platform.select({
+      web: { boxShadow: '0 -10px 40px rgba(0,0,0,0.1)' } as any,
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+        elevation: 10,
+      },
+    }),
+  },
   scanHeader: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
   scanHeaderBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   scanHeaderTitle: { fontSize: 17, fontWeight: '800', color: '#111' },
