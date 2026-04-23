@@ -34,7 +34,8 @@
       "settings": "Paramètres",
       "expenses": "Dépenses",
       "revenues": "Revenus",
-      "bilan": "Bilan"
+      "bilan": "Bilan",
+      "summary": "Sommaire"
     }
   },
   "common": {

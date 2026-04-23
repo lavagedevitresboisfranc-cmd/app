@@ -176,6 +176,7 @@ export default function CalendarScreen() {
       items: [
         { icon: 'trending-up' as const, labelKey: 'menu.items.revenues', route: '/revenues' },
         { icon: 'credit-card' as const, labelKey: 'menu.items.expenses', route: '/expenses' },
+        { icon: 'bar-chart-2' as const, labelKey: 'menu.items.summary', route: '/finance-summary' },
         { icon: 'pie-chart' as const, labelKey: 'menu.items.bilan', route: '/bilan' },
         { icon: 'dollar-sign' as const, labelKey: 'menu.items.estimate', route: '/estimate' },
       ],

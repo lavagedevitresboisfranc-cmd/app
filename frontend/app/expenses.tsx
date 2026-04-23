@@ -646,6 +646,30 @@ export default function ExpensesScreen() {
 
   const totalVisible = useMemo(() => expenses.reduce((s, e) => s + e.amount, 0), [expenses]);
 
+  // === Period totals (semaine / mois / année) — applies category filter if active ===
+  const { weekTotal, monthTotal, yearTotal, weekCount, monthCount, yearCount } = useMemo(() => {
+    const now = new Date();
+    const d = new Date(now);
+    const dow = d.getDay();
+    const diffToMon = (dow + 6) % 7;
+    d.setDate(d.getDate() - diffToMon);
+    d.setHours(0, 0, 0, 0);
+    const weekStart = d;
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const yearStart = new Date(now.getFullYear(), 0, 1);
+
+    let w = 0, m = 0, y = 0, wc = 0, mc = 0, yc = 0;
+    for (const e of expenses) {
+      if (!e.date) continue;
+      const dt = new Date(e.date + 'T00:00:00');
+      if (isNaN(dt.getTime())) continue;
+      if (dt >= yearStart) { y += e.amount; yc += 1; }
+      if (dt >= monthStart) { m += e.amount; mc += 1; }
+      if (dt >= weekStart) { w += e.amount; wc += 1; }
+    }
+    return { weekTotal: w, monthTotal: m, yearTotal: y, weekCount: wc, monthCount: mc, yearCount: yc };
+  }, [expenses]);
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <AppHeader title="💰 Dépenses" showBack />
@@ -669,6 +693,46 @@ export default function ExpensesScreen() {
             <Feather name="download" size={18} color="#059669" />
             <Text style={styles.exportBtnText}>Excel</Text>
           </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* === SOMMAIRE SEMAINE / MOIS / ANNÉE === */}
+      <View style={styles.summaryRow}>
+        <View style={[styles.summaryCard, { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}>
+          <View style={styles.summaryIconWrap}>
+            <Feather name="calendar" size={14} color="#DC2626" />
+          </View>
+          <Text style={styles.summaryLabel}>CETTE SEMAINE</Text>
+          <Text style={[styles.summaryAmount, { color: '#B91C1C' }]}>
+            -{weekTotal.toFixed(2)} $
+          </Text>
+          <Text style={styles.summaryCount}>
+            {weekCount} dépense{weekCount > 1 ? 's' : ''}
+          </Text>
+        </View>
+        <View style={[styles.summaryCard, { backgroundColor: '#FFF7ED', borderColor: '#FED7AA' }]}>
+          <View style={styles.summaryIconWrap}>
+            <Feather name="bar-chart-2" size={14} color="#EA580C" />
+          </View>
+          <Text style={styles.summaryLabel}>CE MOIS-CI</Text>
+          <Text style={[styles.summaryAmount, { color: '#C2410C' }]}>
+            -{monthTotal.toFixed(2)} $
+          </Text>
+          <Text style={styles.summaryCount}>
+            {monthCount} dépense{monthCount > 1 ? 's' : ''}
+          </Text>
+        </View>
+        <View style={[styles.summaryCard, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
+          <View style={styles.summaryIconWrap}>
+            <Feather name="trending-up" size={14} color="#D97706" />
+          </View>
+          <Text style={styles.summaryLabel}>CETTE ANNÉE</Text>
+          <Text style={[styles.summaryAmount, { color: '#B45309' }]}>
+            -{yearTotal.toFixed(2)} $
+          </Text>
+          <Text style={styles.summaryCount}>
+            {yearCount} dépense{yearCount > 1 ? 's' : ''}
+          </Text>
         </View>
       </View>
 
@@ -1351,6 +1415,13 @@ export default function ExpensesScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAFAFA' },
   header: { flexDirection: 'row', padding: 16, gap: 12, alignItems: 'stretch' },
+  // Summary cards (semaine / mois / année)
+  summaryRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
+  summaryCard: { flex: 1, borderRadius: 12, padding: 10, borderWidth: 1, minHeight: 82, justifyContent: 'space-between' },
+  summaryIconWrap: { width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.7)', justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
+  summaryLabel: { fontSize: 9, fontWeight: '800', color: '#6B7280', letterSpacing: 0.4 },
+  summaryAmount: { fontSize: 16, fontWeight: '800', marginTop: 2 },
+  summaryCount: { fontSize: 10, color: '#6B7280', fontWeight: '600', marginTop: 2 },
   totalBox: { flex: 1, backgroundColor: '#111', padding: 14, borderRadius: 12 },
   totalLabel: { color: '#9CA3AF', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   totalAmount: { color: '#10B981', fontSize: 24, fontWeight: '800', marginTop: 2 },

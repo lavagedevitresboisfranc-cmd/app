@@ -34,7 +34,8 @@
       "settings": "Settings",
       "expenses": "Expenses",
       "revenues": "Revenue",
-      "bilan": "Balance Sheet"
+      "bilan": "Balance Sheet",
+      "summary": "Summary"
     }
   },
   "common": {
