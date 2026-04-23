@@ -2985,6 +2985,134 @@ async def download_expense_receipt_pdf(expense_id: str):
     )
 
 
+class OcrReceiptRequest(BaseModel):
+    images: List[str]  # list of base64 images (data URL or raw), max 10
+
+
+@api_router.post("/expenses/ocr-receipt")
+async def ocr_receipt(payload: OcrReceiptRequest):
+    """Extract structured data from scanned receipt/invoice images using Gemini Vision.
+    Returns: { amount, vendor, date, description, raw_text, confidence }
+    Uses Emergent LLM Key + Gemini 2.5 Flash (fast + accurate for receipts).
+    """
+    if not payload.images or len(payload.images) == 0:
+        raise HTTPException(status_code=400, detail="Aucune image fournie")
+    if len(payload.images) > 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 pages par OCR (limite LLM)")
+
+    # Lazy imports
+    from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+
+    api_key = os.environ.get("EMERGENT_LLM_KEY")
+    if not api_key:
+        raise HTTPException(
+            status_code=500,
+            detail="Clé LLM non configurée (EMERGENT_LLM_KEY)",
+        )
+
+    # Normalize images to raw base64 (strip data URL prefix if present)
+    raw_images: List[str] = []
+    for img_str in payload.images:
+        if img_str.startswith("data:"):
+            if "," in img_str:
+                img_str = img_str.split(",", 1)[1]
+        raw_images.append(img_str)
+
+    system_prompt = (
+        "Tu es un expert en extraction de données depuis des reçus et factures. "
+        "Analyse l'image fournie (ou les images si plusieurs pages) et retourne UNIQUEMENT un JSON valide avec ces clés EXACTES:\n"
+        "{\n"
+        '  "amount": <float|null>,   // Montant TOTAL final (TTC), en dollars. Null si illisible.\n'
+        '  "vendor": <string|null>,  // Nom du commerce/fournisseur (ex: "Canadian Tire", "Costco"). Null si non visible.\n'
+        '  "date": <string|null>,    // Date au format YYYY-MM-DD. Null si illisible.\n'
+        '  "description": <string|null>,  // Résumé court des articles principaux (1-2 phrases).\n'
+        '  "raw_text": <string>,     // Transcription complète du texte visible sur le(s) reçu(s), ligne par ligne.\n'
+        '  "confidence": <float>     // 0.0 à 1.0 — ton niveau de confiance global dans l extraction.\n'
+        "}\n\n"
+        "RÈGLES STRICTES:\n"
+        "- Retourne UNIQUEMENT le JSON, aucun texte avant ou après, pas de markdown ``` ni explication.\n"
+        "- Pour le montant, cherche TOTAL, GRAND TOTAL, MONTANT DÛ — pas le sous-total.\n"
+        "- Gère FR et EN indifféremment (reçus du Québec typiquement bilingues).\n"
+        "- Date: convertis TOUT format (DD/MM/YYYY, MM-DD-YY, 23 avr. 2026, etc.) en YYYY-MM-DD.\n"
+        "- Si plusieurs images: combine l information (page 1 + page 2 = même reçu).\n"
+        "- Si illisible/pas un reçu: mets null partout sauf raw_text et confidence=0.0.\n"
+    )
+
+    chat = LlmChat(
+        api_key=api_key,
+        session_id=f"ocr-receipt-{uuid.uuid4().hex[:8]}",
+        system_message=system_prompt,
+    ).with_model("gemini", "gemini-2.5-flash")
+
+    # Build message with all images
+    image_contents = [ImageContent(image_base64=img) for img in raw_images]
+    user_msg = UserMessage(
+        text=(
+            "Extrais les informations structurées de ce reçu/facture. "
+            "Retourne uniquement le JSON demandé (voir instructions système)."
+        ),
+        file_contents=image_contents,
+    )
+
+    try:
+        response_text = await chat.send_message(user_msg)
+    except Exception as e:
+        logger.error(f"Gemini OCR error: {e}")
+        raise HTTPException(status_code=502, detail=f"Erreur OCR (LLM): {str(e)[:200]}")
+
+    # Parse JSON response (handle markdown code fences just in case)
+    import json as _json
+    import re as _re
+    cleaned = response_text.strip()
+    # Strip markdown code fences if model added them despite instructions
+    fence_match = _re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, _re.DOTALL)
+    if fence_match:
+        cleaned = fence_match.group(1)
+    # Extract first JSON object if response has extra text
+    obj_match = _re.search(r"\{.*\}", cleaned, _re.DOTALL)
+    if obj_match:
+        cleaned = obj_match.group(0)
+
+    try:
+        parsed = _json.loads(cleaned)
+    except Exception as e:
+        logger.warning(f"OCR JSON parse error. Raw response: {response_text[:500]}")
+        # Fallback: return raw text only
+        return {
+            "amount": None,
+            "vendor": None,
+            "date": None,
+            "description": None,
+            "raw_text": response_text[:4000],
+            "confidence": 0.0,
+            "parse_error": str(e)[:200],
+        }
+
+    # Normalize output
+    def _safe_float(v):
+        if v is None:
+            return None
+        try:
+            return float(v)
+        except Exception:
+            return None
+
+    def _safe_str(v):
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s if s else None
+
+    return {
+        "amount": _safe_float(parsed.get("amount")),
+        "vendor": _safe_str(parsed.get("vendor")),
+        "date": _safe_str(parsed.get("date")),
+        "description": _safe_str(parsed.get("description")),
+        "raw_text": _safe_str(parsed.get("raw_text")) or "",
+        "confidence": _safe_float(parsed.get("confidence")) or 0.0,
+    }
+
+
 @api_router.get("/expenses/export/excel")
 async def export_expenses_excel(start_date: Optional[str] = None, end_date: Optional[str] = None, category: Optional[str] = None):
     """Generates an Excel (.xlsx) export of all expenses with summary sheet."""

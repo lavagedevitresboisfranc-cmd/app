@@ -72,6 +72,18 @@ export default function ExpensesScreen() {
   const [scanning, setScanning] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
+  // OCR state
+  const [ocrModalOpen, setOcrModalOpen] = useState(false);
+  const [ocrRunning, setOcrRunning] = useState(false);
+  const [ocrResult, setOcrResult] = useState<{
+    amount: number | null;
+    vendor: string | null;
+    date: string | null;
+    description: string | null;
+    raw_text: string;
+    confidence: number;
+  } | null>(null);
+
   const load = useCallback(async () => {
     try {
       const q = filterCategory ? `?category=${filterCategory}` : '';
@@ -264,13 +276,120 @@ export default function ExpensesScreen() {
     });
   };
 
+  const runOcrOnScan = async () => {
+    if (scanPages.length === 0) {
+      Alert.alert('Vide', "Ajoutez d'abord au moins une page à scanner.");
+      return;
+    }
+    if (scanPages.length > 10) {
+      Alert.alert(
+        'Trop de pages',
+        "L'OCR intelligent traite jusqu'à 10 pages. Retirez-en quelques-unes."
+      );
+      return;
+    }
+    setOcrRunning(true);
+    setOcrResult(null);
+    setOcrModalOpen(true);
+    try {
+      const imagesRaw = scanPages.map((p) => {
+        const i = p.indexOf(',');
+        return i >= 0 ? p.substring(i + 1) : p;
+      });
+      const res = await fetch(`${API_URL}/api/expenses/ocr-receipt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ images: imagesRaw }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setOcrResult(data);
+    } catch (e: any) {
+      Alert.alert('Erreur OCR', `Impossible d'extraire le texte: ${e?.message || 'inconnu'}`);
+      setOcrModalOpen(false);
+    } finally {
+      setOcrRunning(false);
+    }
+  };
+
+  const applyOcrToForm = async () => {
+    if (!ocrResult) return;
+    if (ocrResult.amount != null && !isNaN(ocrResult.amount)) {
+      setFAmount(String(ocrResult.amount));
+    }
+    if (ocrResult.vendor) {
+      setFVendor(ocrResult.vendor);
+    }
+    if (ocrResult.date) {
+      setFDate(ocrResult.date);
+    }
+    if (ocrResult.description) {
+      setFDescription(ocrResult.description);
+    }
+    setOcrModalOpen(false);
+
+    // Auto-generate PDF from the scanned pages so they are attached to the expense
+    if (scanPages.length > 0 && !fPdf) {
+      try {
+        setGeneratingPdf(true);
+        const imagesRaw = scanPages.map((p) => {
+          const i = p.indexOf(',');
+          return i >= 0 ? p.substring(i + 1) : p;
+        });
+        const res = await fetch(`${API_URL}/api/expenses/images-to-pdf`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ images: imagesRaw }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setFPdf(data.pdf_base64);
+          if (!fPhoto && scanPages[0]) setFPhoto(scanPages[0]);
+        }
+      } catch {
+        // silent — user can still save without PDF
+      } finally {
+        setGeneratingPdf(false);
+      }
+    }
+
+    setScanModalOpen(false);
+    setScanPages([]);
+    Alert.alert(
+      '✅ Champs remplis',
+      "Le formulaire a été pré-rempli par l'IA et le PDF du reçu a été attaché. Vérifiez puis enregistrez."
+    );
+  };
+
+  const saveJpegFromScan = async () => {
+    if (scanPages.length === 0) {
+      Alert.alert('Vide', 'Ajoutez au moins une page à scanner.');
+      return;
+    }
+    // For JPEG save: use the first page as receipt_photo
+    setFPhoto(scanPages[0]);
+    // If multiple pages, also combine to PDF automatically so nothing is lost
+    if (scanPages.length > 1 && !fPdf) {
+      await generatePdfFromScan();
+      return;
+    }
+    setScanModalOpen(false);
+    setScanPages([]);
+    Alert.alert(
+      '✅ Image enregistrée',
+      'La photo a été attachée comme reçu (JPEG). Enregistrez la dépense pour finaliser.'
+    );
+  };
+
   const generatePdfFromScan = async () => {
     if (scanPages.length === 0) {
       Alert.alert('Vide', 'Ajoutez au moins une page à scanner.');
       return;
     }
-    setGeneratingPdf(true);
-    try {
+    setGeneratingPdf(true);    try {
       // Strip data:image prefix - backend accepts both
       const imagesRaw = scanPages.map((p) => {
         const commaIdx = p.indexOf(',');
@@ -881,17 +1000,53 @@ export default function ExpensesScreen() {
                 <View style={styles.scanFooter}>
                   <TouchableOpacity
                     testID="scan-cancel"
-                    style={[styles.scanFooterBtn, { backgroundColor: '#F3F4F6' }]}
+                    style={[styles.scanFooterBtn, { backgroundColor: '#F3F4F6', flex: 0.8 }]}
                     onPress={() => setScanModalOpen(false)}
                     activeOpacity={0.85}
                   >
                     <Text style={styles.scanFooterBtnText}>Annuler</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
+                    testID="scan-ocr"
+                    style={[
+                      styles.scanFooterBtn,
+                      { backgroundColor: scanPages.length === 0 ? '#A3A3A3' : '#7C3AED', flex: 1.2 },
+                    ]}
+                    onPress={runOcrOnScan}
+                    disabled={scanPages.length === 0 || ocrRunning}
+                    activeOpacity={0.85}
+                  >
+                    {ocrRunning ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <>
+                        <Feather name="cpu" size={16} color="#FFFFFF" />
+                        <Text style={[styles.scanFooterBtnText, { color: '#FFFFFF', fontSize: 13 }]}>
+                          🧠 OCR
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    testID="scan-jpeg"
+                    style={[
+                      styles.scanFooterBtn,
+                      { backgroundColor: scanPages.length === 0 ? '#A3A3A3' : '#F59E0B', flex: 1 },
+                    ]}
+                    onPress={saveJpegFromScan}
+                    disabled={scanPages.length === 0 || generatingPdf}
+                    activeOpacity={0.85}
+                  >
+                    <Feather name="image" size={16} color="#FFFFFF" />
+                    <Text style={[styles.scanFooterBtnText, { color: '#FFFFFF', fontSize: 13 }]}>
+                      JPEG
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
                     testID="scan-generate-pdf"
                     style={[
                       styles.scanFooterBtn,
-                      { backgroundColor: scanPages.length === 0 ? '#A3A3A3' : '#10B981', flex: 1.8 },
+                      { backgroundColor: scanPages.length === 0 ? '#A3A3A3' : '#10B981', flex: 1.2 },
                     ]}
                     onPress={generatePdfFromScan}
                     disabled={scanPages.length === 0 || generatingPdf}
@@ -901,14 +1056,138 @@ export default function ExpensesScreen() {
                       <ActivityIndicator color="#fff" />
                     ) : (
                       <>
-                        <Feather name="file-text" size={18} color="#FFFFFF" />
-                        <Text style={[styles.scanFooterBtnText, { color: '#FFFFFF' }]}>
-                          Générer PDF ({scanPages.length})
+                        <Feather name="file-text" size={16} color="#FFFFFF" />
+                        <Text style={[styles.scanFooterBtnText, { color: '#FFFFFF', fontSize: 13 }]}>
+                          PDF ({scanPages.length})
                         </Text>
                       </>
                     )}
                   </TouchableOpacity>
                 </View>
+
+                {/* === OCR RESULT OVERLAY (nested inside scan overlay) === */}
+                {ocrModalOpen && (
+                  <View style={styles.ocrOverlay}>
+                    <View style={styles.ocrHeader}>
+                      <TouchableOpacity
+                        testID="ocr-close"
+                        onPress={() => setOcrModalOpen(false)}
+                        style={styles.scanHeaderBtn}
+                        activeOpacity={0.7}
+                      >
+                        <Feather name="x" size={22} color="#0A0A0A" />
+                      </TouchableOpacity>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.scanHeaderTitle}>🧠 Résultat OCR</Text>
+                        <Text style={styles.scanHeaderSub}>
+                          {ocrRunning
+                            ? 'Analyse intelligente en cours…'
+                            : ocrResult
+                            ? `Confiance: ${Math.round((ocrResult.confidence || 0) * 100)}%`
+                            : ''}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+                      {ocrRunning && (
+                        <View style={styles.ocrLoading}>
+                          <ActivityIndicator size="large" color="#7C3AED" />
+                          <Text style={styles.ocrLoadingTitle}>Lecture du reçu avec Gemini Vision…</Text>
+                          <Text style={styles.ocrLoadingSub}>
+                            Cela peut prendre 5 à 15 secondes selon la complexité.
+                          </Text>
+                        </View>
+                      )}
+
+                      {!ocrRunning && ocrResult && (
+                        <>
+                          {/* Extracted fields card */}
+                          <View style={styles.ocrFieldsCard}>
+                            <Text style={styles.ocrSectionTitle}>📋 Champs extraits</Text>
+
+                            <View style={styles.ocrFieldRow}>
+                              <Text style={styles.ocrFieldLabel}>💰 Montant</Text>
+                              <Text style={styles.ocrFieldValue}>
+                                {ocrResult.amount != null
+                                  ? `${ocrResult.amount.toFixed(2)} $`
+                                  : '—'}
+                              </Text>
+                            </View>
+                            <View style={styles.ocrFieldRow}>
+                              <Text style={styles.ocrFieldLabel}>🏪 Commerce</Text>
+                              <Text style={styles.ocrFieldValue} numberOfLines={2}>
+                                {ocrResult.vendor || '—'}
+                              </Text>
+                            </View>
+                            <View style={styles.ocrFieldRow}>
+                              <Text style={styles.ocrFieldLabel}>📅 Date</Text>
+                              <Text style={styles.ocrFieldValue}>
+                                {ocrResult.date || '—'}
+                              </Text>
+                            </View>
+                            {ocrResult.description ? (
+                              <View style={[styles.ocrFieldRow, { flexDirection: 'column', alignItems: 'flex-start', gap: 4 }]}>
+                                <Text style={styles.ocrFieldLabel}>📝 Description</Text>
+                                <Text style={[styles.ocrFieldValue, { textAlign: 'left' }]}>
+                                  {ocrResult.description}
+                                </Text>
+                              </View>
+                            ) : null}
+                          </View>
+
+                          {/* Apply button */}
+                          <TouchableOpacity
+                            testID="ocr-apply"
+                            style={styles.ocrApplyBtn}
+                            onPress={applyOcrToForm}
+                            activeOpacity={0.85}
+                          >
+                            <Feather name="check-circle" size={20} color="#FFFFFF" />
+                            <Text style={styles.ocrApplyBtnText}>
+                              ✨ Remplir le formulaire
+                            </Text>
+                          </TouchableOpacity>
+
+                          {/* Raw text */}
+                          <Text style={[styles.ocrSectionTitle, { marginTop: 20 }]}>
+                            📄 Texte complet du reçu
+                          </Text>
+                          <View style={styles.ocrRawCard}>
+                            <Text selectable style={styles.ocrRawText}>
+                              {ocrResult.raw_text || '(aucun texte détecté)'}
+                            </Text>
+                          </View>
+                          <Text style={styles.ocrHint}>
+                            Sélectionnez du texte pour copier-coller manuellement.
+                          </Text>
+                        </>
+                      )}
+                    </ScrollView>
+
+                    <View style={styles.scanFooter}>
+                      <TouchableOpacity
+                        style={[styles.scanFooterBtn, { backgroundColor: '#F3F4F6', flex: 1 }]}
+                        onPress={() => setOcrModalOpen(false)}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.scanFooterBtnText}>Fermer</Text>
+                      </TouchableOpacity>
+                      {ocrResult && !ocrRunning && (
+                        <TouchableOpacity
+                          style={[styles.scanFooterBtn, { backgroundColor: '#7C3AED', flex: 1.5 }]}
+                          onPress={applyOcrToForm}
+                          activeOpacity={0.85}
+                        >
+                          <Feather name="check" size={16} color="#FFFFFF" />
+                          <Text style={[styles.scanFooterBtnText, { color: '#FFFFFF' }]}>
+                            Remplir le formulaire
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                )}
               </View>
             )}
           </View>
@@ -1080,6 +1359,27 @@ const styles = StyleSheet.create({
       },
     }),
   },
+  // OCR result overlay (nested inside scan overlay)
+  ocrOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: '#FFFFFF',
+    zIndex: 200,
+  },
+  ocrHeader: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 10, borderBottomWidth: 1, borderBottomColor: '#EDE9FE', backgroundColor: '#F5F3FF' },
+  ocrLoading: { alignItems: 'center', paddingVertical: 48, gap: 10 },
+  ocrLoadingTitle: { fontSize: 15, fontWeight: '700', color: '#111', marginTop: 6 },
+  ocrLoadingSub: { fontSize: 12, color: '#6B7280', textAlign: 'center' },
+  ocrFieldsCard: { backgroundColor: '#F5F3FF', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#DDD6FE' },
+  ocrSectionTitle: { fontSize: 13, fontWeight: '800', color: '#6D28D9', letterSpacing: 0.3, textTransform: 'uppercase', marginBottom: 10 },
+  ocrFieldRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EDE9FE' },
+  ocrFieldLabel: { fontSize: 13, color: '#6B7280', fontWeight: '600' },
+  ocrFieldValue: { fontSize: 14, color: '#0F172A', fontWeight: '700', flexShrink: 1, textAlign: 'right' },
+  ocrApplyBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#7C3AED', paddingVertical: 14, borderRadius: 12, marginTop: 14 },
+  ocrApplyBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800', letterSpacing: 0.3 },
+  ocrRawCard: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, padding: 12, marginTop: 8 },
+  ocrRawText: { fontSize: 12, color: '#374151', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', lineHeight: 18 },
+  ocrHint: { fontSize: 11, color: '#9CA3AF', fontStyle: 'italic', marginTop: 6, textAlign: 'center' },
   scanHeader: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
   scanHeaderBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   scanHeaderTitle: { fontSize: 17, fontWeight: '800', color: '#111' },
