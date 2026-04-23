@@ -2861,7 +2861,14 @@ async def get_expense(expense_id: str):
 
 @api_router.put("/expenses/{expense_id}", response_model=ExpenseResponse)
 async def update_expense(expense_id: str, payload: ExpenseUpdate):
-    update = {k: v for k, v in payload.dict(exclude_unset=True).items() if v is not None}
+    # Allow explicit null for receipt fields (so user can delete an attached receipt)
+    ALLOW_NULL_FIELDS = {"receipt_photo", "receipt_pdf", "description", "vendor"}
+    raw = payload.dict(exclude_unset=True)
+    update = {}
+    for k, v in raw.items():
+        if v is None and k not in ALLOW_NULL_FIELDS:
+            continue
+        update[k] = v
     if "category" in update and update["category"] not in VALID_EXPENSE_CATEGORIES:
         raise HTTPException(status_code=400, detail="Catégorie invalide")
     if not update:
@@ -2872,6 +2879,30 @@ async def update_expense(expense_id: str, payload: ExpenseUpdate):
         raise HTTPException(status_code=404, detail="Dépense introuvable")
     updated = await db.expenses.find_one({"id": expense_id}, {"_id": 0})
     return ExpenseResponse(**_expense_doc_to_response(updated))
+
+
+@api_router.delete("/expenses/{expense_id}/receipt")
+async def delete_expense_receipt(expense_id: str, type: str = "all"):
+    """Delete the attached receipt from an expense without deleting the expense itself.
+    Query param `type`: 'photo' | 'pdf' | 'all' (default 'all').
+    """
+    if type not in {"photo", "pdf", "all"}:
+        raise HTTPException(status_code=400, detail="Type invalide (photo|pdf|all)")
+    doc = await db.expenses.find_one({"id": expense_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Dépense introuvable")
+    unset = {}
+    if type in ("photo", "all"):
+        unset["receipt_photo"] = None
+    if type in ("pdf", "all"):
+        unset["receipt_pdf"] = None
+    unset["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.expenses.update_one({"id": expense_id}, {"$set": unset})
+    updated = await db.expenses.find_one({"id": expense_id}, {"_id": 0})
+    return {
+        "deleted": type,
+        "expense": _expense_doc_to_response(updated),
+    }
 
 
 @api_router.delete("/expenses/{expense_id}")

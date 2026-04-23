@@ -452,6 +452,48 @@ export default function ExpensesScreen() {
     }
   };
 
+  const deleteReceiptFromExpense = async (
+    expId: string,
+    type: 'photo' | 'pdf' | 'all'
+  ) => {
+    const labelByType: Record<string, string> = {
+      photo: 'la photo du reçu',
+      pdf: 'le PDF du reçu',
+      all: 'la photo ET le PDF du reçu',
+    };
+    const doDelete = async () => {
+      try {
+        const res = await fetch(
+          `${API_URL}/api/expenses/${expId}/receipt?type=${type}`,
+          { method: 'DELETE' }
+        );
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+        await load();
+      } catch (e: any) {
+        Alert.alert('Erreur', `Suppression impossible: ${e?.message || 'inconnu'}`);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      // eslint-disable-next-line no-alert
+      if (window.confirm(`Supprimer ${labelByType[type]} ?\n\nLa dépense sera conservée mais le justificatif attaché sera effacé.`)) {
+        await doDelete();
+      }
+    } else {
+      Alert.alert(
+        '🗑 Supprimer le reçu ?',
+        `Vous êtes sur le point de supprimer ${labelByType[type]}. La dépense sera conservée.`,
+        [
+          { text: 'Annuler', style: 'cancel' },
+          { text: 'Supprimer', style: 'destructive', onPress: doDelete },
+        ]
+      );
+    }
+  };
+
   const save = async () => {
     const amt = parseFloat(fAmount.replace(',', '.'));
     if (!amt || amt <= 0) {
@@ -526,20 +568,49 @@ export default function ExpensesScreen() {
             </View>
           </View>
           {item.receipt_photo && (
-            <TouchableOpacity onPress={() => setViewPhoto(item.receipt_photo!)} style={styles.thumbWrap}>
-              <Image source={{ uri: item.receipt_photo }} style={styles.thumb} resizeMode="cover" />
-            </TouchableOpacity>
+            <View style={styles.receiptWrap}>
+              <TouchableOpacity
+                onPress={() => setViewPhoto(item.receipt_photo!)}
+                onLongPress={() => deleteReceiptFromExpense(item.id, 'photo')}
+                delayLongPress={450}
+                style={styles.thumbWrap}
+              >
+                <Image source={{ uri: item.receipt_photo }} style={styles.thumb} resizeMode="cover" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID={`delete-photo-${item.id}`}
+                onPress={(e) => { (e as any)?.stopPropagation?.(); deleteReceiptFromExpense(item.id, 'photo'); }}
+                style={styles.receiptCloseBadge}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                activeOpacity={0.7}
+              >
+                <Feather name="x" size={12} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
           )}
           {item.receipt_pdf && (
-            <TouchableOpacity
-              testID={`view-pdf-${item.id}`}
-              onPress={(e) => { (e as any)?.stopPropagation?.(); openExpensePdf(item.id); }}
-              style={styles.pdfBadgeInCard}
-              activeOpacity={0.8}
-            >
-              <Feather name="file-text" size={18} color="#DC2626" />
-              <Text style={styles.pdfBadgeInCardText}>PDF</Text>
-            </TouchableOpacity>
+            <View style={styles.receiptWrap}>
+              <TouchableOpacity
+                testID={`view-pdf-${item.id}`}
+                onPress={(e) => { (e as any)?.stopPropagation?.(); openExpensePdf(item.id); }}
+                onLongPress={() => deleteReceiptFromExpense(item.id, 'pdf')}
+                delayLongPress={450}
+                style={styles.pdfBadgeInCard}
+                activeOpacity={0.8}
+              >
+                <Feather name="file-text" size={18} color="#DC2626" />
+                <Text style={styles.pdfBadgeInCardText}>PDF</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID={`delete-pdf-${item.id}`}
+                onPress={(e) => { (e as any)?.stopPropagation?.(); deleteReceiptFromExpense(item.id, 'pdf'); }}
+                style={styles.receiptCloseBadge}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                activeOpacity={0.7}
+              >
+                <Feather name="x" size={12} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
           )}
         </View>
       </TouchableOpacity>
@@ -1300,6 +1371,30 @@ const styles = StyleSheet.create({
   cardMeta: { fontSize: 11, color: '#9CA3AF' },
   cardDate: { fontSize: 11, color: '#9CA3AF', fontWeight: '600' },
   thumbWrap: { borderRadius: 8, overflow: 'hidden' },
+  receiptWrap: { position: 'relative', marginLeft: 6 },
+  receiptCloseBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#DC2626',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    ...Platform.select({
+      web: { boxShadow: '0 1px 3px rgba(0,0,0,0.3)' } as any,
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.3,
+        shadowRadius: 2,
+        elevation: 3,
+      },
+    }),
+  },
   thumb: { width: 44, height: 44, borderRadius: 8 },
   // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },

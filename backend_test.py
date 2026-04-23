@@ -1,392 +1,327 @@
-"""Backend tests for POST /api/expenses/ocr-receipt.
-
-Scope is STRICTLY limited to the new OCR endpoint backed by Gemini 2.5 Flash via
-emergentintegrations + EMERGENT_LLM_KEY.
 """
-
+Backend tests — STRICTLY for receipt deletion feature.
+Targets:
+  1) DELETE /api/expenses/{id}/receipt?type=photo|pdf|all
+  2) PUT /api/expenses/{id} — accept null for receipt_photo/receipt_pdf (and description/vendor)
+"""
+import os
+import sys
 import base64
 import io
-import os
-import re
-import sys
-import time
-import traceback
-from pathlib import Path
-
+from datetime import date
 import requests
-from PIL import Image, ImageDraw, ImageFont
 
-# ----- Config --------------------------------------------------------------
+BASE = os.environ.get("EXPO_PUBLIC_BACKEND_URL") or "https://booking-hub-406.preview.emergentagent.com"
+API = f"{BASE.rstrip('/')}/api"
 
-FRONT_ENV = Path("/app/frontend/.env")
-BASE_URL = None
-for line in FRONT_ENV.read_text().splitlines():
-    if line.startswith("EXPO_PUBLIC_BACKEND_URL="):
-        BASE_URL = line.split("=", 1)[1].strip().strip('"')
-        break
-
-if not BASE_URL:
-    print("❌ EXPO_PUBLIC_BACKEND_URL not found in /app/frontend/.env")
-    sys.exit(1)
-
-API = BASE_URL.rstrip("/") + "/api"
-OCR_URL = f"{API}/expenses/ocr-receipt"
-EXPENSES_URL = f"{API}/expenses"
-
-LLM_TIMEOUT = 60  # seconds per LLM call
-
-print(f"BASE_URL = {BASE_URL}")
-print(f"OCR_URL  = {OCR_URL}")
-print()
-
-# ----- Assertion helper ----------------------------------------------------
-
-PASS = 0
-FAIL = 0
-FAILURES: list[str] = []
+passed = 0
+failed = 0
+failures = []
+created_ids = []
 
 
-def check(cond: bool, label: str, details: str = ""):
-    global PASS, FAIL
+def check(cond, label):
+    global passed, failed
     if cond:
-        PASS += 1
-        print(f"  ✅ {label}")
+        passed += 1
+        print(f"  ✓ {label}")
     else:
-        FAIL += 1
-        extra = f" — {details}" if details else ""
-        msg = f"❌ {label}{extra}"
-        FAILURES.append(msg)
-        print(f"  {msg}")
+        failed += 1
+        failures.append(label)
+        print(f"  ✗ {label}")
 
 
-# ----- Font discovery ------------------------------------------------------
+# --- helpers to fabricate small valid base64 photo / PDF strings ---
 
-def _get_font(size: int):
-    for p in [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-    ]:
-        if os.path.exists(p):
-            try:
-                return ImageFont.truetype(p, size)
-            except Exception:
-                pass
-    return ImageFont.load_default()
-
-
-def _img_to_b64_jpeg(img: Image.Image, quality: int = 92) -> str:
+def _png_base64_1x1():
+    # 1x1 red PNG
+    from PIL import Image
+    img = Image.new("RGB", (1, 1), (255, 0, 0))
     buf = io.BytesIO()
-    img.convert("RGB").save(buf, format="JPEG", quality=quality)
-    return base64.b64encode(buf.getvalue()).decode("ascii")
+    img.save(buf, format="PNG")
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{b64}"
 
 
-# ----- Synthetic receipt generators ----------------------------------------
-
-def make_canadian_tire_receipt() -> Image.Image:
-    W, H = 700, 1000
-    img = Image.new("RGB", (W, H), "white")
-    d = ImageDraw.Draw(img)
-    big = _get_font(32)
-    med = _get_font(22)
-    sm = _get_font(18)
-
-    y = 40
-    d.text((W // 2 - 120, y), "CANADIAN TIRE", font=big, fill="black"); y += 50
-    d.text((W // 2 - 160, y), "1234 Rue Principale", font=sm, fill="black"); y += 26
-    d.text((W // 2 - 150, y), "Montréal, QC H2X 1Y4", font=sm, fill="black"); y += 26
-    d.text((W // 2 - 100, y), "Tél: 514-555-1234", font=sm, fill="black"); y += 40
-    d.line([(40, y), (W - 40, y)], fill="black", width=2); y += 16
-
-    d.text((40, y), "Date: 2026-04-23    Heure: 14:32", font=sm, fill="black"); y += 26
-    d.text((40, y), "No. Transaction: 00192847", font=sm, fill="black"); y += 40
-
-    items = [
-        ("Vis #8 x 100",          "12.99"),
-        ("Boulons acier 1/4\"",   "18.50"),
-        ("Perceuse DeWalt 20V",   "149.99"),
-        ("Ruban mesureur 8m",       "8.99"),
-    ]
-    for name, price in items:
-        d.text((40, y), name, font=med, fill="black")
-        d.text((W - 140, y), f"${price}", font=med, fill="black")
-        y += 34
-
-    y += 10
-    d.line([(40, y), (W - 40, y)], fill="black", width=1); y += 16
-    d.text((40, y), "Sous-total",    font=med, fill="black"); d.text((W - 140, y), "$190.47", font=med, fill="black"); y += 30
-    d.text((40, y), "TPS (5%)",      font=med, fill="black"); d.text((W - 140, y), "$9.52",  font=med, fill="black"); y += 30
-    d.text((40, y), "TVQ (9.975%)",  font=med, fill="black"); d.text((W - 140, y), "$19.01", font=med, fill="black"); y += 30
-    d.line([(40, y), (W - 40, y)], fill="black", width=2); y += 18
-    d.text((40, y), "TOTAL", font=big, fill="black")
-    d.text((W - 180, y), "$191.16", font=big, fill="black"); y += 60
-
-    d.text((40, y), "Paiement: VISA xxxx-1234", font=sm, fill="black"); y += 26
-    d.text((40, y), "Merci de votre visite!", font=sm, fill="black")
-    return img
+def _pdf_base64_minimal():
+    # Reuse server's images-to-pdf to get a tiny real PDF
+    r = requests.post(f"{API}/expenses/images-to-pdf", json={"images": [_png_base64_1x1()]}, timeout=30)
+    r.raise_for_status()
+    return r.json()["pdf_base64"]
 
 
-def make_multi_page_receipt(total_value: str = "777.77") -> tuple[Image.Image, Image.Image]:
-    W, H = 700, 900
-    big = _get_font(32); med = _get_font(22); sm = _get_font(18)
-
-    # Page 1 — header + line items
-    p1 = Image.new("RGB", (W, H), "white")
-    d = ImageDraw.Draw(p1)
-    y = 40
-    d.text((W // 2 - 100, y), "HOME DEPOT", font=big, fill="black"); y += 50
-    d.text((W // 2 - 140, y), "5678 Boul. Laurier", font=sm, fill="black"); y += 26
-    d.text((W // 2 - 140, y), "Québec, QC G1V 0A7", font=sm, fill="black"); y += 40
-    d.text((40, y), "Date: 2026-03-15    Page 1/2", font=sm, fill="black"); y += 26
-    d.text((40, y), "Facture: #HD-998877", font=sm, fill="black"); y += 40
-    d.line([(40, y), (W - 40, y)], fill="black", width=2); y += 16
-    items = [
-        ("Peinture acrylique 4L",  "54.99"),
-        ("Rouleaux 12 po (x2)",    "24.50"),
-        ("Bac à peinture",         "9.99"),
-        ("Toile de protection",    "18.75"),
-        ("Ruban peintre 3M",       "14.25"),
-    ]
-    for name, price in items:
-        d.text((40, y), name, font=med, fill="black")
-        d.text((W - 140, y), f"${price}", font=med, fill="black")
-        y += 34
-    d.text((40, y + 20), "— suite page 2 —", font=sm, fill="black")
-
-    # Page 2 — totals
-    p2 = Image.new("RGB", (W, H), "white")
-    d = ImageDraw.Draw(p2)
-    y = 40
-    d.text((W // 2 - 100, y), "HOME DEPOT", font=big, fill="black"); y += 40
-    d.text((40, y), "Facture: #HD-998877     Page 2/2", font=sm, fill="black"); y += 50
-    d.line([(40, y), (W - 40, y)], fill="black", width=2); y += 16
-    d.text((40, y), "Sous-total",   font=med, fill="black"); d.text((W - 180, y), "$646.37", font=med, fill="black"); y += 34
-    d.text((40, y), "TPS (5%)",     font=med, fill="black"); d.text((W - 180, y), "$32.32",  font=med, fill="black"); y += 34
-    d.text((40, y), "TVQ (9.975%)", font=med, fill="black"); d.text((W - 180, y), "$99.08",  font=med, fill="black"); y += 34
-    d.line([(40, y), (W - 40, y)], fill="black", width=2); y += 18
-    d.text((40, y), "TOTAL", font=big, fill="black")
-    d.text((W - 220, y), f"${total_value}", font=big, fill="black"); y += 60
-    d.text((40, y), "Paiement: MasterCard", font=sm, fill="black"); y += 26
-    d.text((40, y), "Merci!", font=sm, fill="black")
-    return p1, p2
+def create_expense(photo=None, pdf=None, amount=42.0, category="gas",
+                   dt=None, vendor="Test Vendor", description="original"):
+    body = {
+        "amount": amount,
+        "category": category,
+        "date": dt or date.today().isoformat(),
+        "description": description,
+        "vendor": vendor,
+    }
+    if photo is not None:
+        body["receipt_photo"] = photo
+    if pdf is not None:
+        body["receipt_pdf"] = pdf
+    r = requests.post(f"{API}/expenses", json=body, timeout=30)
+    assert r.status_code == 200, f"create expense failed: {r.status_code} {r.text}"
+    j = r.json()
+    created_ids.append(j["id"])
+    return j
 
 
-def make_red_square() -> Image.Image:
-    img = Image.new("RGB", (400, 400), (220, 30, 30))
-    return img
+def get_expense_from_list(eid):
+    r = requests.get(f"{API}/expenses", timeout=30)
+    assert r.status_code == 200
+    for it in r.json():
+        if it.get("id") == eid:
+            return it
+    return None
 
 
-# ----- Tests ---------------------------------------------------------------
-
-def test_1_happy_path():
-    print("\n=== TEST 1: Happy path — synthetic Canadian Tire receipt ===")
-    img = make_canadian_tire_receipt()
-    b64 = _img_to_b64_jpeg(img)
-    t0 = time.time()
-    r = requests.post(OCR_URL, json={"images": [b64]}, timeout=LLM_TIMEOUT)
-    dt = time.time() - t0
-    print(f"  HTTP {r.status_code}  ({dt:.1f}s)")
-    check(r.status_code == 200, "HTTP 200", f"got {r.status_code} body={r.text[:200]}")
+def get_expense_direct(eid):
+    r = requests.get(f"{API}/expenses/{eid}", timeout=30)
     if r.status_code != 200:
         return None
-
-    data = r.json()
-    print(f"  Response keys: {list(data.keys())}")
-    print(f"  Extracted: amount={data.get('amount')!r}, vendor={data.get('vendor')!r}, "
-          f"date={data.get('date')!r}, confidence={data.get('confidence')!r}")
-    print(f"  Description: {data.get('description')!r}")
-    print(f"  raw_text (len={len(data.get('raw_text') or '')}): "
-          f"{(data.get('raw_text') or '')[:150]!r}...")
-
-    for k in ("amount", "vendor", "date", "description", "raw_text", "confidence"):
-        check(k in data, f"response has key '{k}'")
-
-    amt = data.get("amount")
-    check(isinstance(amt, (int, float)) and amt is not None and amt > 0,
-          f"amount is number > 0 (got {amt!r}; expected ~191.16)")
-
-    vendor = data.get("vendor") or ""
-    check(isinstance(vendor, str) and "canadian" in vendor.lower(),
-          f"vendor contains 'Canadian' case-insensitive (got {vendor!r})")
-
-    dt_str = data.get("date") or ""
-    check(isinstance(dt_str, str) and bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", dt_str)),
-          f"date matches YYYY-MM-DD (got {dt_str!r})")
-
-    raw = data.get("raw_text") or ""
-    check(isinstance(raw, str) and len(raw) > 50,
-          f"raw_text len > 50 (got len={len(raw)})")
-
-    conf = data.get("confidence")
-    check(isinstance(conf, (int, float)) and 0.0 <= float(conf) <= 1.0,
-          f"confidence in [0,1] (got {conf!r})")
-
-    return data
+    return r.json()
 
 
-def test_2_multi_page():
-    print("\n=== TEST 2: Multi-page receipt (2 images, total = 777.77) ===")
-    p1, p2 = make_multi_page_receipt("777.77")
-    b64_1 = _img_to_b64_jpeg(p1)
-    b64_2 = _img_to_b64_jpeg(p2)
-    t0 = time.time()
-    r = requests.post(OCR_URL, json={"images": [b64_1, b64_2]}, timeout=LLM_TIMEOUT)
-    dt = time.time() - t0
-    print(f"  HTTP {r.status_code}  ({dt:.1f}s)")
-    check(r.status_code == 200, "HTTP 200 (multi-page)",
-          f"got {r.status_code} body={r.text[:200]}")
-    if r.status_code != 200:
-        return
+def main():
+    print(f"Backend: {API}\n")
 
-    data = r.json()
-    print(f"  amount={data.get('amount')!r}  vendor={data.get('vendor')!r}  "
-          f"date={data.get('date')!r}  conf={data.get('confidence')!r}")
+    # Pre-existing expense count (to compare after cleanup)
+    r0 = requests.get(f"{API}/expenses", timeout=30)
+    pre_existing_ids = {it["id"] for it in r0.json()} if r0.status_code == 200 else set()
+    print(f"Pre-existing expense count: {len(pre_existing_ids)}\n")
 
-    for k in ("amount", "vendor", "date", "description", "raw_text", "confidence"):
-        check(k in data, f"multi-page response has key '{k}'")
+    # Build reusable base64 assets (photo + pdf)
+    PHOTO = _png_base64_1x1()
+    PDF = _pdf_base64_minimal()
 
-    amt = data.get("amount")
-    # Allow small variance but expect near 777.77
-    check(amt is not None and abs(float(amt) - 777.77) < 1.0,
-          f"multi-page amount ≈ 777.77 (got {amt!r})")
+    # =========================================================================
+    # A. DELETE /receipt?type=photo
+    # =========================================================================
+    print("A. DELETE /receipt?type=photo")
+    e = create_expense(photo=PHOTO, pdf=PDF)
+    eid = e["id"]
+    check(e.get("receipt_photo") is not None and e.get("receipt_pdf") is not None,
+          "A.setup: expense has both receipt_photo and receipt_pdf")
 
+    r = requests.delete(f"{API}/expenses/{eid}/receipt", params={"type": "photo"}, timeout=30)
+    check(r.status_code == 200, f"A.status 200 (got {r.status_code})")
+    body = r.json() if r.status_code == 200 else {}
+    check(body.get("deleted") == "photo", f"A.response deleted=='photo' (got {body.get('deleted')!r})")
+    exp = body.get("expense", {})
+    check(exp.get("receipt_photo") is None, f"A.response expense.receipt_photo is None (got {type(exp.get('receipt_photo')).__name__})")
+    check(exp.get("receipt_pdf") is not None, "A.response expense.receipt_pdf still has value")
 
-def test_3_data_url_prefix():
-    print("\n=== TEST 3: Data URL prefix handling ===")
-    img = make_canadian_tire_receipt()
-    raw = _img_to_b64_jpeg(img)
-    with_prefix = "data:image/jpeg;base64," + raw
+    # Persistence via GET /{id} and list
+    fetched = get_expense_direct(eid)
+    check(fetched is not None and fetched.get("receipt_photo") is None, "A.persist (GET /{id}): receipt_photo is None")
+    check(fetched is not None and fetched.get("receipt_pdf") is not None, "A.persist (GET /{id}): receipt_pdf still present")
+    in_list = get_expense_from_list(eid)
+    check(in_list is not None and in_list.get("receipt_photo") is None, "A.persist (GET list): receipt_photo is None")
+    check(in_list is not None and in_list.get("receipt_pdf") is not None, "A.persist (GET list): receipt_pdf still present")
 
-    # data URL prefix
-    t0 = time.time()
-    r1 = requests.post(OCR_URL, json={"images": [with_prefix]}, timeout=LLM_TIMEOUT)
-    print(f"  with-prefix: HTTP {r1.status_code}  ({time.time() - t0:.1f}s)")
-    check(r1.status_code == 200, "data URL prefix → 200",
-          f"got {r1.status_code} body={r1.text[:200]}")
+    # =========================================================================
+    # B. DELETE /receipt?type=pdf
+    # =========================================================================
+    print("\nB. DELETE /receipt?type=pdf")
+    e = create_expense(photo=PHOTO, pdf=PDF)
+    eid = e["id"]
+    r = requests.delete(f"{API}/expenses/{eid}/receipt", params={"type": "pdf"}, timeout=30)
+    check(r.status_code == 200, f"B.status 200 (got {r.status_code})")
+    body = r.json() if r.status_code == 200 else {}
+    check(body.get("deleted") == "pdf", "B.response deleted=='pdf'")
+    exp = body.get("expense", {})
+    check(exp.get("receipt_pdf") is None, "B.response expense.receipt_pdf is None")
+    check(exp.get("receipt_photo") is not None, "B.response expense.receipt_photo still present")
+    fetched = get_expense_direct(eid)
+    check(fetched.get("receipt_pdf") is None, "B.persist: receipt_pdf is None")
+    check(fetched.get("receipt_photo") is not None, "B.persist: receipt_photo still present")
 
-    # raw base64
-    t0 = time.time()
-    r2 = requests.post(OCR_URL, json={"images": [raw]}, timeout=LLM_TIMEOUT)
-    print(f"  raw-b64   : HTTP {r2.status_code}  ({time.time() - t0:.1f}s)")
-    check(r2.status_code == 200, "raw base64 → 200",
-          f"got {r2.status_code} body={r2.text[:200]}")
+    # =========================================================================
+    # C. DELETE /receipt?type=all (default)
+    # =========================================================================
+    print("\nC. DELETE /receipt?type=all")
+    e = create_expense(photo=PHOTO, pdf=PDF)
+    eid = e["id"]
+    r = requests.delete(f"{API}/expenses/{eid}/receipt", params={"type": "all"}, timeout=30)
+    check(r.status_code == 200, f"C.status 200 (got {r.status_code})")
+    body = r.json() if r.status_code == 200 else {}
+    check(body.get("deleted") == "all", "C.response deleted=='all'")
+    exp = body.get("expense", {})
+    check(exp.get("receipt_photo") is None and exp.get("receipt_pdf") is None,
+          "C.response both receipt_photo and receipt_pdf are None")
+    fetched = get_expense_direct(eid)
+    check(fetched.get("receipt_photo") is None and fetched.get("receipt_pdf") is None,
+          "C.persist: both receipt fields None after re-GET")
 
+    # Also test default (no type param) — should behave as 'all'
+    e2 = create_expense(photo=PHOTO, pdf=PDF)
+    eid2 = e2["id"]
+    r = requests.delete(f"{API}/expenses/{eid2}/receipt", timeout=30)
+    check(r.status_code == 200, "C.default(no-param) status 200")
+    body = r.json()
+    check(body.get("deleted") == "all", "C.default: deleted=='all' when no type param")
+    check(body.get("expense", {}).get("receipt_photo") is None and body.get("expense", {}).get("receipt_pdf") is None,
+          "C.default: both receipt fields None")
 
-def test_4_empty_images():
-    print("\n=== TEST 4: Empty images list → 400 ===")
-    r = requests.post(OCR_URL, json={"images": []}, timeout=30)
-    print(f"  HTTP {r.status_code}  body={r.text[:200]}")
-    check(r.status_code == 400, "HTTP 400 on empty images", f"got {r.status_code}")
-    if r.status_code == 400:
+    # =========================================================================
+    # D. DELETE /receipt with invalid type
+    # =========================================================================
+    print("\nD. DELETE /receipt?type=invalid")
+    e = create_expense(photo=PHOTO, pdf=PDF)
+    eid = e["id"]
+    r = requests.delete(f"{API}/expenses/{eid}/receipt", params={"type": "invalid"}, timeout=30)
+    check(r.status_code == 400, f"D.status 400 (got {r.status_code})")
+    detail = r.json().get("detail", "") if r.status_code == 400 else ""
+    check("Type invalide" in detail, f"D.detail contains 'Type invalide' (got {detail!r})")
+
+    # =========================================================================
+    # E. DELETE /receipt on non-existent expense
+    # =========================================================================
+    print("\nE. DELETE /receipt on non-existent expense")
+    r = requests.delete(f"{API}/expenses/nonexistent-xyz-uuid-1234/receipt",
+                        params={"type": "photo"}, timeout=30)
+    check(r.status_code == 404, f"E.status 404 (got {r.status_code})")
+    detail = r.json().get("detail", "") if r.status_code == 404 else ""
+    check("introuvable" in detail, f"E.detail contains 'introuvable' (got {detail!r})")
+
+    # =========================================================================
+    # F. PUT with explicit null on receipt_photo (bug fix)
+    # =========================================================================
+    print("\nF. PUT {receipt_photo: null}")
+    e = create_expense(photo=PHOTO, pdf=None)
+    eid = e["id"]
+    check(e.get("receipt_photo") is not None, "F.setup: receipt_photo present after create")
+    r = requests.put(f"{API}/expenses/{eid}", json={"receipt_photo": None}, timeout=30)
+    check(r.status_code == 200, f"F.PUT status 200 (got {r.status_code}: {r.text[:200]})")
+    if r.status_code == 200:
+        j = r.json()
+        check(j.get("receipt_photo") is None, f"F.PUT response receipt_photo is None (got {type(j.get('receipt_photo')).__name__})")
+    fetched = get_expense_direct(eid)
+    check(fetched and fetched.get("receipt_photo") is None, "F.persist: receipt_photo is None after GET")
+
+    # =========================================================================
+    # G. PUT with explicit null on receipt_pdf
+    # =========================================================================
+    print("\nG. PUT {receipt_pdf: null}")
+    e = create_expense(photo=None, pdf=PDF)
+    eid = e["id"]
+    check(e.get("receipt_pdf") is not None, "G.setup: receipt_pdf present after create")
+    r = requests.put(f"{API}/expenses/{eid}", json={"receipt_pdf": None}, timeout=30)
+    check(r.status_code == 200, f"G.PUT status 200 (got {r.status_code})")
+    if r.status_code == 200:
+        j = r.json()
+        check(j.get("receipt_pdf") is None, "G.PUT response receipt_pdf is None")
+    fetched = get_expense_direct(eid)
+    check(fetched and fetched.get("receipt_pdf") is None, "G.persist: receipt_pdf is None after GET")
+
+    # =========================================================================
+    # H. PUT with null on amount/category/date — must NOT wipe these
+    # =========================================================================
+    print("\nH. PUT {amount: null, vendor: 'New Vendor'} — amount should stay 42.0")
+    e = create_expense(amount=42.0, vendor="Original Vendor")
+    eid = e["id"]
+    r = requests.put(f"{API}/expenses/{eid}",
+                     json={"amount": None, "vendor": "New Vendor"}, timeout=30)
+    check(r.status_code == 200, f"H.status 200 (got {r.status_code}: {r.text[:200]})")
+    if r.status_code == 200:
+        j = r.json()
+        check(abs(j.get("amount", -1) - 42.0) < 1e-9, f"H.amount still 42.0 (got {j.get('amount')})")
+        check(j.get("vendor") == "New Vendor", f"H.vendor updated to 'New Vendor' (got {j.get('vendor')!r})")
+    fetched = get_expense_direct(eid)
+    check(fetched and abs(fetched.get("amount", -1) - 42.0) < 1e-9, "H.persist: amount STILL 42.0")
+    check(fetched and fetched.get("vendor") == "New Vendor", "H.persist: vendor IS 'New Vendor'")
+
+    # Additionally verify that PUT {category: null, date: null} doesn't wipe them
+    e2 = create_expense(amount=99.0, category="gas", dt="2026-01-15", vendor="V2")
+    eid2 = e2["id"]
+    r = requests.put(f"{API}/expenses/{eid2}",
+                     json={"category": None, "date": None, "amount": 123.45}, timeout=30)
+    check(r.status_code == 200, "H2.status 200 with null on category/date + amount update")
+    if r.status_code == 200:
+        j = r.json()
+        check(j.get("category") == "gas", f"H2.category unchanged 'gas' (got {j.get('category')!r})")
+        check(j.get("date") == "2026-01-15", f"H2.date unchanged '2026-01-15' (got {j.get('date')!r})")
+        check(abs(j.get("amount", -1) - 123.45) < 1e-9, f"H2.amount updated to 123.45 (got {j.get('amount')})")
+
+    # =========================================================================
+    # I. PUT with null on description/vendor — should clear text fields
+    # =========================================================================
+    print("\nI. PUT {description: null} — should clear description")
+    e = create_expense(description="original")
+    eid = e["id"]
+    check(e.get("description") == "original", "I.setup: description=='original'")
+    r = requests.put(f"{API}/expenses/{eid}", json={"description": None}, timeout=30)
+    check(r.status_code == 200, f"I.status 200 (got {r.status_code}: {r.text[:200]})")
+    if r.status_code == 200:
+        j = r.json()
+        # Accept either None or "" as long as 'original' is gone
+        desc = j.get("description")
+        check(desc in (None, ""), f"I.description cleared (got {desc!r})")
+    fetched = get_expense_direct(eid)
+    desc = fetched.get("description") if fetched else "???"
+    check(desc in (None, ""), f"I.persist: description cleared (got {desc!r})")
+
+    # =========================================================================
+    # J. Verify expense itself NOT deleted after DELETE /receipt
+    # =========================================================================
+    print("\nJ. Expense NOT deleted after DELETE /receipt?type=all")
+    e = create_expense(photo=PHOTO, pdf=PDF)
+    eid = e["id"]
+    # Before: in list
+    in_list_before = get_expense_from_list(eid)
+    check(in_list_before is not None, "J.before: expense in GET /expenses list")
+    r = requests.delete(f"{API}/expenses/{eid}/receipt", params={"type": "all"}, timeout=30)
+    check(r.status_code == 200, "J.delete receipts 200")
+    # After: still in list
+    in_list_after = get_expense_from_list(eid)
+    check(in_list_after is not None, "J.after: expense STILL in GET /expenses list")
+    check(in_list_after and in_list_after.get("receipt_photo") is None and in_list_after.get("receipt_pdf") is None,
+          "J.after: expense present but both receipts None")
+    # Direct GET also still works
+    direct = get_expense_direct(eid)
+    check(direct is not None, "J.after: GET /{id} still returns 200")
+
+    # =========================================================================
+    # CLEANUP
+    # =========================================================================
+    print("\n--- CLEANUP ---")
+    for eid in created_ids:
         try:
-            detail = r.json().get("detail", "")
+            requests.delete(f"{API}/expenses/{eid}", timeout=15)
         except Exception:
-            detail = r.text
-        check("Aucune image" in detail,
-              f"detail contains 'Aucune image' (got {detail!r})")
+            pass
 
+    # Final GET /expenses state
+    rf = requests.get(f"{API}/expenses", timeout=30)
+    final_items = rf.json() if rf.status_code == 200 else []
+    remaining_test_ids = [it["id"] for it in final_items if it["id"] in created_ids]
+    check(len(remaining_test_ids) == 0,
+          f"Cleanup: no test expenses remain (remaining={remaining_test_ids})")
 
-def test_5_too_many_images():
-    print("\n=== TEST 5: 11 images → 400 ===")
-    tiny = Image.new("RGB", (20, 20), "white")
-    b64 = _img_to_b64_jpeg(tiny)
-    r = requests.post(OCR_URL, json={"images": [b64] * 11}, timeout=30)
-    print(f"  HTTP {r.status_code}  body={r.text[:200]}")
-    check(r.status_code == 400, "HTTP 400 on 11 images", f"got {r.status_code}")
-    if r.status_code == 400:
-        try:
-            detail = r.json().get("detail", "")
-        except Exception:
-            detail = r.text
-        check("Maximum 10" in detail,
-              f"detail contains 'Maximum 10' (got {detail!r})")
+    post_cleanup_ids = {it["id"] for it in final_items}
+    leaked = post_cleanup_ids - pre_existing_ids
+    check(len(leaked) == 0, f"Cleanup: no leaked test docs left (leaked={leaked})")
 
+    print(f"\nFinal GET /api/expenses count: {len(final_items)} "
+          f"(pre-existing was {len(pre_existing_ids)})")
 
-def test_6_non_receipt_image():
-    print("\n=== TEST 6: Non-receipt image (red square) ===")
-    img = make_red_square()
-    b64 = _img_to_b64_jpeg(img)
-    t0 = time.time()
-    r = requests.post(OCR_URL, json={"images": [b64]}, timeout=LLM_TIMEOUT)
-    print(f"  HTTP {r.status_code}  ({time.time() - t0:.1f}s)")
-    check(r.status_code == 200, "non-receipt → 200 (no crash)",
-          f"got {r.status_code} body={r.text[:200]}")
-    if r.status_code != 200:
-        return
+    # =========================================================================
+    # REPORT
+    # =========================================================================
+    total = passed + failed
+    print(f"\n{'='*60}")
+    print(f"RESULTS: {passed}/{total} assertions passed")
+    if failures:
+        print(f"\nFAILURES ({len(failures)}):")
+        for f in failures:
+            print(f"  - {f}")
+    print(f"{'='*60}")
+    sys.exit(0 if failed == 0 else 1)
 
-    data = r.json()
-    print(f"  amount={data.get('amount')!r}  vendor={data.get('vendor')!r}  "
-          f"conf={data.get('confidence')!r}")
-
-    conf_val = data.get("confidence")
-    try:
-        conf_float = float(conf_val) if conf_val is not None else 1.0
-    except Exception:
-        conf_float = 1.0
-    low_conf = conf_float < 0.7
-    null_fields = (data.get("amount") is None) or (data.get("vendor") is None)
-    check(low_conf or null_fields,
-          f"confidence<0.7 OR amount/vendor null (got conf={conf_val!r}, "
-          f"amount={data.get('amount')!r}, vendor={data.get('vendor')!r})")
-
-
-def test_7_invalid_base64():
-    print("\n=== TEST 7: Invalid base64 input ===")
-    r = requests.post(OCR_URL, json={"images": ["not-valid-base64-!!"]},
-                      timeout=LLM_TIMEOUT)
-    print(f"  HTTP {r.status_code}  body={r.text[:300]}")
-    # Must not be 200 success and must not crash server beyond a 4xx/5xx with detail
-    check(r.status_code in (400, 422, 500, 502),
-          f"invalid b64 → 4xx/5xx (got {r.status_code})")
-    try:
-        body = r.json()
-        has_detail = ("detail" in body) or ("parse_error" in body)
-    except Exception:
-        has_detail = False
-    check(has_detail, "response body has error detail key")
-
-
-def test_8_server_still_healthy():
-    print("\n=== TEST 8: Server still healthy — GET /api/expenses ===")
-    r = requests.get(EXPENSES_URL, timeout=15)
-    print(f"  HTTP {r.status_code}")
-    check(r.status_code == 200, "GET /api/expenses → 200",
-          f"got {r.status_code} body={r.text[:200]}")
-
-
-# ----- Runner --------------------------------------------------------------
 
 if __name__ == "__main__":
-    extracted_for_test1 = None
-    try:
-        extracted_for_test1 = test_1_happy_path()
-    except Exception:
-        traceback.print_exc()
-        FAILURES.append(f"Test 1 threw: {sys.exc_info()[1]}")
-        FAIL += 1
-
-    for fn in (test_2_multi_page, test_3_data_url_prefix, test_4_empty_images,
-               test_5_too_many_images, test_6_non_receipt_image,
-               test_7_invalid_base64, test_8_server_still_healthy):
-        try:
-            fn()
-        except Exception:
-            traceback.print_exc()
-            FAILURES.append(f"{fn.__name__} threw: {sys.exc_info()[1]}")
-            FAIL += 1
-
-    print("\n" + "=" * 60)
-    print(f"RESULT: {PASS} passed, {FAIL} failed (of {PASS + FAIL} assertions)")
-    if FAILURES:
-        print("\nFailures:")
-        for f in FAILURES:
-            print(f"  - {f}")
-    if extracted_for_test1:
-        print("\nTest 1 LLM extraction (quality check):")
-        print(f"  amount      = {extracted_for_test1.get('amount')!r}  (expected ~191.16)")
-        print(f"  vendor      = {extracted_for_test1.get('vendor')!r}  (expected contains 'Canadian')")
-        print(f"  date        = {extracted_for_test1.get('date')!r}    (expected '2026-04-23')")
-        print(f"  confidence  = {extracted_for_test1.get('confidence')!r}")
-        print(f"  description = {extracted_for_test1.get('description')!r}")
-    sys.exit(0 if FAIL == 0 else 1)
+    main()
