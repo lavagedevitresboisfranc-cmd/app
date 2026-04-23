@@ -151,6 +151,7 @@ export default function CalendarScreen() {
       color: '#D97706',
       items: [
         { icon: 'database' as const, labelKey: 'menu.items.clientsDb', route: '/clients-db' },
+        { icon: 'dollar-sign' as const, labelKey: 'menu.items.estimate', route: '/estimate' },
         { icon: 'archive' as const, labelKey: 'menu.items.clientsArchive', route: '/clients-archive' },
         { icon: 'user' as const, labelKey: 'menu.items.clientsHistory', route: '/client-history' },
         { icon: 'star' as const, labelKey: 'menu.items.reviews', route: '/reviews' },
