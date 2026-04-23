@@ -3479,17 +3479,41 @@ def _build_seasonal_campaign_html(plain_body: str, subject: str) -> str:
     - Clickable links (auto-linkify Lavagedevitre.org, phone numbers)
     - Embedded QR code for booking
     - Clean typography and spacing
+    - Seasonal color accents (auto-detected from subject emojis)
     """
     logo_data_uri = _load_asset_base64("company-logo.jpeg", "image/jpeg")
     qr_data_uri = _load_asset_base64("booking_qr.jpeg", "image/jpeg")
+
+    # Auto-detect season from subject or body emojis for themed colors
+    text_for_detect = (subject or "") + " " + (plain_body or "")
+    if "🌷" in text_for_detect or "printemps" in text_for_detect.lower():
+        season = "spring"
+        accent_gradient = "linear-gradient(90deg,#10B981,#34D399,#A7F3D0)"  # Vert printemps
+        accent_solid = "#10B981"
+        season_label = "🌷 Printemps"
+    elif "☀️" in text_for_detect or "été" in text_for_detect.lower() or "summer" in text_for_detect.lower():
+        season = "summer"
+        accent_gradient = "linear-gradient(90deg,#F59E0B,#FCD34D,#FDE68A)"  # Jaune/doré été
+        accent_solid = "#F59E0B"
+        season_label = "☀️ Été"
+    elif "🍂" in text_for_detect or "automne" in text_for_detect.lower():
+        season = "autumn"
+        accent_gradient = "linear-gradient(90deg,#D97706,#F97316,#FED7AA)"  # Orange/brun automne
+        accent_solid = "#D97706"
+        season_label = "🍂 Automne"
+    else:
+        season = "default"
+        accent_gradient = "linear-gradient(90deg,#0891B2,#06B6D4,#22D3EE)"  # Cyan par défaut
+        accent_solid = "#0891B2"
+        season_label = ""
 
     # Escape HTML-sensitive chars first
     safe = plain_body.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
     # Auto-linkify — use token placeholders to avoid double-wrapping
     import re as _re
-    WEBSITE_LINK = '<a href="https://Lavagedevitre.org" style="color:#0891B2;text-decoration:underline;font-weight:700;">Lavagedevitre.org</a>'
-    PHONE_LINK = '<a href="tel:+15145709802" style="color:#0891B2;text-decoration:none;font-weight:700;">514-570-9802</a>'
+    WEBSITE_LINK = f'<a href="https://Lavagedevitre.org" style="color:{accent_solid};text-decoration:underline;font-weight:700;">Lavagedevitre.org</a>'
+    PHONE_LINK = f'<a href="tel:+15145709802" style="color:{accent_solid};text-decoration:none;font-weight:700;">514-570-9802</a>'
 
     # 1) Replace https://Lavagedevitre.org (with/without trailing slash) → token1
     safe = _re.sub(r'https?://Lavagedevitre\.org/?', '§§LINK_URL§§', safe, flags=_re.IGNORECASE)
@@ -3497,6 +3521,12 @@ def _build_seasonal_campaign_html(plain_body: str, subject: str) -> str:
     safe = _re.sub(r'\bLavagedevitre\.org\b', '§§LINK_BARE§§', safe, flags=_re.IGNORECASE)
     # 3) Replace phone → token
     safe = safe.replace("514-570-9802", '§§PHONE§§')
+
+    # 4) Generic URL linkify (fallback for booking URLs etc.) - only those not already tokenized
+    def _linkify_url(match):
+        url = match.group(0)
+        return f'<a href="{url}" style="color:{accent_solid};text-decoration:underline;font-weight:700;">{url}</a>'
+    safe = _re.sub(r'https?://[^\s<>"\']+', _linkify_url, safe)
 
     # Preserve line breaks FIRST (before swapping tokens since tokens contain no newlines)
     safe = safe.replace("\n", "<br>")
@@ -3518,6 +3548,17 @@ def _build_seasonal_campaign_html(plain_body: str, subject: str) -> str:
           <p style="margin:12px 0 0 0;font-size:13px;color:#6B7280;font-weight:600;">
             📱 Scannez pour prendre rendez-vous
           </p>
+        </div>
+        """
+
+    # Seasonal ribbon (top of content)
+    season_ribbon = ""
+    if season_label:
+        season_ribbon = f"""
+        <div style="text-align:center;margin-bottom:14px;">
+          <span style="display:inline-block;padding:6px 16px;background:{accent_solid};color:#FFFFFF;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:0.5px;text-transform:uppercase;">
+            {season_label}
+          </span>
         </div>
         """
 
@@ -3544,15 +3585,16 @@ def _build_seasonal_campaign_html(plain_body: str, subject: str) -> str:
     <tr>
       <td align="center">
         <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#FFFFFF;border-radius:16px;overflow:hidden;box-shadow:0 6px 28px rgba(0,0,0,0.08);">
-          <!-- Top accent bar -->
+          <!-- Top accent bar (seasonal) -->
           <tr>
-            <td style="height:6px;background:linear-gradient(90deg,#0891B2,#06B6D4,#22D3EE);"></td>
+            <td style="height:6px;background:{accent_gradient};"></td>
           </tr>
 
           <!-- Content with watermark logo -->
           <tr>
             <td style="padding:40px 32px;{bg_style}">
               <div style="background:rgba(255,255,255,0.82);border-radius:12px;padding:20px;">
+                {season_ribbon}
                 <div style="font-size:16px;line-height:1.75;color:#1F2937;">
                   {safe}
                 </div>

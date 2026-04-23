@@ -34,7 +34,7 @@ interface AppointmentRequest {
   request_type?: string;
 }
 
-type FilterType = 'pending' | 'all' | 'alternative_offered' | 'accepted' | 'declined';
+type FilterType = 'pending' | 'all' | 'alternative_offered' | 'accepted' | 'estimate_sent' | 'declined';
 type TypeFilter = 'all' | 'rdv' | 'est';
 
 export default function RequestsScreen() {
@@ -89,6 +89,7 @@ export default function RequestsScreen() {
   const getStatusColor = (status: string) => {
     if (status === 'accepted') return '#34C759';
     if (status === 'alternative_offered') return '#FF9500';
+    if (status === 'estimate_sent') return '#3B82F6';
     if (status === 'declined') return '#9CA3AF';
     return '#0891B2';
   };
@@ -97,6 +98,7 @@ export default function RequestsScreen() {
     if (status === 'alternative_offered') return 'Alternative';
     if (status === 'pending') return 'En attente';
     if (status === 'accepted') return 'Accepté';
+    if (status === 'estimate_sent') return '💲 Estimation';
     if (status === 'declined') return 'Archivé';
     return status;
   };
@@ -117,6 +119,7 @@ export default function RequestsScreen() {
 
   const filters: { key: FilterType; label: string }[] = [
     { key: 'pending', label: 'En attente' },
+    { key: 'estimate_sent', label: '💲 Estimations' },
     { key: 'alternative_offered', label: 'Alternative' },
     { key: 'accepted', label: 'Acceptées' },
     { key: 'declined', label: '🗂️ Archivées' },

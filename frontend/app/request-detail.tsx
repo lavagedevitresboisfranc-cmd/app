@@ -38,6 +38,11 @@ interface AppointmentRequest {
   preferred_time: string;
   message: string;
   status: string;
+  request_type?: string;
+  quoted_price?: number | null;
+  quote_note?: string | null;
+  quote_valid_until?: string | null;
+  quoted_at?: string | null;
   suggested_date: string | null;
   suggested_time: string | null;
   suggested_note: string | null;
@@ -102,6 +107,53 @@ export default function RequestDetailScreen() {
       Alert.alert('Erreur', 'Erreur réseau');
     } finally {
       setActing(false);
+    }
+  };
+
+  const handleConvertEstimate = async () => {
+    if (!request) return;
+    const price = request.quoted_price || 0;
+    const doConvert = async () => {
+      Keyboard.dismiss();
+      setActing(true);
+      try {
+        const res = await fetch(`${API_URL}/api/requests/${id}/accept`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ price }),
+        });
+        if (res.ok) {
+          Alert.alert(
+            '✅ Converti !',
+            `Rendez-vous confirmé créé avec succès\nPrix : ${price.toFixed(2)} $`,
+            [{ text: 'OK', onPress: () => router.back() }]
+          );
+        } else {
+          const err = await res.text();
+          Alert.alert('Erreur', `Conversion impossible: ${err}`);
+        }
+      } catch {
+        Alert.alert('Erreur', 'Erreur réseau');
+      } finally {
+        setActing(false);
+      }
+    };
+
+    // Confirmation dialog
+    if (Platform.OS === 'web') {
+      const ok = window.confirm(
+        `Convertir cette estimation en rendez-vous confirmé ?\n\n• Client: ${request.customer_name}\n• Date: ${request.preferred_date} à ${request.preferred_time}\n• Prix: ${price.toFixed(2)} $\n\nUn RDV sera créé automatiquement.`
+      );
+      if (ok) await doConvert();
+    } else {
+      Alert.alert(
+        '🔄 Convertir en RDV ?',
+        `Client: ${request.customer_name}\nDate: ${request.preferred_date} à ${request.preferred_time}\nPrix: ${price.toFixed(2)} $\n\nUn RDV confirmé sera créé automatiquement.`,
+        [
+          { text: 'Annuler', style: 'cancel' },
+          { text: 'Convertir', style: 'default', onPress: doConvert },
+        ]
+      );
     }
   };
 
@@ -280,6 +332,7 @@ export default function RequestDetailScreen() {
   const getStatusColor = (status: string) => {
     if (status === 'accepted') return '#34C759';
     if (status === 'alternative_offered') return '#FF9500';
+    if (status === 'estimate_sent') return '#3B82F6';
     if (status === 'declined') return '#9CA3AF';
     return '#0891B2';
   };
@@ -287,6 +340,7 @@ export default function RequestDetailScreen() {
   const getStatusLabel = (status: string) => {
     if (status === 'alternative_offered') return 'Alternative proposée';
     if (status === 'accepted') return 'Accepté';
+    if (status === 'estimate_sent') return 'Estimation envoyée';
     if (status === 'pending') return 'En attente';
     if (status === 'declined') return 'Archivé';
     return status;
@@ -489,6 +543,80 @@ export default function RequestDetailScreen() {
 
               <TouchableOpacity
                 testID="decline-request-button"
+                style={styles.declineBtn}
+                activeOpacity={0.7}
+                onPress={handleDecline}
+              >
+                <Feather name="x" size={18} color="#FF3B30" />
+                <Text style={styles.declineBtnText}>🗂️ Archiver</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Estimate sent — offer to convert to a confirmed appointment */}
+          {request?.status === 'estimate_sent' && (
+            <View style={styles.actionsSection}>
+              <Text style={styles.sectionLabel}>ESTIMATION ENVOYÉE</Text>
+
+              {/* Quote recap card */}
+              <View style={styles.quoteRecapCard}>
+                <View style={styles.quoteRecapHeader}>
+                  <Feather name="dollar-sign" size={18} color="#3B82F6" />
+                  <Text style={styles.quoteRecapTitle}>Devis transmis au client</Text>
+                </View>
+                <View style={styles.quoteRecapRow}>
+                  <Text style={styles.quoteRecapLabel}>Prix proposé</Text>
+                  <Text style={styles.quoteRecapPrice}>
+                    {(request.quoted_price || 0).toFixed(2)} $
+                  </Text>
+                </View>
+                {request.quote_valid_until ? (
+                  <View style={styles.quoteRecapRow}>
+                    <Text style={styles.quoteRecapLabel}>Valide jusqu'au</Text>
+                    <Text style={styles.quoteRecapValue}>{request.quote_valid_until}</Text>
+                  </View>
+                ) : null}
+                {request.quote_note ? (
+                  <View style={{ marginTop: 8 }}>
+                    <Text style={styles.quoteRecapLabel}>Note</Text>
+                    <Text style={styles.quoteRecapValue}>{request.quote_note}</Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <Text style={styles.convertHint}>
+                Le client a accepté ? Convertissez cette estimation en rendez-vous confirmé.
+              </Text>
+
+              <TouchableOpacity
+                testID="convert-estimate-button"
+                style={styles.convertBtn}
+                activeOpacity={0.8}
+                onPress={handleConvertEstimate}
+                disabled={acting}
+              >
+                <Feather name="check-circle" size={20} color="#FFFFFF" />
+                <Text style={styles.convertBtnText}>
+                  {acting ? 'Conversion…' : '✅ Convertir en RDV confirmé'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                testID="resend-estimate-button"
+                style={styles.estimateBtn}
+                activeOpacity={0.7}
+                onPress={() => {
+                  setEstimatePrice(String(request.quoted_price || ''));
+                  setEstimateNote(request.quote_note || '');
+                  setShowEstimate(true);
+                }}
+              >
+                <Feather name="refresh-cw" size={18} color="#FFFFFF" />
+                <Text style={styles.estimateBtnText}>Renvoyer / Modifier l'estimation</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                testID="decline-estimate-button"
                 style={styles.declineBtn}
                 activeOpacity={0.7}
                 onPress={handleDecline}
@@ -897,6 +1025,78 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  // Convert estimate -> appointment styles
+  quoteRecapCard: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    marginBottom: 12,
+  },
+  quoteRecapHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  quoteRecapTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1E40AF',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  quoteRecapRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  quoteRecapLabel: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '600',
+  },
+  quoteRecapValue: {
+    fontSize: 14,
+    color: '#0F172A',
+    fontWeight: '700',
+    flexShrink: 1,
+    textAlign: 'right',
+  },
+  quoteRecapPrice: {
+    fontSize: 20,
+    color: '#059669',
+    fontWeight: '800',
+  },
+  convertHint: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontStyle: 'italic',
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  convertBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#10B981',
+    borderRadius: 10,
+    paddingVertical: 15,
+    gap: 8,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  convertBtnText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
   },
   // Estimate modal styles
   estimateOverlay: {
