@@ -147,6 +147,85 @@ export default function CreateScreen() {
     }
   };
 
+  // Helper: after saving, prompt to sync contact changes to the Client DB
+  const maybeSyncClientDb = async () => {
+    if (!isEditing) return; // only for edits
+    // Only ask if at least one of address/email/phone changed
+    const origEmail = (params.editEmail || '').trim();
+    const origPhone = (params.editPhone || '').trim();
+    const origAddress = (params.editAddress || '').trim();
+    const newEmail = clientEmail.trim();
+    const newPhone = clientPhone.trim();
+    const newAddress = clientAddress.trim();
+
+    const changes: Array<{ field: string; label: string; from: string; to: string; key: 'email' | 'phone' | 'address' }> = [];
+    if (newEmail !== origEmail) changes.push({ field: 'email', label: 'Courriel', from: origEmail || '(vide)', to: newEmail || '(vide)', key: 'email' });
+    if (newPhone !== origPhone) changes.push({ field: 'phone', label: 'Téléphone', from: origPhone || '(vide)', to: newPhone || '(vide)', key: 'phone' });
+    if (newAddress !== origAddress) changes.push({ field: 'address', label: 'Adresse', from: origAddress || '(vide)', to: newAddress || '(vide)', key: 'address' });
+
+    if (changes.length === 0) return; // nothing to sync
+
+    // Find matching client in the CRM DB (by email → phone → name)
+    try {
+      const matchRes = await fetch(`${API_URL}/api/clients-db/match`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: clientName.trim(),
+          email: origEmail,       // match using ORIGINAL values first
+          phone: origPhone,
+        }),
+      });
+      if (!matchRes.ok) return;
+      const match = await matchRes.json();
+      if (!match.matched || !match.client) return; // no client found → skip silently
+
+      const client = match.client;
+      const summary = changes.map(c => `• ${c.label}: ${c.from} → ${c.to}`).join('\n');
+
+      const applyUpdate = async () => {
+        try {
+          const body: any = {};
+          if (newEmail !== origEmail) body.email = newEmail;
+          if (newPhone !== origPhone) body.phone = newPhone;
+          if (newAddress !== origAddress) body.address = newAddress;
+          const r = await fetch(`${API_URL}/api/clients-db/${client.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          if (!r.ok) {
+            Alert.alert('Erreur', 'La mise à jour de la fiche client a échoué.');
+          }
+        } catch {
+          Alert.alert('Erreur', "Impossible de synchroniser la fiche client.");
+        }
+      };
+
+      // Ask user for permission
+      const title = '🔄 Synchroniser avec la fiche client ?';
+      const message = `"${client.name}" existe dans votre Base Clients.\n\nVoulez-vous aussi y appliquer ces modifications ?\n\n${summary}`;
+
+      return await new Promise<void>((resolve) => {
+        if (Platform.OS === 'web') {
+          // eslint-disable-next-line no-alert
+          if (window.confirm(`${title}\n\n${message}`)) {
+            applyUpdate().finally(() => resolve());
+          } else {
+            resolve();
+          }
+        } else {
+          Alert.alert(title, message, [
+            { text: 'Non', style: 'cancel', onPress: () => resolve() },
+            { text: 'Oui, synchroniser', style: 'default', onPress: () => applyUpdate().finally(() => resolve()) },
+          ]);
+        }
+      });
+    } catch (e) {
+      console.error('Client sync check failed', e);
+    }
+  };
+
   const handleSave = async () => {
     if (!title.trim()) {
       Alert.alert('Required', 'Please enter a title');
@@ -190,7 +269,10 @@ export default function CreateScreen() {
       });
 
       if (res.ok) {
-        router.back();
+        // If editing and contact info changed, ask to sync the Client DB
+        await maybeSyncClientDb();
+        // Robust navigation (works even with empty history stack)
+        try { router.replace('/' as any); } catch { router.push('/' as any); }
       } else {
         Alert.alert('Error', 'Failed to save appointment');
       }
