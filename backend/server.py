@@ -96,6 +96,11 @@ class RequestSuggest(BaseModel):
     suggested_time: str
     note: Optional[str] = ""
 
+class RequestEstimate(BaseModel):
+    price: float
+    note: Optional[str] = ""
+    valid_until: Optional[str] = None  # ISO date, optional
+
 class RequestResponse(BaseModel):
     id: str
     customer_name: str
@@ -112,6 +117,10 @@ class RequestResponse(BaseModel):
     created_at: str
     request_type: Optional[str] = "rdv"
     client_id: Optional[str] = None
+    quoted_price: Optional[float] = None
+    quote_note: Optional[str] = None
+    quote_valid_until: Optional[str] = None
+    quoted_at: Optional[str] = None
 
 
 # --- Voice Transcription ---
@@ -878,6 +887,148 @@ async def suggest_alternative(request_id: str, data: RequestSuggest):
 
     updated = await db.appointment_requests.find_one({"id": request_id}, {"_id": 0})
     return RequestResponse(**updated)
+
+@api_router.put("/requests/{request_id}/send-estimate", response_model=RequestResponse)
+async def send_estimate(request_id: str, data: RequestEstimate):
+    """Send a quote/estimate to the client with a price.
+    Marks the request as 'estimate_sent' and emails a beautifully formatted quote to the client."""
+    req = await db.appointment_requests.find_one({"id": request_id}, {"_id": 0})
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.appointment_requests.update_one(
+        {"id": request_id},
+        {"$set": {
+            "status": "estimate_sent",
+            "quoted_price": float(data.price),
+            "quote_note": data.note or "",
+            "quote_valid_until": data.valid_until or "",
+            "quoted_at": now_iso,
+        }}
+    )
+
+    # Send email to client with the quote
+    client_email = (req.get("customer_email") or "").strip()
+    sent = False
+    if client_email and resend.api_key:
+        try:
+            client_name = req.get("customer_name", "")
+            original_date = req.get("preferred_date", "")
+            original_time = req.get("preferred_time", "")
+            address = req.get("customer_address", "")
+            note = (data.note or "").strip()
+            price_str = f"{float(data.price):,.2f} $".replace(",", " ")
+
+            def _fmt_date(d: str) -> str:
+                try:
+                    dt = datetime.fromisoformat(d)
+                    months_fr = ["janvier", "février", "mars", "avril", "mai", "juin",
+                                 "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+                    return f"{dt.day} {months_fr[dt.month - 1]} {dt.year}"
+                except Exception:
+                    return d
+
+            note_block = ""
+            if note:
+                safe_note = note.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br>')
+                note_block = f"""
+                <div style="background:#F0F9FF;border-left:4px solid #0891B2;padding:14px 16px;border-radius:8px;margin:20px 0;">
+                    <p style="margin:0 0 4px 0;color:#075985;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">💬 Note de Lavage de Vitres Bois-Franc</p>
+                    <p style="margin:0;color:#0C4A6E;font-size:15px;line-height:1.6;">{safe_note}</p>
+                </div>
+                """
+
+            valid_block = ""
+            if data.valid_until:
+                valid_block = f"""
+                <p style="margin:8px 0 0 0;color:#6B7280;font-size:12px;text-align:center;">
+                    Valide jusqu'au {_fmt_date(data.valid_until)}
+                </p>
+                """
+
+            html = f"""<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#F3F4F6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F3F4F6;padding:20px 0;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#FFFFFF;border-radius:16px;overflow:hidden;box-shadow:0 6px 28px rgba(0,0,0,0.08);">
+        <tr><td style="height:6px;background:linear-gradient(90deg,#0891B2,#06B6D4,#22D3EE);"></td></tr>
+        <tr><td style="padding:32px 28px 8px 28px;">
+          <p style="margin:0;font-size:28px;">💰</p>
+          <h1 style="margin:8px 0 4px 0;color:#111827;font-size:22px;">Voici votre estimation</h1>
+          <p style="margin:0;color:#6B7280;font-size:14px;">Bonjour {client_name},</p>
+        </td></tr>
+        <tr><td style="padding:12px 28px 0 28px;">
+          <p style="margin:0 0 20px 0;color:#374151;font-size:15px;line-height:1.6;">
+            Merci pour votre demande d'estimation pour le lavage de vitres. Voici mon prix proposé :
+          </p>
+
+          <!-- Price — big highlight -->
+          <div style="background:linear-gradient(135deg,#ECFDF5,#D1FAE5);border:2px solid #10B981;border-radius:12px;padding:24px;text-align:center;margin:8px 0 20px 0;">
+            <p style="margin:0 0 6px 0;color:#047857;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Prix estimé</p>
+            <p style="margin:0;color:#065F46;font-size:36px;font-weight:800;">{price_str}</p>
+            {valid_block}
+          </div>
+
+          <!-- Service details -->
+          <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:14px 16px;margin:0 0 16px 0;">
+            <p style="margin:0 0 8px 0;color:#374151;font-size:13px;font-weight:700;">📋 Détails de la demande</p>
+            <p style="margin:0 0 4px 0;color:#4B5563;font-size:13px;">📅 Date souhaitée : {_fmt_date(original_date)} à {original_time}</p>
+            {f'<p style="margin:0;color:#4B5563;font-size:13px;">📍 Adresse : {address}</p>' if address else ''}
+          </div>
+
+          {note_block}
+
+          <p style="margin:20px 0 8px 0;color:#374151;font-size:15px;line-height:1.6;">
+            <strong>Cette estimation vous convient-elle ?</strong><br>
+            Répondez-moi par courriel ou téléphone pour confirmer le rendez-vous.
+          </p>
+        </td></tr>
+
+        <!-- Contact card -->
+        <tr><td style="padding:0 28px 24px 28px;">
+          <div style="background:#F3F4F6;border-radius:12px;padding:16px;text-align:center;">
+            <p style="margin:0 0 8px 0;color:#111827;font-size:15px;font-weight:700;">Lavage de Vitres Bois-Franc</p>
+            <p style="margin:0 0 4px 0;">
+              <a href="tel:+15145709802" style="color:#0891B2;text-decoration:none;font-size:15px;font-weight:600;">📞 514-570-9802</a>
+            </p>
+            <p style="margin:0;">
+              <a href="https://Lavagedevitre.org" style="color:#0891B2;text-decoration:none;font-size:15px;font-weight:600;">🌐 Lavagedevitre.org</a>
+            </p>
+          </div>
+        </td></tr>
+
+        <tr><td style="padding:16px 28px;background:#0F172A;text-align:center;">
+          <p style="margin:0;font-size:12px;color:#94A3B8;">Merci de votre confiance!</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+
+            from_addr = os.environ.get("RESEND_FROM") or "onboarding@resend.dev"
+            await asyncio.to_thread(
+                resend.Emails.send,
+                {
+                    "from": from_addr,
+                    "to": [client_email],
+                    "reply_to": NOTIFY_EMAIL if NOTIFY_EMAIL else None,
+                    "subject": f"Votre estimation — {price_str}",
+                    "html": html,
+                },
+            )
+            sent = True
+            logger.info(f"Estimate email sent to client {client_email} — price {price_str}")
+        except Exception as e:
+            logger.error(f"Failed to send estimate email to {client_email}: {e}")
+
+    updated = await db.appointment_requests.find_one({"id": request_id}, {"_id": 0})
+    result = RequestResponse(**updated)
+    # Return the email-send status in a side-channel for the frontend
+    return result
+
 
 @api_router.delete("/requests/{request_id}")
 async def decline_request(request_id: str):

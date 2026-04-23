@@ -12,6 +12,8 @@ import {
   Platform,
   Keyboard,
   Linking,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -54,6 +56,10 @@ export default function RequestDetailScreen() {
   const [suggestedTime, setSuggestedTime] = useState('');
   const [suggestNote, setSuggestNote] = useState('');
   const [acting, setActing] = useState(false);
+  // Estimate modal (for quote response to 'est' requests)
+  const [showEstimate, setShowEstimate] = useState(false);
+  const [estimatePrice, setEstimatePrice] = useState('');
+  const [estimateNote, setEstimateNote] = useState('');
 
   useFocusEffect(
     useCallback(() => {
@@ -161,6 +167,65 @@ export default function RequestDetailScreen() {
         );
       } else {
         Alert.alert('Erreur', 'Échec de l\'envoi');
+      }
+    } catch {
+      Alert.alert('Erreur', 'Erreur réseau');
+    } finally {
+      setActing(false);
+    }
+  };
+
+  const handleSendEstimate = async () => {
+    const priceNum = parseFloat((estimatePrice || '').replace(',', '.'));
+    if (isNaN(priceNum) || priceNum <= 0) {
+      Alert.alert('Prix invalide', 'Entrez un prix supérieur à 0.');
+      return;
+    }
+    Keyboard.dismiss();
+    setActing(true);
+    try {
+      const res = await fetch(`${API_URL}/api/requests/${id}/send-estimate`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          price: priceNum,
+          note: estimateNote.trim(),
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRequest(data);
+        setShowEstimate(false);
+        // Native email/SMS fallback (in case Resend is sandbox or the email didn't go through)
+        const customerName = request?.customer_name || 'Client';
+        const customerEmail = (request?.customer_email || '').trim();
+        const customerPhone = (request?.customer_phone || '').replace(/\D/g, '');
+        const priceStr = `${priceNum.toFixed(2)} $`;
+        const noteBlock = estimateNote.trim() ? `\n\nNote: ${estimateNote.trim()}` : '';
+        const message = `Bonjour ${customerName},\n\nMerci pour votre demande d'estimation. Voici mon prix proposé :\n\n💰 Prix : ${priceStr}${noteBlock}\n\nCette estimation vous convient-elle ? Répondez pour confirmer le rendez-vous.\n\nMerci,\nLavage de Vitres Bois-Franc\n📞 514-570-9802`;
+
+        const options: any[] = [];
+        if (customerEmail) {
+          options.push({
+            text: '📧 Courriel',
+            onPress: () => Linking.openURL(`mailto:${customerEmail}?subject=${encodeURIComponent(`Votre estimation — ${priceStr}`)}&body=${encodeURIComponent(message)}`),
+          });
+        }
+        if (customerPhone) {
+          options.push({
+            text: '📱 SMS',
+            onPress: () => Linking.openURL(`sms:${customerPhone}${Platform.OS === 'ios' ? '&' : '?'}body=${encodeURIComponent(message)}`),
+          });
+        }
+        options.push({ text: 'OK (déjà envoyé via Resend)', style: 'cancel' });
+
+        Alert.alert(
+          '✅ Estimation enregistrée',
+          `Prix ${priceStr} pour ${customerName}.\n\nUn courriel HTML a été envoyé (si Resend est activé).\n\nVoulez-vous aussi envoyer manuellement ?`,
+          options
+        );
+      } else {
+        Alert.alert('Erreur', "Échec de l'envoi de l'estimation");
       }
     } catch {
       Alert.alert('Erreur', 'Erreur réseau');
@@ -405,6 +470,23 @@ export default function RequestDetailScreen() {
                 <Text style={styles.suggestBtnText}>Suggérer une alternative</Text>
               </TouchableOpacity>
 
+              {/* Estimate button — only for 'est' request type */}
+              {request?.request_type === 'est' && (
+                <TouchableOpacity
+                  testID="send-estimate-button"
+                  style={styles.estimateBtn}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setEstimatePrice('');
+                    setEstimateNote('');
+                    setShowEstimate(true);
+                  }}
+                >
+                  <Feather name="dollar-sign" size={18} color="#FFFFFF" />
+                  <Text style={styles.estimateBtnText}>Envoyer une estimation (prix)</Text>
+                </TouchableOpacity>
+              )}
+
               <TouchableOpacity
                 testID="decline-request-button"
                 style={styles.declineBtn}
@@ -565,6 +647,61 @@ export default function RequestDetailScreen() {
 
           <View style={{ height: 48 }} />
         </ScrollView>
+
+        {/* Estimate Modal (for 'est' request type) */}
+        <Modal visible={showEstimate} animationType="slide" transparent onRequestClose={() => setShowEstimate(false)}>
+          <Pressable style={styles.estimateOverlay} onPress={() => { Keyboard.dismiss(); setShowEstimate(false); }}>
+            <Pressable style={styles.estimateBox} onPress={(e: any) => e.stopPropagation()}>
+              <View style={styles.estimateHeader}>
+                <Text style={styles.estimateTitle}>💰 Envoyer une estimation</Text>
+                <TouchableOpacity onPress={() => setShowEstimate(false)}>
+                  <Feather name="x" size={24} color="#111" />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.estimateHint}>
+                Entrez le prix estimé pour "{request?.customer_name || 'ce client'}". Un courriel HTML élégant lui sera envoyé avec le montant.
+              </Text>
+
+              <Text style={styles.estimateLabel}>Prix estimé ($)</Text>
+              <TextInput
+                style={styles.estimateInput}
+                placeholder="Ex: 150.00"
+                placeholderTextColor="#9CA3AF"
+                value={estimatePrice}
+                onChangeText={setEstimatePrice}
+                keyboardType="decimal-pad"
+                autoFocus
+              />
+
+              <Text style={styles.estimateLabel}>Note / Description (optionnelle)</Text>
+              <TextInput
+                style={[styles.estimateInput, { minHeight: 80, textAlignVertical: 'top' }]}
+                placeholder="Ex: 2 étages, intérieur et extérieur. Valide 30 jours."
+                placeholderTextColor="#9CA3AF"
+                value={estimateNote}
+                onChangeText={setEstimateNote}
+                multiline
+              />
+
+              <TouchableOpacity
+                style={[styles.estimateSendBtn, acting && { opacity: 0.6 }]}
+                onPress={handleSendEstimate}
+                disabled={acting}
+                activeOpacity={0.8}
+              >
+                {acting ? (
+                  <Text style={styles.estimateSendText}>Envoi en cours...</Text>
+                ) : (
+                  <>
+                    <Feather name="send" size={18} color="#fff" />
+                    <Text style={styles.estimateSendText}>Envoyer l'estimation</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </Pressable>
+          </Pressable>
+        </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -746,6 +883,85 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FF9500',
+  },
+  estimateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#059669',
+    borderRadius: 10,
+    paddingVertical: 14,
+    gap: 8,
+  },
+  estimateBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  // Estimate modal styles
+  estimateOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  estimateBox: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    paddingBottom: 32,
+    maxHeight: '92%',
+  },
+  estimateHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  estimateTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  estimateHint: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  estimateLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#374151',
+    marginBottom: 6,
+    marginTop: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  estimateInput: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: '#111827',
+    backgroundColor: '#FAFAFA',
+  },
+  estimateSendBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#059669',
+    paddingVertical: 14,
+    borderRadius: 10,
+    marginTop: 20,
+  },
+  estimateSendText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
   },
   declineBtn: {
     flexDirection: 'row',
