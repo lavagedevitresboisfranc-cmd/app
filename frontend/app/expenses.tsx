@@ -527,17 +527,30 @@ export default function ExpensesScreen() {
   };
 
   const confirmDelete = (exp: Expense) => {
-    Alert.alert('Supprimer cette dépense ?', `${exp.amount.toFixed(2)} $ — ${exp.description || exp.category}`, [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Supprimer', style: 'destructive', onPress: async () => {
-          try {
-            await fetch(`${API_URL}/api/expenses/${exp.id}`, { method: 'DELETE' });
-            await load();
-          } catch { Alert.alert('Erreur', 'Suppression impossible'); }
-        },
-      },
-    ]);
+    const doDelete = async () => {
+      try {
+        await fetch(`${API_URL}/api/expenses/${exp.id}`, { method: 'DELETE' });
+        await load();
+      } catch {
+        Alert.alert('Erreur', 'Suppression impossible');
+      }
+    };
+    const msg = `${exp.amount.toFixed(2)} $ — ${exp.description || exp.vendor || exp.category}`;
+    if (Platform.OS === 'web') {
+      // eslint-disable-next-line no-alert
+      if (window.confirm(`Supprimer cette dépense ?\n\n${msg}`)) {
+        doDelete();
+      }
+    } else {
+      Alert.alert(
+        'Supprimer cette dépense ?',
+        msg,
+        [
+          { text: 'Annuler', style: 'cancel' },
+          { text: 'Supprimer', style: 'destructive', onPress: doDelete },
+        ]
+      );
+    }
   };
 
   const categoryMeta = (id: string) => CATEGORIES.find(c => c.id === id) || CATEGORIES[0];
@@ -612,6 +625,20 @@ export default function ExpensesScreen() {
               </TouchableOpacity>
             </View>
           )}
+          {/* Delete expense button (visible, always available) */}
+          <TouchableOpacity
+            testID={`delete-expense-${item.id}`}
+            onPress={(e: any) => {
+              e?.stopPropagation?.();
+              e?.preventDefault?.();
+              confirmDelete(item);
+            }}
+            style={styles.cardDeleteBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            activeOpacity={0.7}
+          >
+            <Feather name="trash-2" size={18} color="#DC2626" />
+          </TouchableOpacity>
         </View>
       </TouchableOpacity>
     );
@@ -948,14 +975,19 @@ export default function ExpensesScreen() {
             {/* Action Row */}
             <View style={styles.formActions}>
               {editing && (
-                <TouchableOpacity onPress={() => { setShowForm(false); confirmDelete(editing); }} style={[styles.formBtn, { backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA' }]}>
-                  <Feather name="trash-2" size={18} color="#DC2626" />
+                <TouchableOpacity
+                  onPress={() => { setShowForm(false); confirmDelete(editing); }}
+                  style={[styles.formBtn, { backgroundColor: '#FEE2E2', borderWidth: 1, borderColor: '#FCA5A5' }]}
+                  testID="delete-expense-btn"
+                >
+                  <Feather name="trash-2" size={16} color="#DC2626" />
+                  <Text style={[styles.formBtnText, { color: '#DC2626' }]}>Supprimer</Text>
                 </TouchableOpacity>
               )}
-              <TouchableOpacity onPress={() => setShowForm(false)} style={[styles.formBtn, { backgroundColor: '#F3F4F6', flex: 1 }]}>
+              <TouchableOpacity onPress={() => setShowForm(false)} style={[styles.formBtn, { backgroundColor: '#F3F4F6', flex: 0.8 }]}>
                 <Text style={styles.formBtnGrayText}>Annuler</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={save} style={[styles.formBtn, { backgroundColor: '#0891B2', flex: 1.5 }]} disabled={saving}>
+              <TouchableOpacity onPress={save} style={[styles.formBtn, { backgroundColor: '#0891B2', flex: 1.2 }]} disabled={saving}>
                 {saving ? <ActivityIndicator color="#fff" /> : <>
                   <Feather name="check" size={18} color="#fff" />
                   <Text style={styles.formBtnText}>{editing ? 'Enregistrer' : 'Ajouter'}</Text>
@@ -1372,6 +1404,17 @@ const styles = StyleSheet.create({
   cardDate: { fontSize: 11, color: '#9CA3AF', fontWeight: '600' },
   thumbWrap: { borderRadius: 8, overflow: 'hidden' },
   receiptWrap: { position: 'relative', marginLeft: 6 },
+  cardDeleteBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
   receiptCloseBadge: {
     position: 'absolute',
     top: -6,
