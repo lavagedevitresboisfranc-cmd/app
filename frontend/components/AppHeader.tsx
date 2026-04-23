@@ -25,6 +25,7 @@ const menuSections: MenuSection[] = [
       { icon: 'list' as const, labelKey: 'menu.items.allAppointments', route: '/appointments' },
       { icon: 'archive' as const, labelKey: 'menu.items.appointmentsArchive', route: '/appointments-archive' },
       { icon: 'plus-circle' as const, labelKey: 'menu.items.newAppointment', route: '/create' },
+      { icon: 'dollar-sign' as const, labelKey: 'menu.items.estimate', route: '/estimate' },
       { icon: 'inbox' as const, labelKey: 'menu.items.requests', route: '/requests' },
     ],
   },
