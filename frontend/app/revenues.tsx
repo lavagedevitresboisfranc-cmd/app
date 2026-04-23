@@ -44,7 +44,7 @@ interface Stats {
 }
 
 export default function RevenuesScreen() {
-  const [revenues, setRevenues] = useState<Revenue[]>([]);
+  const [revenues, setRevenues] = useState<Revenue[]>([]);  // ALL revenues (unfiltered)
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -64,9 +64,10 @@ export default function RevenuesScreen() {
 
   const load = useCallback(async () => {
     try {
-      const q = filterCategory ? `?category=${filterCategory}` : '';
+      // Always fetch ALL revenues (no server-side category filter) so we can compute
+      // accurate week/month/year totals AND filter client-side for display.
       const [rRes, sRes] = await Promise.all([
-        fetch(`${API_URL}/api/revenues${q}`),
+        fetch(`${API_URL}/api/revenues`),
         fetch(`${API_URL}/api/revenues/stats`),
       ]);
       const rData = await rRes.json();
@@ -76,9 +77,48 @@ export default function RevenuesScreen() {
     } catch (e) {
       console.error('Load revenues failed', e);
     } finally { setLoading(false); }
-  }, [filterCategory]);
+  }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Client-side filter for display (keeps list focused on selected category)
+  const displayedRevenues = useMemo(
+    () => (filterCategory ? revenues.filter((r) => r.category === filterCategory) : revenues),
+    [revenues, filterCategory]
+  );
+
+  // === Period totals (always computed from ALL revenues, ignoring category filter) ===
+  const { weekTotal, monthTotal, yearTotal, weekCount, monthCount, yearCount } = useMemo(() => {
+    const now = new Date();
+    // Start of current week (Monday 00:00 local)
+    const d = new Date(now);
+    const dow = d.getDay(); // 0=Sun..6=Sat
+    const diffToMon = (dow + 6) % 7; // days since Monday
+    d.setDate(d.getDate() - diffToMon);
+    d.setHours(0, 0, 0, 0);
+    const weekStart = d;
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const yearStart = new Date(now.getFullYear(), 0, 1);
+
+    // Optionally apply the category filter to period totals (so they match what user filters on)
+    const src = filterCategory
+      ? revenues.filter((r) => r.category === filterCategory)
+      : revenues;
+
+    let w = 0, m = 0, y = 0, wc = 0, mc = 0, yc = 0;
+    for (const r of src) {
+      if (!r.date) continue;
+      const dt = new Date(r.date + 'T00:00:00');
+      if (isNaN(dt.getTime())) continue;
+      if (dt >= yearStart) { y += r.amount; yc += 1; }
+      if (dt >= monthStart) { m += r.amount; mc += 1; }
+      if (dt >= weekStart) { w += r.amount; wc += 1; }
+    }
+    return {
+      weekTotal: w, monthTotal: m, yearTotal: y,
+      weekCount: wc, monthCount: mc, yearCount: yc,
+    };
+  }, [revenues, filterCategory]);
 
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
@@ -184,7 +224,10 @@ export default function RevenuesScreen() {
     );
   };
 
-  const totalVisible = useMemo(() => revenues.reduce((s, r) => s + r.amount, 0), [revenues]);
+  const totalVisible = useMemo(
+    () => displayedRevenues.reduce((s, r) => s + r.amount, 0),
+    [displayedRevenues]
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -209,6 +252,46 @@ export default function RevenuesScreen() {
             <Feather name="download" size={18} color="#059669" />
             <Text style={styles.exportBtnText}>Excel</Text>
           </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* === SOMMAIRE SEMAINE / MOIS / ANNÉE === */}
+      <View style={styles.summaryRow}>
+        <View style={[styles.summaryCard, { backgroundColor: '#ECFEFF', borderColor: '#A5F3FC' }]}>
+          <View style={styles.summaryIconWrap}>
+            <Feather name="calendar" size={14} color="#0891B2" />
+          </View>
+          <Text style={styles.summaryLabel}>CETTE SEMAINE</Text>
+          <Text style={[styles.summaryAmount, { color: '#0E7490' }]}>
+            +{weekTotal.toFixed(2)} $
+          </Text>
+          <Text style={styles.summaryCount}>
+            {weekCount} revenu{weekCount > 1 ? 's' : ''}
+          </Text>
+        </View>
+        <View style={[styles.summaryCard, { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }]}>
+          <View style={styles.summaryIconWrap}>
+            <Feather name="bar-chart-2" size={14} color="#059669" />
+          </View>
+          <Text style={styles.summaryLabel}>CE MOIS-CI</Text>
+          <Text style={[styles.summaryAmount, { color: '#047857' }]}>
+            +{monthTotal.toFixed(2)} $
+          </Text>
+          <Text style={styles.summaryCount}>
+            {monthCount} revenu{monthCount > 1 ? 's' : ''}
+          </Text>
+        </View>
+        <View style={[styles.summaryCard, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
+          <View style={styles.summaryIconWrap}>
+            <Feather name="trending-up" size={14} color="#D97706" />
+          </View>
+          <Text style={styles.summaryLabel}>CETTE ANNÉE</Text>
+          <Text style={[styles.summaryAmount, { color: '#B45309' }]}>
+            +{yearTotal.toFixed(2)} $
+          </Text>
+          <Text style={styles.summaryCount}>
+            {yearCount} revenu{yearCount > 1 ? 's' : ''}
+          </Text>
         </View>
       </View>
 
@@ -263,7 +346,7 @@ export default function RevenuesScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.menuItemLabel}>Toutes les catégories</Text>
                   <Text style={styles.menuItemSub}>
-                    {revenues.length} revenu{revenues.length > 1 ? 's' : ''} visibles
+                    {displayedRevenues.length} revenu{displayedRevenues.length > 1 ? 's' : ''} visibles
                   </Text>
                 </View>
                 <Text style={styles.menuItemAmount}>+{(stats?.grand_total || 0).toFixed(0)}$</Text>
@@ -304,7 +387,7 @@ export default function RevenuesScreen() {
       {/* List */}
       {loading ? (
         <View style={styles.empty}><ActivityIndicator size="large" color="#10B981" /></View>
-      ) : revenues.length === 0 ? (
+      ) : displayedRevenues.length === 0 ? (
         <View style={styles.empty}>
           <Feather name="dollar-sign" size={48} color="#E5E7EB" />
           <Text style={styles.emptyTitle}>Aucun revenu</Text>
@@ -312,7 +395,7 @@ export default function RevenuesScreen() {
         </View>
       ) : (
         <FlatList
-          data={revenues}
+          data={displayedRevenues}
           keyExtractor={(i) => i.id}
           renderItem={renderRevenue}
           contentContainerStyle={{ padding: 16, gap: 10 }}
@@ -445,6 +528,47 @@ export default function RevenuesScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAFAFA' },
   header: { flexDirection: 'row', padding: 16, gap: 12, alignItems: 'stretch' },
+  // Summary cards (semaine / mois / année)
+  summaryRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  summaryCard: {
+    flex: 1,
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    minHeight: 82,
+    justifyContent: 'space-between',
+  },
+  summaryIconWrap: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  summaryLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#6B7280',
+    letterSpacing: 0.4,
+  },
+  summaryAmount: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  summaryCount: {
+    fontSize: 10,
+    color: '#6B7280',
+    fontWeight: '600',
+    marginTop: 2,
+  },
   totalBox: { flex: 1, backgroundColor: '#064E3B', padding: 14, borderRadius: 12 },
   totalLabel: { color: '#A7F3D0', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   totalAmount: { color: '#34D399', fontSize: 24, fontWeight: '800', marginTop: 2 },
