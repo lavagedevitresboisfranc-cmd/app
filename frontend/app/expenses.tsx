@@ -163,34 +163,87 @@ export default function ExpensesScreen() {
           Alert.alert('Permission refusée', "L'accès à la caméra est requis pour scanner.");
           return;
         }
+      } else {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted && Platform.OS !== 'web') {
+          Alert.alert('Permission refusée', "L'accès à la galerie est requis.");
+          return;
+        }
       }
       setScanning(true);
+
       const result = fromCamera
         ? await ImagePicker.launchCameraAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true,
+            allowsEditing: false,
             quality: 0.7,
             base64: true,
           })
         : await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true,
-            quality: 0.7,
-            base64: true,
+            // NOTE: allowsEditing + allowsMultipleSelection are mutually exclusive.
+            // We prioritize multi-selection for the scan flow.
             allowsMultipleSelection: true,
             selectionLimit: 20,
+            quality: 0.7,
+            base64: true,
           });
 
-      if (!result.canceled && result.assets?.length) {
-        const newPages = result.assets
-          .filter((a) => !!a.base64)
-          .map((a) => `data:image/jpeg;base64,${a.base64}`);
-        setScanPages((prev) => {
-          const combined = [...prev, ...newPages];
-          return combined.slice(0, 20);
-        });
+      if (result.canceled) {
+        return;
       }
+
+      if (!result.assets || result.assets.length === 0) {
+        Alert.alert('Erreur', 'Aucune image sélectionnée.');
+        return;
+      }
+
+      // Extract base64 from assets — handle both native (asset.base64) and web (asset.uri as data URL)
+      const newPages: string[] = [];
+      for (const a of result.assets) {
+        let dataUrl: string | null = null;
+        if (a.base64) {
+          // Native returns raw base64
+          dataUrl = a.base64.startsWith('data:')
+            ? a.base64
+            : `data:image/jpeg;base64,${a.base64}`;
+        } else if (a.uri && a.uri.startsWith('data:')) {
+          // Web may return data URL directly in uri
+          dataUrl = a.uri;
+        } else if (a.uri) {
+          // Fallback: fetch the uri and convert to base64 (web blob: or http: urls)
+          try {
+            const res = await fetch(a.uri);
+            const blob = await res.blob();
+            dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+          } catch (fetchErr) {
+            console.warn('Unable to convert uri to base64', fetchErr);
+          }
+        }
+        if (dataUrl) {
+          newPages.push(dataUrl);
+        }
+      }
+
+      if (newPages.length === 0) {
+        Alert.alert(
+          'Erreur',
+          "Impossible de lire l'image sélectionnée. Essayez un autre format (JPG ou PNG)."
+        );
+        return;
+      }
+
+      setScanPages((prev) => {
+        const combined = [...prev, ...newPages];
+        return combined.slice(0, 20);
+      });
     } catch (e: any) {
+      console.error('scanAddPage error:', e);
       Alert.alert('Erreur', `Impossible d'ajouter la page: ${e?.message || 'inconnu'}`);
     } finally {
       setScanning(false);
