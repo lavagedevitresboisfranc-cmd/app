@@ -59,6 +59,11 @@ export default function ClientsDbScreen() {
   const [newAddress, setNewAddress] = useState('');
   const [newNotes, setNewNotes] = useState('');
   const [creating, setCreating] = useState(false);
+  // Paste-from-email mode
+  const [showPaste, setShowPaste] = useState(false);
+  const [pasteText, setPasteText] = useState('');
+  // Duplicate check (real-time while typing)
+  const [dupMatch, setDupMatch] = useState<{ by: string; client: any } | null>(null);
 
   const fetchClients = useCallback(async () => {
     setLoading(true);
@@ -242,12 +247,151 @@ export default function ClientsDbScreen() {
     }
   };
 
-  // CREATE
+  // Real-time duplicate check while typing in create form (debounced)
+  useEffect(() => {
+    if (!showCreate) return;
+    const t = setTimeout(async () => {
+      const hasAny = newEmail.trim() || newPhone.trim() || newName.trim();
+      if (!hasAny) { setDupMatch(null); return; }
+      try {
+        const res = await fetch(`${API_URL}/api/clients-db/match`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: newName.trim(),
+            email: newEmail.trim(),
+            phone: newPhone.trim(),
+          }),
+        });
+        if (!res.ok) { setDupMatch(null); return; }
+        const data = await res.json();
+        setDupMatch(data.matched ? { by: data.by, client: data.client } : null);
+      } catch {
+        setDupMatch(null);
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [newName, newEmail, newPhone, showCreate]);
+
+  // Smart parser: extracts Name / Email / Phone / Address / Notes from pasted text
+  const parsePastedEmail = (raw: string): { name?: string; email?: string; phone?: string; address?: string; notes?: string } => {
+    const text = raw.replace(/\r\n/g, '\n').trim();
+    const result: any = {};
+
+    // Email — first one found
+    const emailMatch = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+    if (emailMatch) result.email = emailMatch[0].trim();
+
+    // Phone — North American formats
+    const phoneMatch = text.match(/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/);
+    if (phoneMatch) result.phone = phoneMatch[0].trim();
+
+    // Labeled field extraction (English + French) — "Label:" or "Label\nvalue"
+    const pickLabel = (labels: string[]): string | null => {
+      for (const label of labels) {
+        // Same-line: "Label: value"
+        const re1 = new RegExp(`${label}\\s*[:：]?\\s*\\n?\\s*([^\\n]+)`, 'i');
+        const m1 = text.match(re1);
+        if (m1 && m1[1]?.trim()) {
+          const val = m1[1].trim();
+          // Exclude the label itself or values that look like other labels
+          if (val.length > 1 && val.length < 250) return val;
+        }
+      }
+      return null;
+    };
+
+    const nameVal = pickLabel(['Nom', 'Name', 'Nom complet', 'Full name', 'Client', 'Prénom et nom']);
+    if (nameVal) result.name = nameVal;
+
+    const addressVal = pickLabel([
+      'Adresse', 'Address', 'Lieu', 'Lieu et date desiree', 'Lieu et date désirée',
+      'Location', 'Rue', 'Street', 'Adresse du lavage',
+    ]);
+    if (addressVal) result.address = addressVal;
+
+    // Message / Notes
+    const notesVal = pickLabel(['Message', 'Note', 'Notes', 'Commentaire', 'Commentaires', 'Comment', 'Remarques']);
+    if (notesVal) result.notes = notesVal;
+
+    return result;
+  };
+
+  const applyPastedEmail = () => {
+    const parsed = parsePastedEmail(pasteText);
+    let filled = 0;
+    if (parsed.name) { setNewName(parsed.name); filled++; }
+    if (parsed.email) { setNewEmail(parsed.email); filled++; }
+    if (parsed.phone) { setNewPhone(parsed.phone); filled++; }
+    if (parsed.address) { setNewAddress(parsed.address); filled++; }
+    if (parsed.notes) { setNewNotes(parsed.notes); filled++; }
+
+    if (filled === 0) {
+      Alert.alert('Aucun champ détecté', "Impossible d'extraire les informations. Collez le contenu complet de l'email ou saisissez manuellement.");
+      return;
+    }
+    // Close paste modal, open create modal pre-filled
+    setShowPaste(false);
+    setPasteText('');
+    setShowCreate(true);
+  };
+
+  // CREATE (with duplicate check)
   const createClient = async () => {
     if (!newName.trim()) {
       Alert.alert('Erreur', 'Le nom est requis');
       return;
     }
+    // If duplicate detected → ask user what to do
+    if (dupMatch && dupMatch.client) {
+      const c = dupMatch.client;
+      const byLabel = dupMatch.by === 'email' ? 'courriel' : dupMatch.by === 'phone' ? 'téléphone' : 'nom';
+      return new Promise<void>((resolve) => {
+        const doUpdate = async () => {
+          setCreating(true);
+          try {
+            const body: any = {};
+            if (newEmail.trim()) body.email = newEmail.trim();
+            if (newPhone.trim()) body.phone = newPhone.trim();
+            if (newAddress.trim()) body.address = newAddress.trim();
+            if (newNotes.trim()) body.notes = newNotes.trim();
+            const res = await fetch(`${API_URL}/api/clients-db/${c.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+            if (res.ok) {
+              resetCreateForm();
+              await fetchClients();
+              Alert.alert('✅ Fiche mise à jour', `"${c.name}" a été mis à jour.`);
+            } else {
+              Alert.alert('Erreur', 'Mise à jour impossible.');
+            }
+          } finally { setCreating(false); resolve(); }
+        };
+        const doCreateAnyway = async () => {
+          await doInsert();
+          resolve();
+        };
+        const title = '⚠️ Client existant trouvé';
+        const message = `Un client correspondant existe déjà (par ${byLabel}):\n\n• ${c.name}\n• ${c.email || '(sans courriel)'}\n• ${c.phone || '(sans téléphone)'}\n\nQue voulez-vous faire ?`;
+        if (Platform.OS === 'web') {
+          // eslint-disable-next-line no-alert
+          const choice = window.confirm(`${title}\n\n${message}\n\n[OK] → Mettre à jour la fiche existante\n[Annuler] → Ne rien faire (cliquez à nouveau sur Créer pour créer quand même)`);
+          if (choice) doUpdate(); else resolve();
+        } else {
+          Alert.alert(title, message, [
+            { text: 'Annuler', style: 'cancel', onPress: () => resolve() },
+            { text: 'Créer quand même', style: 'destructive', onPress: () => doCreateAnyway() },
+            { text: 'Mettre à jour existant', onPress: () => doUpdate() },
+          ]);
+        }
+      });
+    }
+    await doInsert();
+  };
+
+  const doInsert = async () => {
     setCreating(true);
     try {
       const res = await fetch(`${API_URL}/api/clients-db`, {
@@ -263,9 +407,7 @@ export default function ClientsDbScreen() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Erreur');
-      // reset
-      setNewName(''); setNewEmail(''); setNewPhone(''); setNewAddress(''); setNewNotes('');
-      setShowCreate(false);
+      resetCreateForm();
       await fetchClients();
       Alert.alert('✅ Client créé', data.name);
     } catch (e: any) {
@@ -273,6 +415,12 @@ export default function ClientsDbScreen() {
     } finally {
       setCreating(false);
     }
+  };
+
+  const resetCreateForm = () => {
+    setNewName(''); setNewEmail(''); setNewPhone(''); setNewAddress(''); setNewNotes('');
+    setShowCreate(false);
+    setDupMatch(null);
   };
 
   const renderClient = ({ item }: { item: Client }) => {
@@ -364,9 +512,9 @@ export default function ClientsDbScreen() {
               <Feather name="send" size={18} color="#fff" />
               <Text style={styles.primaryBtnText}>Campagne</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={enterSelectionMode} style={[styles.primaryBtn, { backgroundColor: '#0891B2' }]} activeOpacity={0.8}>
-              <Feather name="check-square" size={18} color="#fff" />
-              <Text style={styles.primaryBtnText}>Sélection</Text>
+            <TouchableOpacity onPress={() => setShowPaste(true)} style={[styles.primaryBtn, { backgroundColor: '#059669' }]} activeOpacity={0.8}>
+              <Feather name="clipboard" size={18} color="#fff" />
+              <Text style={styles.primaryBtnText}>Coller email</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setShowCreate(true)} style={[styles.primaryBtn, { backgroundColor: '#111' }]} activeOpacity={0.8}>
               <Feather name="user-plus" size={18} color="#fff" />
@@ -378,6 +526,10 @@ export default function ClientsDbScreen() {
 
       {/* Secondary tools (icon-only on small screens) */}
       <View style={styles.toolRow}>
+        <TouchableOpacity onPress={enterSelectionMode} style={styles.toolBtn} activeOpacity={0.8}>
+          <Feather name="check-square" size={16} color="#0891B2" />
+          <Text style={styles.toolBtnText} numberOfLines={1}>Sélection</Text>
+        </TouchableOpacity>
         <TouchableOpacity onPress={importFile} style={styles.toolBtn} activeOpacity={0.8} disabled={importing}>
           {importing ? <ActivityIndicator size="small" color="#0891B2" /> : <Feather name="upload" size={16} color="#0891B2" />}
           <Text style={styles.toolBtnText} numberOfLines={1}>{importing ? 'Import…' : 'Import'}</Text>
@@ -508,8 +660,58 @@ export default function ClientsDbScreen() {
             <Text style={styles.label}>Notes</Text>
             <TextInput style={[styles.input, { minHeight: 60 }]} placeholder="Notes..." value={newNotes} onChangeText={setNewNotes} multiline />
 
+            {/* Duplicate warning banner */}
+            {dupMatch && dupMatch.client && (
+              <View style={styles.dupBanner}>
+                <Feather name="alert-triangle" size={18} color="#B45309" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.dupBannerTitle}>Client existant trouvé</Text>
+                  <Text style={styles.dupBannerText}>
+                    {`"${dupMatch.client.name}" — correspond par ${dupMatch.by === 'email' ? 'courriel' : dupMatch.by === 'phone' ? 'téléphone' : 'nom'}.\nTaper "Créer" proposera de mettre à jour la fiche existante.`}
+                  </Text>
+                </View>
+              </View>
+            )}
+
             <TouchableOpacity onPress={createClient} style={styles.saveBtn} activeOpacity={0.8} disabled={creating}>
-              {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Créer</Text>}
+              {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>{dupMatch ? 'Créer / Mettre à jour' : 'Créer'}</Text>}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Paste-from-email modal */}
+      <Modal visible={showPaste} animationType="slide" transparent onRequestClose={() => setShowPaste(false)}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalBox}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>📋 Coller depuis un email</Text>
+              <TouchableOpacity onPress={() => { setShowPaste(false); setPasteText(''); }}>
+                <Feather name="x" size={22} color="#111" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.pasteHint}>
+              Copiez le corps de l'email reçu depuis votre formulaire web, puis collez-le ici.{'\n'}
+              L'app extraira automatiquement : nom, courriel, téléphone, adresse et message.
+            </Text>
+
+            <TextInput
+              style={styles.pasteArea}
+              placeholder={"Ex:\nNom: Jean Tremblay\nCourriel: jean@exemple.com\nTéléphone: 514-555-1234\nAdresse: 123 Rue Principale\nMessage: Je voudrais un devis..."}
+              placeholderTextColor="#9CA3AF"
+              value={pasteText}
+              onChangeText={setPasteText}
+              multiline
+              textAlignVertical="top"
+              autoCorrect={false}
+            />
+
+            <TouchableOpacity onPress={applyPastedEmail} style={styles.saveBtn} activeOpacity={0.8}>
+              <Text style={styles.saveBtnText}>Extraire et vérifier</Text>
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
@@ -536,6 +738,20 @@ const styles = StyleSheet.create({
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10 },
   actionBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   toolRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 8 },
+  dupBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#FCD34D',
+    borderRadius: 10, padding: 12, marginTop: 8, marginBottom: 4,
+  },
+  dupBannerTitle: { fontSize: 13, fontWeight: '700', color: '#92400E' },
+  dupBannerText: { fontSize: 12, color: '#78350F', marginTop: 2, lineHeight: 16 },
+  pasteHint: { fontSize: 13, color: '#4B5563', marginBottom: 8, lineHeight: 18 },
+  pasteArea: {
+    minHeight: 180, maxHeight: 320,
+    borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10,
+    padding: 12, fontSize: 13, color: '#111827',
+    backgroundColor: '#FAFAFA', marginBottom: 12,
+  },
   toolBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#A7F3D0' },
   toolBtnText: { color: '#0891B2', fontWeight: '700', fontSize: 13 },
   searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fff', marginHorizontal: 16, paddingHorizontal: 12, height: 44, borderRadius: 10, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 12 },
