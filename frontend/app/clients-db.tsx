@@ -11,7 +11,9 @@ import {
   Alert,
   Platform,
   KeyboardAvoidingView,
+  Keyboard,
   Modal,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -286,33 +288,90 @@ export default function ClientsDbScreen() {
     const phoneMatch = text.match(/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/);
     if (phoneMatch) result.phone = phoneMatch[0].trim();
 
-    // Labeled field extraction (English + French) — "Label:" or "Label\nvalue"
+    // Postal code — Canadian format (e.g., H4R 0B5 or H4R0B5)
+    const postalMatch = text.match(/\b[A-Z]\d[A-Z]\s?\d[A-Z]\d\b/i);
+
+    // Lines to ignore when capturing field values (greetings, blanks, noise)
+    const NOISE_WORDS = /^(bonjour|salut|hello|hi|merci|thanks|thank you|cordialement|regards|sincerely)[\s,.:!?]*$/i;
+
+    // Get VALUE for a label — looks for "Label: value" or "Label\n(value on next non-empty, non-noise line)"
     const pickLabel = (labels: string[]): string | null => {
-      for (const label of labels) {
-        // Same-line: "Label: value"
-        const re1 = new RegExp(`${label}\\s*[:：]?\\s*\\n?\\s*([^\\n]+)`, 'i');
-        const m1 = text.match(re1);
-        if (m1 && m1[1]?.trim()) {
-          const val = m1[1].trim();
-          // Exclude the label itself or values that look like other labels
-          if (val.length > 1 && val.length < 250) return val;
+      const lines = text.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        for (const label of labels) {
+          const labelRe = new RegExp(`^${label}\\s*[:：]?\\s*$|^${label}\\s*[:：]\\s*(.+)$`, 'i');
+          const m = line.match(labelRe);
+          if (m) {
+            // Same-line value
+            if (m[1] && m[1].trim().length > 1) {
+              return m[1].trim();
+            }
+            // Multi-line: look ahead for next non-empty, non-noise line
+            for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
+              const next = lines[j].trim();
+              if (!next) continue;                    // skip blank
+              if (NOISE_WORDS.test(next)) continue;   // skip greetings
+              if (next.length > 250) continue;        // skip huge lines (probably message body)
+              // Skip if the next line is also a label
+              if (/^(email|courriel|phone|téléphone|adresse|address|nom|name|message|notes?)\s*[:：]?\s*$/i.test(next)) continue;
+              return next;
+            }
+          }
         }
       }
       return null;
     };
 
-    const nameVal = pickLabel(['Nom', 'Name', 'Nom complet', 'Full name', 'Client', 'Prénom et nom']);
+    const nameVal = pickLabel(['Nom', 'Name', 'Nom complet', 'Full name', 'Client', 'Prénom et nom', 'De']);
     if (nameVal) result.name = nameVal;
 
-    const addressVal = pickLabel([
-      'Adresse', 'Address', 'Lieu', 'Lieu et date desiree', 'Lieu et date désirée',
-      'Location', 'Rue', 'Street', 'Adresse du lavage',
-    ]);
-    if (addressVal) result.address = addressVal;
+    // ADDRESS — prioritize postal code detection (most reliable), then fall back to label
+    if (postalMatch) {
+      const lines = text.split('\n');
+      const pIdx = lines.findIndex(l => l.toUpperCase().includes(postalMatch[0].toUpperCase()));
+      if (pIdx >= 0) {
+        // Walk backwards from postal code to find street + city lines (stop at blank line or label)
+        const parts: string[] = [lines[pIdx].trim()];
+        for (let j = pIdx - 1; j >= Math.max(0, pIdx - 5); j--) {
+          const ln = lines[j].trim();
+          if (!ln) break;
+          if (NOISE_WORDS.test(ln)) break;
+          if (/^(email|courriel|phone|téléphone|message|notes?|nom|name|lieu et date|de|subject|sujet)\s*[:：]?/i.test(ln)) break;
+          // Skip sentences that start with common verbs/greetings (not address)
+          if (/^(je |j'|i |mon |ma |voir |pour |un devis|avec |merci |hello|bonjour|bonsoir)/i.test(ln)) break;
+          parts.unshift(ln);
+        }
+        result.address = parts.join(', ').slice(0, 250);
+      }
+    }
+
+    // Fallback: labeled address extraction (only if postal code detection failed)
+    if (!result.address) {
+      const addressLabel = pickLabel([
+        'Adresse', 'Address', 'Lieu', 'Lieu et date desiree', 'Lieu et date désirée',
+        'Location', 'Rue', 'Street', 'Adresse du lavage', 'Adresse complète',
+      ]);
+      if (addressLabel && !/^(je |j'|i |mon |ma |voir |pour |un devis|merci |bonjour)/i.test(addressLabel)) {
+        result.address = addressLabel.slice(0, 250);
+      }
+    }
 
     // Message / Notes
     const notesVal = pickLabel(['Message', 'Note', 'Notes', 'Commentaire', 'Commentaires', 'Comment', 'Remarques']);
     if (notesVal) result.notes = notesVal;
+
+    // If still no name, try to derive from email
+    if (!result.name && result.email) {
+      const local = result.email.split('@')[0];
+      const parts = local.split(/[._-]/).filter(Boolean);
+      if (parts.length >= 2) {
+        const capitalized = parts
+          .map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
+          .filter(p => /^[A-Za-z]+$/.test(p));
+        if (capitalized.length >= 2) result.name = capitalized.slice(0, 2).join(' ');
+      }
+    }
 
     return result;
   };
@@ -689,28 +748,45 @@ export default function ClientsDbScreen() {
           <View style={styles.modalBox}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>📋 Coller depuis un email</Text>
-              <TouchableOpacity onPress={() => { setShowPaste(false); setPasteText(''); }}>
-                <Feather name="x" size={22} color="#111" />
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+                <TouchableOpacity
+                  onPress={applyPastedEmail}
+                  style={styles.headerExtractBtn}
+                  activeOpacity={0.8}
+                  disabled={!pasteText.trim()}
+                >
+                  <Feather name="check" size={16} color="#fff" />
+                  <Text style={styles.headerExtractBtnText}>Extraire</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => { setShowPaste(false); setPasteText(''); Keyboard.dismiss(); }}>
+                  <Feather name="x" size={22} color="#111" />
+                </TouchableOpacity>
+              </View>
             </View>
 
             <Text style={styles.pasteHint}>
-              Copiez le corps de l'email reçu depuis votre formulaire web, puis collez-le ici.{'\n'}
-              L'app extraira automatiquement : nom, courriel, téléphone, adresse et message.
+              Collez le corps de l'email. L'app extraira le nom, courriel, téléphone, adresse.
             </Text>
 
-            <TextInput
-              style={styles.pasteArea}
-              placeholder={"Ex:\nNom: Jean Tremblay\nCourriel: jean@exemple.com\nTéléphone: 514-555-1234\nAdresse: 123 Rue Principale\nMessage: Je voudrais un devis..."}
-              placeholderTextColor="#9CA3AF"
-              value={pasteText}
-              onChangeText={setPasteText}
-              multiline
-              textAlignVertical="top"
-              autoCorrect={false}
-            />
+            <ScrollView
+              style={{ maxHeight: 340 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator
+            >
+              <TextInput
+                style={styles.pasteArea}
+                placeholder={"Ex:\nNom: Jean Tremblay\nCourriel: jean@exemple.com\nTéléphone: 514-555-1234\nAdresse: 123 Rue Principale\nMessage: Je voudrais un devis..."}
+                placeholderTextColor="#9CA3AF"
+                value={pasteText}
+                onChangeText={setPasteText}
+                multiline
+                textAlignVertical="top"
+                autoCorrect={false}
+                autoFocus={false}
+              />
+            </ScrollView>
 
-            <TouchableOpacity onPress={applyPastedEmail} style={styles.saveBtn} activeOpacity={0.8}>
+            <TouchableOpacity onPress={applyPastedEmail} style={styles.saveBtn} activeOpacity={0.8} disabled={!pasteText.trim()}>
               <Text style={styles.saveBtnText}>Extraire et vérifier</Text>
             </TouchableOpacity>
           </View>
@@ -746,6 +822,12 @@ const styles = StyleSheet.create({
   dupBannerTitle: { fontSize: 13, fontWeight: '700', color: '#92400E' },
   dupBannerText: { fontSize: 12, color: '#78350F', marginTop: 2, lineHeight: 16 },
   pasteHint: { fontSize: 13, color: '#4B5563', marginBottom: 8, lineHeight: 18 },
+  headerExtractBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#059669', paddingVertical: 6, paddingHorizontal: 10,
+    borderRadius: 8,
+  },
+  headerExtractBtnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
   pasteArea: {
     minHeight: 180, maxHeight: 320,
     borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10,
