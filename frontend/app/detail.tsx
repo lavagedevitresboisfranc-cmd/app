@@ -880,7 +880,20 @@ export default function DetailScreen() {
           </View>
         </View>
 
-        {/* Supprimer */}
+        {/* Modifier + Archiver */}
+        <View style={styles.editSection}>
+          <TouchableOpacity
+            testID="edit-button"
+            style={styles.editBtn}
+            activeOpacity={0.7}
+            onPress={handleEdit}
+          >
+            <Feather name="edit-3" size={18} color="#FFFFFF" />
+            <Text style={styles.editBtnText}>Modifier ce rendez-vous</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Archiver */}
         <View style={styles.deleteSection}>
           <TouchableOpacity
             testID="delete-button"
@@ -1066,10 +1079,29 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   deleteSection: {
+    marginTop: 12,
+    paddingTop: 8,
+  },
+  editSection: {
     marginTop: 24,
     paddingTop: 16,
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
+  },
+  editBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#0891B2',
+    borderRadius: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+  },
+  editBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
   deleteBtn: {
     flexDirection: 'row',
