@@ -210,7 +210,7 @@ export default function DnsGuideScreen() {
         </Step>
 
         {/* STEP 9 */}
-        <Step n={9} title="Mettre à jour l'expéditeur dans CrystalTask">
+        <Step n={9} title="Mettre à jour l'expéditeur dans Gexia360">
           <Text style={styles.bodyText}>
             Une fois vérifié, je dois changer l'adresse d'expéditeur dans le backend de:
           </Text>

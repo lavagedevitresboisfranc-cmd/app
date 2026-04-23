@@ -18,7 +18,7 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const CAMPAIGN_TARGET_KEY = '@crystaltask:campaign_target_emails';
+const CAMPAIGN_TARGET_KEY = '@gexia360:campaign_target_emails';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';

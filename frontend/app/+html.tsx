@@ -14,7 +14,7 @@ export default function Root({ children }: PropsWithChildren) {
         />
 
         {/* --- PWA --- */}
-        <title>CrystalTask</title>
+        <title>Gexia360</title>
         <meta name="description" content="Gestion de rendez-vous et CRM pour entreprises de lavage de vitres" />
         <meta name="theme-color" content="#0891B2" />
         <meta name="color-scheme" content="light" />
@@ -31,9 +31,9 @@ export default function Root({ children }: PropsWithChildren) {
         <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="CrystalTask" />
+        <meta name="apple-mobile-web-app-title" content="Gexia360" />
         <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="application-name" content="CrystalTask" />
+        <meta name="application-name" content="Gexia360" />
 
         {/* Microsoft tile */}
         <meta name="msapplication-TileColor" content="#0891B2" />
@@ -41,7 +41,7 @@ export default function Root({ children }: PropsWithChildren) {
 
         {/* Open Graph (partage) */}
         <meta property="og:type" content="website" />
-        <meta property="og:title" content="CrystalTask" />
+        <meta property="og:title" content="Gexia360" />
         <meta property="og:description" content="Gestion de rendez-vous et CRM" />
         <meta property="og:image" content="/icon-512.png" />
         {/* --- /PWA --- */}

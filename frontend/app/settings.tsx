@@ -57,7 +57,7 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>À PROPOS</Text>
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 16 }]}>
-            <Text style={[styles.aboutApp, { color: colors.text }]}>CrystalTask</Text>
+            <Text style={[styles.aboutApp, { color: colors.text }]}>Gexia360</Text>
             <Text style={[styles.aboutVersion, { color: colors.textMuted }]}>Application de gestion pour laveurs de vitres</Text>
           </View>
         </View>

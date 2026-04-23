@@ -160,7 +160,7 @@ async def booking_page():
     """Public booking page for customers to request appointments"""
     html_path = ROOT_DIR / "booking.html"
     content = html_path.read_text()
-    # Inject the backend API URL so form submits to CrystalTask even when embedded on external sites
+    # Inject the backend API URL so form submits to Gexia360 even when embedded on external sites
     app_url = os.environ.get("APP_URL", "").rstrip("/")
     content = content.replace("window.location.origin", f'"{app_url}"')
     return HTMLResponse(content=content)
@@ -217,61 +217,61 @@ async def company_logo():
 
 @api_router.get("/business-plan")
 async def business_plan():
-    """Serve the CrystalTask commercialization business plan (Word document)."""
+    """Serve the Gexia360 commercialization business plan (Word document)."""
     from fastapi.responses import FileResponse
-    doc_path = ROOT_DIR / "assets" / "CrystalTask_Plan_Commercialisation.docx"
+    doc_path = ROOT_DIR / "assets" / "Gexia360_Plan_Commercialisation.docx"
     if not doc_path.exists():
         raise HTTPException(status_code=404, detail="Business plan not found")
     return FileResponse(
         str(doc_path),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        filename="CrystalTask_Plan_Commercialisation.docx",
-        headers={"Content-Disposition": 'attachment; filename="CrystalTask_Plan_Commercialisation.docx"'}
+        filename="Gexia360_Plan_Commercialisation.docx",
+        headers={"Content-Disposition": 'attachment; filename="Gexia360_Plan_Commercialisation.docx"'}
     )
 
 
 @api_router.get("/brochure")
 async def brochure():
-    """Serve the CrystalTask commercial brochure (Word document, for prospects)."""
+    """Serve the Gexia360 commercial brochure (Word document, for prospects)."""
     from fastapi.responses import FileResponse
-    doc_path = ROOT_DIR / "assets" / "CrystalTask_Brochure_Commerciale.docx"
+    doc_path = ROOT_DIR / "assets" / "Gexia360_Brochure_Commerciale.docx"
     if not doc_path.exists():
         raise HTTPException(status_code=404, detail="Brochure not found")
     return FileResponse(
         str(doc_path),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        filename="CrystalTask_Brochure_Commerciale.docx",
-        headers={"Content-Disposition": 'attachment; filename="CrystalTask_Brochure_Commerciale.docx"'}
+        filename="Gexia360_Brochure_Commerciale.docx",
+        headers={"Content-Disposition": 'attachment; filename="Gexia360_Brochure_Commerciale.docx"'}
     )
 
 
 @api_router.get("/business-plan-pdf")
 async def business_plan_pdf():
-    """Serve the CrystalTask commercialization business plan (PDF)."""
+    """Serve the Gexia360 commercialization business plan (PDF)."""
     from fastapi.responses import FileResponse
-    doc_path = ROOT_DIR / "assets" / "CrystalTask_Plan_Commercialisation.pdf"
+    doc_path = ROOT_DIR / "assets" / "Gexia360_Plan_Commercialisation.pdf"
     if not doc_path.exists():
         raise HTTPException(status_code=404, detail="Business plan PDF not found")
     return FileResponse(
         str(doc_path),
         media_type="application/pdf",
-        filename="CrystalTask_Plan_Commercialisation.pdf",
-        headers={"Content-Disposition": 'inline; filename="CrystalTask_Plan_Commercialisation.pdf"'}
+        filename="Gexia360_Plan_Commercialisation.pdf",
+        headers={"Content-Disposition": 'inline; filename="Gexia360_Plan_Commercialisation.pdf"'}
     )
 
 
 @api_router.get("/brochure-pdf")
 async def brochure_pdf():
-    """Serve the CrystalTask commercial brochure (PDF, for prospects)."""
+    """Serve the Gexia360 commercial brochure (PDF, for prospects)."""
     from fastapi.responses import FileResponse
-    doc_path = ROOT_DIR / "assets" / "CrystalTask_Brochure_Commerciale.pdf"
+    doc_path = ROOT_DIR / "assets" / "Gexia360_Brochure_Commerciale.pdf"
     if not doc_path.exists():
         raise HTTPException(status_code=404, detail="Brochure PDF not found")
     return FileResponse(
         str(doc_path),
         media_type="application/pdf",
-        filename="CrystalTask_Brochure_Commerciale.pdf",
-        headers={"Content-Disposition": 'inline; filename="CrystalTask_Brochure_Commerciale.pdf"'}
+        filename="Gexia360_Brochure_Commerciale.pdf",
+        headers={"Content-Disposition": 'inline; filename="Gexia360_Brochure_Commerciale.pdf"'}
     )
 
 
@@ -2035,7 +2035,7 @@ td{{padding:7px 8px;border-bottom:1px solid #E5E5E5;}}
 @media print{{body{{margin:0;}}}}
 </style></head><body>
 <h1>Rapport mensuel</h1>
-<div class="brand">{display_month} — CrystalTask</div>
+<div class="brand">{display_month} — Gexia360</div>
 <div class="stats">
 <div class="stat"><div class="stat-val">{total_rev:.2f}$</div><div class="stat-label">Revenu</div></div>
 <div class="stat"><div class="stat-val">{len(appts)}</div><div class="stat-label">RDV total</div></div>
@@ -2103,7 +2103,7 @@ async def send_review_request(appointment_id: str):
     <p>Bonjour {appt.get('client_name','')},</p>
     <p>Merci d'avoir fait appel à nos services! Nous aimerions avoir votre avis.</p>
     <a href="{review_url}" style="display:inline-block;background:#0891B2;color:white;padding:12px 24px;border-radius:4px;text-decoration:none;font-weight:600;margin:16px 0;">Laisser un avis</a>
-    <p style="color:#A3A3A3;font-size:13px;">— CrystalTask</p>
+    <p style="color:#A3A3A3;font-size:13px;">— Gexia360</p>
     </div>"""
 
     if resend.api_key:
@@ -2111,7 +2111,7 @@ async def send_review_request(appointment_id: str):
             await asyncio.to_thread(resend.Emails.send, {
                 "from": "onboarding@resend.dev",
                 "to": [client_email],
-                "subject": "Comment était votre expérience? — CrystalTask",
+                "subject": "Comment était votre expérience? — Gexia360",
                 "html": html,
             })
             return {"message": f"Demande d'avis envoyée à {client_email}"}
@@ -2183,7 +2183,7 @@ async def export_backup():
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
 
     html = f"""<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>Backup CrystalTask - {now}</title>
+<html><head><meta charset="UTF-8"><title>Backup Gexia360 - {now}</title>
 <style>
 body{{font-family:-apple-system,sans-serif;max-width:1200px;margin:20px auto;padding:20px;color:#0A0A0A;font-size:13px;}}
 h1{{font-size:24px;margin-bottom:2px;}}
@@ -2196,7 +2196,7 @@ tr:hover{{background:#F5F5F5;}}
 .count{{color:#737373;font-size:14px;}}
 @media print{{body{{margin:0;font-size:11px;}} th{{background:#333;}} }}
 </style></head><body>
-<h1>Backup CrystalTask</h1>
+<h1>Backup Gexia360</h1>
 <div class="brand">{now}</div>
 
 <h2>Rendez-vous <span class="count">({len(appointments)})</span></h2>
@@ -2269,7 +2269,7 @@ td{{padding:10px 0;vertical-align:top;}}
 @media print{{body{{margin:0;}}}}
 </style></head><body>
 <h1>{appt.get('title','Rendez-vous')}</h1>
-<div class="brand">CrystalTask</div>
+<div class="brand">Gexia360</div>
 <div class="divider"></div>
 <table>
 <tr><td class="label">Client</td><td class="value">{appt.get('client_name','')}</td></tr>
@@ -2289,7 +2289,7 @@ td{{padding:10px 0;vertical-align:top;}}
 </table>
 {"<div class='divider'></div><table><tr><td class='label'>Notes</td><td class='value'>" + appt.get('notes','') + "</td></tr></table>" if appt.get('notes') else ""}
 <div class="divider"></div>
-<p style="font-size:12px;color:#A3A3A3;margin-top:24px;">Imprimé depuis CrystalTask</p>
+<p style="font-size:12px;color:#A3A3A3;margin-top:24px;">Imprimé depuis Gexia360</p>
 <script>window.onload=function(){{window.print();}}</script>
 </body></html>"""
     return HTMLResponse(content=html)
@@ -2314,7 +2314,7 @@ async def backup_by_email():
         req_rows += f"<tr><td>{r.get('preferred_date','')}</td><td>{r.get('preferred_time','')}</td><td>{r.get('customer_name','')}</td><td>{r.get('customer_phone','')}</td><td>{r.get('customer_email','')}</td><td>{r.get('status','')}</td></tr>"
 
     html = f"""<div style="font-family:sans-serif;max-width:800px;margin:0 auto;font-size:13px;">
-    <h1 style="color:#0891B2;">Backup CrystalTask</h1>
+    <h1 style="color:#0891B2;">Backup Gexia360</h1>
     <p>{now} — {len(appointments)} rdv, {len(requests_data)} demandes</p>
     <h2>Rendez-vous ({len(appointments)})</h2>
     <table style="width:100%;border-collapse:collapse;"><tr style="background:#0891B2;color:white;"><th style="padding:6px;">Date</th><th style="padding:6px;">Heure</th><th style="padding:6px;">Client</th><th style="padding:6px;">Tél</th><th style="padding:6px;">Email</th><th style="padding:6px;">Adresse</th><th style="padding:6px;">Prix</th><th style="padding:6px;">Statut</th></tr>{appt_rows}</table>
@@ -2327,7 +2327,7 @@ async def backup_by_email():
             await asyncio.to_thread(resend.Emails.send, {
                 "from": "onboarding@resend.dev",
                 "to": [NOTIFY_EMAIL],
-                "subject": f"Backup CrystalTask — {now}",
+                "subject": f"Backup Gexia360 — {now}",
                 "html": html,
             })
             return {"message": f"Backup envoyé à {NOTIFY_EMAIL}"}
@@ -2372,7 +2372,7 @@ async def share_appointment(appointment_id: str):
     if not appt:
         raise HTTPException(status_code=404, detail="Appointment not found")
 
-    text = f"""Rendez-vous confirmé — CrystalTask
+    text = f"""Rendez-vous confirmé — Gexia360
 
 Client: {appt.get('client_name','')}
 Date: {appt.get('date','')}

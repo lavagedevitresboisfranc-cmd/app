@@ -13,7 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import AppHeader from '../components/AppHeader';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
-const CAMPAIGN_TARGET_KEY = '@crystaltask:campaign_target_emails';
+const CAMPAIGN_TARGET_KEY = '@gexia360:campaign_target_emails';
 
 interface ClientRow {
   email: string;

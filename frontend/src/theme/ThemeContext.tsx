@@ -119,7 +119,7 @@ const dark: ThemeColors = {
 };
 
 const THEMES = { light, dark };
-const STORAGE_KEY = '@crystaltask:theme_mode';
+const STORAGE_KEY = '@gexia360:theme_mode';
 
 interface ThemeCtx {
   mode: ThemeMode;            // User preference (auto/light/dark)

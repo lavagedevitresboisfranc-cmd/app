@@ -568,7 +568,7 @@ export default function CalendarScreen() {
       >
         <Pressable style={styles.menuOverlay} onPress={() => setMenuOpen(false)}>
           <Pressable style={styles.menuDrawer} onPress={(e) => e.stopPropagation()}>
-            {/* CrystalTask logo in menu */}
+            {/* Gexia360 logo in menu */}
             <View style={styles.menuLogoRow}>
               <Image
                 source={require('../assets/images/crystaltask-logo-transparent.png')}
