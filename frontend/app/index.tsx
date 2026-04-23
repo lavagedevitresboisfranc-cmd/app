@@ -668,14 +668,19 @@ export default function CalendarScreen() {
 
       {/* Header with hamburger */}
       <View style={styles.header}>
-        <TouchableOpacity testID="hamburger-menu" onPress={() => setMenuOpen(true)} style={styles.hamburgerBtn} activeOpacity={0.7}>
-          <Feather name="menu" size={24} color="#0A0A0A" />
-          {pendingCount > 0 && (
-            <View style={styles.hamburgerBadge}>
-              <Text style={styles.hamburgerBadgeText}>{pendingCount > 9 ? '9+' : pendingCount}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+          <TouchableOpacity testID="hamburger-menu" onPress={() => setMenuOpen(true)} style={styles.hamburgerBtn} activeOpacity={0.7}>
+            <Feather name="menu" size={24} color="#0A0A0A" />
+            {pendingCount > 0 && (
+              <View style={styles.hamburgerBadge}>
+                <Text style={styles.hamburgerBadgeText}>{pendingCount > 9 ? '9+' : pendingCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity testID="search-btn" onPress={() => router.push('/search' as any)} style={styles.hamburgerBtn} activeOpacity={0.7}>
+            <Feather name="search" size={22} color="#0A0A0A" />
+          </TouchableOpacity>
+        </View>
         <View style={styles.logoRow}>
           <Image
             source={require('../assets/images/crystaltask-logo-transparent.png')}

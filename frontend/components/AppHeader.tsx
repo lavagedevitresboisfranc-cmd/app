@@ -36,6 +36,7 @@ const menuSections: MenuSection[] = [
     color: '#D97706',
     items: [
       { icon: 'database' as const, labelKey: 'menu.items.clientsDb', route: '/clients-db' },
+      { icon: 'dollar-sign' as const, labelKey: 'menu.items.estimate', route: '/estimate' },
       { icon: 'archive' as const, labelKey: 'menu.items.clientsArchive', route: '/clients-archive' },
       { icon: 'user' as const, labelKey: 'menu.items.clientsHistory', route: '/client-history' },
       { icon: 'star' as const, labelKey: 'menu.items.reviews', route: '/reviews' },
@@ -197,9 +198,14 @@ export default function AppHeader({ title, showBack }: Props) {
       </Modal>
 
       <View style={[styles.header, { backgroundColor: colors.bg, borderBottomColor: colors.border }]}>
-        <TouchableOpacity testID="hamburger-menu" onPress={() => setMenuOpen(true)} style={styles.btn} activeOpacity={0.7}>
-          <Feather name="menu" size={24} color={colors.text} />
-        </TouchableOpacity>
+        <View style={styles.leftGroup}>
+          <TouchableOpacity testID="hamburger-menu" onPress={() => setMenuOpen(true)} style={styles.btn} activeOpacity={0.7}>
+            <Feather name="menu" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity testID="search-btn" onPress={() => router.push('/search' as any)} style={styles.btn} activeOpacity={0.7}>
+            <Feather name="search" size={22} color={colors.text} />
+          </TouchableOpacity>
+        </View>
 
         {title ? (
           <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
@@ -235,6 +241,7 @@ export default function AppHeader({ title, showBack }: Props) {
 
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#FAFAFA', borderBottomWidth: 1, borderColor: '#E5E5E5' },
+  leftGroup: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   btn: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
   title: { fontSize: 18, fontWeight: '700', color: '#0A0A0A' },
   logoRowSmall: { flexDirection: 'row', alignItems: 'center', gap: 8 },
