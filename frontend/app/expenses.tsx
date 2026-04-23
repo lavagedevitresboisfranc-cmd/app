@@ -33,6 +33,7 @@ interface Expense {
   description: string;
   vendor: string;
   receipt_photo: string | null;
+  receipt_pdf: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -57,11 +58,19 @@ export default function ExpensesScreen() {
   const [fDescription, setFDescription] = useState('');
   const [fVendor, setFVendor] = useState('');
   const [fPhoto, setFPhoto] = useState<string | null>(null);
+  const [fPdf, setFPdf] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   const [viewPhoto, setViewPhoto] = useState<string | null>(null);
+  const [viewPdf, setViewPdf] = useState<string | null>(null);
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
+
+  // Multi-page scan state
+  const [scanModalOpen, setScanModalOpen] = useState(false);
+  const [scanPages, setScanPages] = useState<string[]>([]); // array of base64 images
+  const [scanning, setScanning] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -91,6 +100,8 @@ export default function ExpensesScreen() {
     setFDescription('');
     setFVendor('');
     setFPhoto(null);
+    setFPdf(null);
+    setScanPages([]);
   };
 
   const openNew = () => { resetForm(); setShowForm(true); };
@@ -103,6 +114,8 @@ export default function ExpensesScreen() {
     setFDescription(exp.description || '');
     setFVendor(exp.vendor || '');
     setFPhoto(exp.receipt_photo || null);
+    setFPdf(exp.receipt_pdf || null);
+    setScanPages([]);
     setShowForm(true);
   };
 
@@ -136,6 +149,137 @@ export default function ExpensesScreen() {
     }
   };
 
+  // === MULTI-PAGE SCAN (receipt / invoice -> PDF) ===
+  const openScanModal = () => {
+    setScanPages([]);
+    setScanModalOpen(true);
+  };
+
+  const scanAddPage = async (fromCamera: boolean) => {
+    try {
+      if (fromCamera) {
+        const perm = await ImagePicker.requestCameraPermissionsAsync();
+        if (!perm.granted) {
+          Alert.alert('Permission refusée', "L'accès à la caméra est requis pour scanner.");
+          return;
+        }
+      }
+      setScanning(true);
+      const result = fromCamera
+        ? await ImagePicker.launchCameraAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            quality: 0.7,
+            base64: true,
+          })
+        : await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            quality: 0.7,
+            base64: true,
+            allowsMultipleSelection: true,
+            selectionLimit: 20,
+          });
+
+      if (!result.canceled && result.assets?.length) {
+        const newPages = result.assets
+          .filter((a) => !!a.base64)
+          .map((a) => `data:image/jpeg;base64,${a.base64}`);
+        setScanPages((prev) => {
+          const combined = [...prev, ...newPages];
+          return combined.slice(0, 20);
+        });
+      }
+    } catch (e: any) {
+      Alert.alert('Erreur', `Impossible d'ajouter la page: ${e?.message || 'inconnu'}`);
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const removeScanPage = (idx: number) => {
+    setScanPages((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const movePage = (idx: number, dir: -1 | 1) => {
+    setScanPages((prev) => {
+      const next = [...prev];
+      const newIdx = idx + dir;
+      if (newIdx < 0 || newIdx >= next.length) return prev;
+      [next[idx], next[newIdx]] = [next[newIdx], next[idx]];
+      return next;
+    });
+  };
+
+  const generatePdfFromScan = async () => {
+    if (scanPages.length === 0) {
+      Alert.alert('Vide', 'Ajoutez au moins une page à scanner.');
+      return;
+    }
+    setGeneratingPdf(true);
+    try {
+      // Strip data:image prefix - backend accepts both
+      const imagesRaw = scanPages.map((p) => {
+        const commaIdx = p.indexOf(',');
+        return commaIdx >= 0 ? p.substring(commaIdx + 1) : p;
+      });
+      const res = await fetch(`${API_URL}/api/expenses/images-to-pdf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ images: imagesRaw }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setFPdf(data.pdf_base64);
+      // Also set the first page as a preview thumbnail (auto-fill photo if empty)
+      if (!fPhoto && scanPages[0]) {
+        setFPhoto(scanPages[0]);
+      }
+      setScanModalOpen(false);
+      setScanPages([]);
+      Alert.alert(
+        '✅ PDF créé',
+        `${data.pages} page${data.pages > 1 ? 's' : ''} combinée${data.pages > 1 ? 's' : ''} en un seul PDF (${data.size_kb} KB).`
+      );
+    } catch (e: any) {
+      Alert.alert('Erreur', `Impossible de générer le PDF: ${e?.message || 'inconnu'}`);
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
+  const openPdfPreview = (pdfDataUrl: string) => {
+    if (Platform.OS === 'web') {
+      // Open in new tab
+      const win = window.open('', '_blank');
+      if (win) {
+        win.document.write(
+          `<html><head><title>Reçu PDF</title></head><body style="margin:0;"><iframe src="${pdfDataUrl}" style="border:0;width:100vw;height:100vh;"></iframe></body></html>`
+        );
+      } else {
+        setViewPdf(pdfDataUrl);
+      }
+    } else {
+      setViewPdf(pdfDataUrl);
+    }
+  };
+
+  const openExpensePdf = async (expId: string) => {
+    const url = `${API_URL}/api/expenses/${expId}/receipt-pdf`;
+    if (Platform.OS === 'web') {
+      window.open(url, '_blank');
+    } else {
+      try {
+        await Linking.openURL(url);
+      } catch {
+        Alert.alert('Erreur', 'Impossible d\'ouvrir le PDF');
+      }
+    }
+  };
+
   const save = async () => {
     const amt = parseFloat(fAmount.replace(',', '.'));
     if (!amt || amt <= 0) {
@@ -151,6 +295,7 @@ export default function ExpensesScreen() {
         description: fDescription,
         vendor: fVendor,
         receipt_photo: fPhoto,
+        receipt_pdf: fPdf,
       };
       const url = editing ? `${API_URL}/api/expenses/${editing.id}` : `${API_URL}/api/expenses`;
       const method = editing ? 'PUT' : 'POST';
@@ -211,6 +356,17 @@ export default function ExpensesScreen() {
           {item.receipt_photo && (
             <TouchableOpacity onPress={() => setViewPhoto(item.receipt_photo!)} style={styles.thumbWrap}>
               <Image source={{ uri: item.receipt_photo }} style={styles.thumb} resizeMode="cover" />
+            </TouchableOpacity>
+          )}
+          {item.receipt_pdf && (
+            <TouchableOpacity
+              testID={`view-pdf-${item.id}`}
+              onPress={(e) => { (e as any)?.stopPropagation?.(); openExpensePdf(item.id); }}
+              style={styles.pdfBadgeInCard}
+              activeOpacity={0.8}
+            >
+              <Feather name="file-text" size={18} color="#DC2626" />
+              <Text style={styles.pdfBadgeInCardText}>PDF</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -489,6 +645,62 @@ export default function ExpensesScreen() {
                   </TouchableOpacity>
                 </View>
               )}
+
+              {/* PDF Scanner (multi-page) */}
+              <Text style={[styles.label, { marginTop: 14 }]}>📄 Facture / Reçu PDF (multi-pages)</Text>
+              {fPdf ? (
+                <View style={styles.pdfCard}>
+                  <View style={styles.pdfCardRow}>
+                    <View style={styles.pdfIconBubble}>
+                      <Feather name="file-text" size={22} color="#DC2626" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.pdfCardTitle}>Reçu PDF attaché</Text>
+                      <Text style={styles.pdfCardSub}>
+                        Prêt à enregistrer ({Math.round(fPdf.length / 1024)} KB env.)
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.pdfCardActions}>
+                    <TouchableOpacity
+                      testID="view-current-pdf"
+                      style={[styles.pdfSmallBtn, { backgroundColor: '#0891B2' }]}
+                      onPress={() => openPdfPreview(fPdf)}
+                      activeOpacity={0.8}
+                    >
+                      <Feather name="eye" size={14} color="#fff" />
+                      <Text style={styles.pdfSmallBtnText}>Voir PDF</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      testID="replace-pdf"
+                      style={[styles.pdfSmallBtn, { backgroundColor: '#F3F4F6' }]}
+                      onPress={openScanModal}
+                      activeOpacity={0.8}
+                    >
+                      <Feather name="refresh-cw" size={14} color="#374151" />
+                      <Text style={[styles.pdfSmallBtnText, { color: '#374151' }]}>Remplacer</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      testID="remove-pdf"
+                      style={[styles.pdfSmallBtn, { backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA' }]}
+                      onPress={() => setFPdf(null)}
+                      activeOpacity={0.8}
+                    >
+                      <Feather name="trash-2" size={14} color="#DC2626" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  testID="scan-pdf-btn"
+                  style={styles.scanBtn}
+                  onPress={openScanModal}
+                  activeOpacity={0.85}
+                >
+                  <Feather name="file-plus" size={20} color="#FFFFFF" />
+                  <Text style={styles.scanBtnText}>📸 Scanner reçu/facture → PDF</Text>
+                </TouchableOpacity>
+              )}
             </ScrollView>
             {/* Action Row */}
             <View style={styles.formActions}>
@@ -521,6 +733,186 @@ export default function ExpensesScreen() {
             <Image source={{ uri: viewPhoto }} style={styles.photoViewerImg} resizeMode="contain" />
           )}
         </View>
+      </Modal>
+
+      {/* SCAN MULTI-PAGE MODAL */}
+      <Modal
+        visible={scanModalOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setScanModalOpen(false)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+          <View style={styles.scanHeader}>
+            <TouchableOpacity
+              testID="scan-close"
+              onPress={() => setScanModalOpen(false)}
+              style={styles.scanHeaderBtn}
+              activeOpacity={0.7}
+            >
+              <Feather name="x" size={22} color="#0A0A0A" />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.scanHeaderTitle}>Scanner Reçu / Facture</Text>
+              <Text style={styles.scanHeaderSub}>
+                {scanPages.length === 0
+                  ? 'Prenez une ou plusieurs photos'
+                  : `${scanPages.length} page${scanPages.length > 1 ? 's' : ''} ajoutée${scanPages.length > 1 ? 's' : ''}`}
+              </Text>
+            </View>
+          </View>
+
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+            {/* Add page buttons */}
+            <View style={styles.scanActionsRow}>
+              <TouchableOpacity
+                testID="scan-camera"
+                style={[styles.scanActionBtn, { backgroundColor: '#0891B2' }]}
+                onPress={() => scanAddPage(true)}
+                disabled={scanning || scanPages.length >= 20}
+                activeOpacity={0.85}
+              >
+                <Feather name="camera" size={20} color="#FFFFFF" />
+                <Text style={styles.scanActionText}>
+                  {scanning ? '...' : 'Caméra'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="scan-gallery"
+                style={[styles.scanActionBtn, { backgroundColor: '#F3F4F6' }]}
+                onPress={() => scanAddPage(false)}
+                disabled={scanning || scanPages.length >= 20}
+                activeOpacity={0.85}
+              >
+                <Feather name="image" size={20} color="#374151" />
+                <Text style={[styles.scanActionText, { color: '#374151' }]}>
+                  Galerie
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {scanPages.length >= 20 && (
+              <Text style={styles.scanWarn}>⚠️ Maximum 20 pages atteint</Text>
+            )}
+
+            {/* Pages list */}
+            {scanPages.length === 0 ? (
+              <View style={styles.scanEmpty}>
+                <Feather name="file-plus" size={48} color="#D1D5DB" />
+                <Text style={styles.scanEmptyTitle}>Aucune page ajoutée</Text>
+                <Text style={styles.scanEmptyDesc}>
+                  Utilisez la caméra pour photographier chaque page du reçu/facture,
+                  puis générez un PDF unique.
+                </Text>
+              </View>
+            ) : (
+              <View style={{ gap: 10, marginTop: 14 }}>
+                {scanPages.map((page, idx) => (
+                  <View key={`${idx}-${page.slice(-12)}`} style={styles.pageRow}>
+                    <Image source={{ uri: page }} style={styles.pageThumb} resizeMode="cover" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.pageNumber}>Page {idx + 1}</Text>
+                      <Text style={styles.pageSize}>
+                        ≈ {Math.round(page.length / 1024)} KB
+                      </Text>
+                    </View>
+                    <View style={styles.pageControls}>
+                      <TouchableOpacity
+                        onPress={() => movePage(idx, -1)}
+                        disabled={idx === 0}
+                        style={[styles.pageCtrlBtn, idx === 0 && { opacity: 0.3 }]}
+                        activeOpacity={0.7}
+                      >
+                        <Feather name="chevron-up" size={18} color="#374151" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => movePage(idx, 1)}
+                        disabled={idx === scanPages.length - 1}
+                        style={[styles.pageCtrlBtn, idx === scanPages.length - 1 && { opacity: 0.3 }]}
+                        activeOpacity={0.7}
+                      >
+                        <Feather name="chevron-down" size={18} color="#374151" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => removeScanPage(idx)}
+                        style={[styles.pageCtrlBtn, { backgroundColor: '#FEF2F2' }]}
+                        activeOpacity={0.7}
+                      >
+                        <Feather name="trash-2" size={16} color="#DC2626" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+          </ScrollView>
+
+          {/* Footer actions */}
+          <View style={styles.scanFooter}>
+            <TouchableOpacity
+              testID="scan-cancel"
+              style={[styles.scanFooterBtn, { backgroundColor: '#F3F4F6' }]}
+              onPress={() => setScanModalOpen(false)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.scanFooterBtnText}>Annuler</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="scan-generate-pdf"
+              style={[
+                styles.scanFooterBtn,
+                { backgroundColor: scanPages.length === 0 ? '#A3A3A3' : '#10B981', flex: 1.8 },
+              ]}
+              onPress={generatePdfFromScan}
+              disabled={scanPages.length === 0 || generatingPdf}
+              activeOpacity={0.85}
+            >
+              {generatingPdf ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Feather name="file-text" size={18} color="#FFFFFF" />
+                  <Text style={[styles.scanFooterBtnText, { color: '#FFFFFF' }]}>
+                    Générer PDF ({scanPages.length})
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      {/* PDF VIEWER (mobile fallback) */}
+      <Modal visible={!!viewPdf} transparent={false} animationType="slide" onRequestClose={() => setViewPdf(null)}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#1F2937' }}>
+          <View style={styles.pdfViewerHeader}>
+            <TouchableOpacity onPress={() => setViewPdf(null)} style={styles.photoCloseBtn}>
+              <Feather name="x" size={24} color="#fff" />
+            </TouchableOpacity>
+            <Text style={styles.pdfViewerTitle}>Aperçu du PDF</Text>
+            <TouchableOpacity
+              onPress={async () => {
+                if (viewPdf) {
+                  try { await Linking.openURL(viewPdf); } catch {
+                    Alert.alert('Erreur', 'Impossible d\'ouvrir le PDF');
+                  }
+                }
+              }}
+              style={styles.photoCloseBtn}
+            >
+              <Feather name="external-link" size={22} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+            <Feather name="file-text" size={80} color="#DC2626" />
+            <Text style={{ color: '#fff', fontSize: 16, marginTop: 18, textAlign: 'center', fontWeight: '600' }}>
+              PDF prêt
+            </Text>
+            <Text style={{ color: '#9CA3AF', fontSize: 13, marginTop: 8, textAlign: 'center' }}>
+              Appuyez sur l'icône en haut à droite pour l'ouvrir dans votre lecteur PDF ou le partager.
+            </Text>
+          </View>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
@@ -607,4 +999,40 @@ const styles = StyleSheet.create({
   photoViewer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center' },
   photoCloseBtn: { position: 'absolute', top: 50, right: 20, zIndex: 10, backgroundColor: 'rgba(0,0,0,0.7)', width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
   photoViewerImg: { width: '100%', height: '80%' },
+  // PDF related
+  scanBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#DC2626', paddingVertical: 16, borderRadius: 12 },
+  scanBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800', letterSpacing: 0.3 },
+  pdfCard: { backgroundColor: '#FEF2F2', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#FECACA' },
+  pdfCardRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  pdfIconBubble: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#FEE2E2', justifyContent: 'center', alignItems: 'center' },
+  pdfCardTitle: { fontSize: 14, fontWeight: '800', color: '#991B1B' },
+  pdfCardSub: { fontSize: 12, color: '#DC2626', marginTop: 2 },
+  pdfCardActions: { flexDirection: 'row', gap: 6 },
+  pdfSmallBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 10, borderRadius: 8 },
+  pdfSmallBtnText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
+  pdfBadgeInCard: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FEE2E2', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, borderWidth: 1, borderColor: '#FECACA', marginLeft: 6 },
+  pdfBadgeInCardText: { fontSize: 11, fontWeight: '800', color: '#DC2626', letterSpacing: 0.5 },
+  // Scan multi-page modal
+  scanHeader: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  scanHeaderBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+  scanHeaderTitle: { fontSize: 17, fontWeight: '800', color: '#111' },
+  scanHeaderSub: { fontSize: 12, color: '#6B7280', marginTop: 2 },
+  scanActionsRow: { flexDirection: 'row', gap: 10 },
+  scanActionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 12 },
+  scanActionText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+  scanWarn: { textAlign: 'center', color: '#B45309', fontSize: 12, fontWeight: '700', marginTop: 10, backgroundColor: '#FEF3C7', paddingVertical: 6, borderRadius: 8 },
+  scanEmpty: { alignItems: 'center', padding: 36, gap: 8 },
+  scanEmptyTitle: { fontSize: 16, fontWeight: '800', color: '#374151', marginTop: 6 },
+  scanEmptyDesc: { fontSize: 13, color: '#6B7280', textAlign: 'center', lineHeight: 18 },
+  pageRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, padding: 8 },
+  pageThumb: { width: 56, height: 72, borderRadius: 6, backgroundColor: '#000' },
+  pageNumber: { fontSize: 14, fontWeight: '700', color: '#111' },
+  pageSize: { fontSize: 11, color: '#6B7280', marginTop: 2 },
+  pageControls: { flexDirection: 'row', gap: 4 },
+  pageCtrlBtn: { width: 32, height: 32, justifyContent: 'center', alignItems: 'center', borderRadius: 6, backgroundColor: '#E5E7EB' },
+  scanFooter: { flexDirection: 'row', padding: 14, gap: 10, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
+  scanFooterBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 12 },
+  scanFooterBtnText: { fontSize: 14, fontWeight: '700', color: '#6B7280' },
+  pdfViewerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14 },
+  pdfViewerTitle: { color: '#FFF', fontSize: 16, fontWeight: '800' },
 });

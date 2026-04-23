@@ -2737,6 +2737,7 @@ class ExpenseCreate(BaseModel):
     description: Optional[str] = ""
     vendor: Optional[str] = ""
     receipt_photo: Optional[str] = None  # base64 string (data URL or raw)
+    receipt_pdf: Optional[str] = None  # base64 PDF (data URL or raw) — multi-page scan
 
 
 class ExpenseUpdate(BaseModel):
@@ -2746,6 +2747,7 @@ class ExpenseUpdate(BaseModel):
     description: Optional[str] = None
     vendor: Optional[str] = None
     receipt_photo: Optional[str] = None
+    receipt_pdf: Optional[str] = None
 
 
 class ExpenseResponse(BaseModel):
@@ -2756,6 +2758,7 @@ class ExpenseResponse(BaseModel):
     description: str
     vendor: str
     receipt_photo: Optional[str] = None
+    receipt_pdf: Optional[str] = None
     created_at: str
     updated_at: str
 
@@ -2769,6 +2772,7 @@ def _expense_doc_to_response(doc: dict) -> dict:
         "description": doc.get("description", "") or "",
         "vendor": doc.get("vendor", "") or "",
         "receipt_photo": doc.get("receipt_photo"),
+        "receipt_pdf": doc.get("receipt_pdf"),
         "created_at": doc.get("created_at", ""),
         "updated_at": doc.get("updated_at", ""),
     }
@@ -2789,6 +2793,7 @@ async def create_expense(payload: ExpenseCreate):
         "description": payload.description or "",
         "vendor": payload.vendor or "",
         "receipt_photo": payload.receipt_photo,
+        "receipt_pdf": payload.receipt_pdf,
         "created_at": now,
         "updated_at": now,
     }
@@ -2875,6 +2880,109 @@ async def delete_expense(expense_id: str):
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Dépense introuvable")
     return {"deleted": 1}
+
+
+class ImagesToPdfRequest(BaseModel):
+    images: List[str]  # list of base64 image data URIs or raw base64
+
+
+@api_router.post("/expenses/images-to-pdf")
+async def convert_images_to_pdf(payload: ImagesToPdfRequest):
+    """Convert one or multiple base64 images into a single PDF.
+    Each image becomes a page in the PDF. Returns the PDF as base64 data URL.
+    Used for scanning multi-page receipts/invoices.
+    """
+    from PIL import Image
+    from io import BytesIO
+
+    if not payload.images or len(payload.images) == 0:
+        raise HTTPException(status_code=400, detail="Aucune image fournie")
+    if len(payload.images) > 20:
+        raise HTTPException(status_code=400, detail="Maximum 20 pages par PDF")
+
+    pil_images = []
+    try:
+        for idx, img_str in enumerate(payload.images):
+            # Handle data URL prefix
+            if img_str.startswith("data:"):
+                img_str = img_str.split(",", 1)[1] if "," in img_str else img_str
+            try:
+                raw = base64.b64decode(img_str)
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Image {idx+1} invalide: {e}")
+            img = Image.open(BytesIO(raw))
+            # Convert to RGB (PDF doesn't support RGBA/transparency)
+            if img.mode in ("RGBA", "LA", "P"):
+                bg = Image.new("RGB", img.size, (255, 255, 255))
+                if img.mode == "P":
+                    img = img.convert("RGBA")
+                bg.paste(img, mask=img.split()[-1] if img.mode in ("RGBA", "LA") else None)
+                img = bg
+            elif img.mode != "RGB":
+                img = img.convert("RGB")
+
+            # Resize very large images to fit within A4-ish dimensions (keeps file size reasonable)
+            max_dim = 2200
+            if img.width > max_dim or img.height > max_dim:
+                ratio = min(max_dim / img.width, max_dim / img.height)
+                new_size = (int(img.width * ratio), int(img.height * ratio))
+                img = img.resize(new_size, Image.LANCZOS)
+
+            pil_images.append(img)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Image processing error: {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur traitement image: {e}")
+
+    # Build PDF in memory
+    buf = BytesIO()
+    try:
+        first = pil_images[0]
+        rest = pil_images[1:] if len(pil_images) > 1 else []
+        first.save(buf, format="PDF", save_all=True, append_images=rest, resolution=150.0)
+        pdf_bytes = buf.getvalue()
+    except Exception as e:
+        logger.error(f"PDF generation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur génération PDF: {e}")
+    finally:
+        buf.close()
+
+    pdf_b64 = base64.b64encode(pdf_bytes).decode("ascii")
+    pdf_data_url = f"data:application/pdf;base64,{pdf_b64}"
+    return {
+        "pdf_base64": pdf_data_url,
+        "pages": len(pil_images),
+        "size_kb": round(len(pdf_bytes) / 1024, 1),
+    }
+
+
+@api_router.get("/expenses/{expense_id}/receipt-pdf")
+async def download_expense_receipt_pdf(expense_id: str):
+    """Download the PDF receipt/invoice attached to an expense (inline view)."""
+    from fastapi.responses import StreamingResponse
+    from io import BytesIO
+    doc = await db.expenses.find_one({"id": expense_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Dépense introuvable")
+    pdf_str = doc.get("receipt_pdf")
+    if not pdf_str:
+        raise HTTPException(status_code=404, detail="Aucun PDF attaché")
+    # Strip data URL prefix if present
+    if pdf_str.startswith("data:"):
+        pdf_str = pdf_str.split(",", 1)[1] if "," in pdf_str else pdf_str
+    try:
+        raw = base64.b64decode(pdf_str)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PDF corrompu: {e}")
+    vendor = (doc.get("vendor") or "recu").replace(" ", "_")[:40]
+    date_str = doc.get("date", "")
+    filename = f"Recu_{vendor}_{date_str}.pdf"
+    return StreamingResponse(
+        BytesIO(raw),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 @api_router.get("/expenses/export/excel")
