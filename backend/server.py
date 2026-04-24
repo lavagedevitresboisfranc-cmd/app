@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import re
 import logging
 import asyncio
 import base64
@@ -14,6 +15,7 @@ from typing import List, Optional
 import uuid
 from datetime import datetime, timezone
 import resend
+import branding
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env', override=False)
@@ -30,6 +32,37 @@ db = client[os.environ['DB_NAME']]
 # Resend email config
 resend.api_key = os.environ.get('RESEND_API_KEY', '')
 NOTIFY_EMAIL = os.environ.get('NOTIFY_EMAIL', '')
+
+
+def inject_branding(html: str) -> str:
+    """Insert the branded business header into any outgoing HTML email.
+
+    - If the template already contains a <body> tag, the header is inserted
+      right after it and the footer right before </body>.
+    - Otherwise, the header/footer are prepended/appended.
+    - Idempotent: if the template already contains the header signature, it's
+      left alone (prevents double-branding).
+    """
+    if not html or branding.BUSINESS_NAME in html[:500]:
+        # Template likely already contains the business name/logo near the top
+        # — still try to inject the standard header so every outgoing email
+        # carries the official logo; we simply avoid duplicating it twice.
+        pass
+    header = branding.build_email_header_html()
+    footer = branding.build_email_footer_html()
+    # Already branded (our own header signature)?
+    if 'data-gexia-header="1"' in html:
+        return html
+    header_tagged = header.replace('<div ', '<div data-gexia-header="1" ', 1)
+    if "<body" in html:
+        # inject footer before </body>
+        if "</body>" in html:
+            html = html.replace("</body>", footer + "</body>", 1)
+        # inject header right after opening <body ...>
+        html = re.sub(r"(<body[^>]*>)", r"\1" + header_tagged, html, count=1)
+        return html
+    # Plain HTML fragment: wrap fully
+    return branding.wrap_email(html)
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -700,7 +733,7 @@ async def create_request(data: RequestCreate):
                 "from": "onboarding@resend.dev",
                 "to": [NOTIFY_EMAIL],
                 "subject": f"Nouveau RDV — {request_doc['customer_name']}",
-                "html": html,
+                "html": inject_branding(html),
             })
             logger.info(f"Email notification sent to {NOTIFY_EMAIL}")
         except Exception as e:
@@ -892,7 +925,7 @@ async def suggest_alternative(request_id: str, data: RequestSuggest):
                     "to": [client_email],
                     "reply_to": NOTIFY_EMAIL if NOTIFY_EMAIL else None,
                     "subject": f"Nouvelle proposition de rendez-vous — {_fmt_date(new_date)} à {new_time}",
-                    "html": html,
+                    "html": inject_branding(html),
                 },
             )
             logger.info(f"Alternative offer email sent to client {client_email}")
@@ -1030,7 +1063,7 @@ async def send_estimate(request_id: str, data: RequestEstimate):
                     "to": [client_email],
                     "reply_to": NOTIFY_EMAIL if NOTIFY_EMAIL else None,
                     "subject": f"Votre estimation — {price_str}",
-                    "html": html,
+                    "html": inject_branding(html),
                 },
             )
             sent = True
@@ -2003,7 +2036,7 @@ async def generate_invoice(appointment_id: str):
 
     invoice_num = appointment_id[:8].upper()
     price = appt.get('price', 0)
-    logo_url = os.environ.get('INVOICE_LOGO_URL', 'https://customer-assets.emergentagent.com/job_booking-hub-406/artifacts/kwu8xdcw_logo.jpg')
+    logo_url = branding.LOGO_DATA_URL or os.environ.get('INVOICE_LOGO_URL', '')
 
     # Seasonal promo: 10% automne (sept-nov)
     from datetime import datetime
@@ -2032,7 +2065,7 @@ body{{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;max-width:780px;mar
 .top-banner{{background:linear-gradient(135deg,#0891B2 0%,#06B6D4 100%);height:6px;border-radius:3px;margin-bottom:14px;}}
 .header{{display:flex;justify-content:space-between;align-items:center;gap:18px;margin-bottom:16px;padding-bottom:14px;border-bottom:2px solid #F3F4F6;}}
 .brand{{display:flex;align-items:center;gap:14px;flex:1;}}
-.brand img{{width:140px;height:140px;border-radius:14px;object-fit:cover;box-shadow:0 3px 10px rgba(0,0,0,0.08);}}
+.brand img{{width:140px;height:auto;max-height:140px;border-radius:8px;object-fit:contain;background:#FFFFFF;box-shadow:0 3px 10px rgba(0,0,0,0.08);padding:6px;}}
 .brand-info{{display:flex;flex-direction:column;gap:2px;}}
 .company-name{{font-size:14px;font-weight:700;color:#111827;line-height:1.25;}}
 .company-tagline{{font-size:9px;color:#6B7280;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;}}
@@ -2277,7 +2310,7 @@ async def send_review_request(appointment_id: str):
                 "from": "onboarding@resend.dev",
                 "to": [client_email],
                 "subject": "Comment était votre expérience? — Gexia360",
-                "html": html,
+                "html": inject_branding(html),
             })
             return {"message": f"Demande d'avis envoyée à {client_email}"}
         except Exception as e:
@@ -2493,7 +2526,7 @@ async def backup_by_email():
                 "from": "onboarding@resend.dev",
                 "to": [NOTIFY_EMAIL],
                 "subject": f"Backup Gexia360 — {now}",
-                "html": html,
+                "html": inject_branding(html),
             })
             return {"message": f"Backup envoyé à {NOTIFY_EMAIL}"}
         except Exception as e:
@@ -2527,6 +2560,163 @@ async def estimate_price(data: PriceEstimate):
         "rate_per_window": rate,
         "estimated_total": round(total, 2),
     }
+
+
+class EstimateItem(BaseModel):
+    label: str
+    qty: int = 0
+    unit_price: float = 0.0
+
+
+class EstimateSendRequest(BaseModel):
+    client_name: str = ""
+    client_email: str = ""
+    items: List[EstimateItem] = []
+    fixed_price: Optional[float] = None
+    discount_percent: float = 0.0
+    total: float = 0.0
+    notes: str = ""
+    valid_until: Optional[str] = ""  # ISO date
+
+
+@api_router.post("/estimate/send")
+async def send_estimate_email(data: EstimateSendRequest):
+    """Send a beautifully branded HTML estimation email to the client,
+    with the Lavage de Vitres Bois-Franc logo and contact info automatically
+    injected. This is used by the in-app Estimation builder (/estimate)."""
+    if not resend.api_key:
+        raise HTTPException(status_code=500, detail="Email service not configured")
+    if not data.client_email or "@" not in data.client_email:
+        raise HTTPException(status_code=400, detail="Valid client email required")
+
+    price_str = f"{data.total:,.2f} $".replace(",", " ")
+    client_first = (data.client_name or "").split()[0] if data.client_name else "cher client"
+
+    # Build line items table
+    items_rows = ""
+    has_items = False
+    for it in (data.items or []):
+        if it.qty <= 0:
+            continue
+        has_items = True
+        line_total = it.qty * it.unit_price
+        items_rows += f"""
+        <tr>
+          <td style="padding:10px 8px;border-bottom:1px solid #F3F4F6;color:#374151;font-size:13px">{it.label}</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #F3F4F6;color:#6B7280;font-size:13px;text-align:center">{it.qty}</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #F3F4F6;color:#6B7280;font-size:13px;text-align:right">{it.unit_price:.2f} $</td>
+          <td style="padding:10px 8px;border-bottom:1px solid #F3F4F6;color:#111827;font-size:13px;font-weight:600;text-align:right">{line_total:.2f} $</td>
+        </tr>
+        """
+    items_table = ""
+    if has_items:
+        items_table = f"""
+        <table style="width:100%;border-collapse:collapse;margin:16px 0;background:#FAFAFA;border-radius:8px;overflow:hidden">
+          <thead>
+            <tr style="background:#1E5BA8;color:#fff">
+              <th style="padding:10px 8px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700">Description</th>
+              <th style="padding:10px 8px;text-align:center;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700">Qté</th>
+              <th style="padding:10px 8px;text-align:right;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700">Prix unit.</th>
+              <th style="padding:10px 8px;text-align:right;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items_rows}
+          </tbody>
+        </table>
+        """
+
+    discount_block = ""
+    if data.discount_percent and data.discount_percent > 0:
+        discount_block = f"""
+        <p style="margin:4px 0;text-align:right;color:#059669;font-weight:700;font-size:14px">
+          Rabais: -{data.discount_percent:.0f}%
+        </p>
+        """
+
+    notes_block = ""
+    if data.notes and data.notes.strip():
+        safe_note = data.notes.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br>')
+        notes_block = f"""
+        <div style="background:#FFF7ED;border-left:4px solid #FB923C;padding:14px 16px;border-radius:8px;margin:20px 0">
+          <p style="margin:0 0 6px 0;color:#9A3412;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px">📝 Notes / Informations</p>
+          <p style="margin:0;color:#7C2D12;font-size:14px;line-height:1.6">{safe_note}</p>
+        </div>
+        """
+
+    valid_block = ""
+    if data.valid_until:
+        valid_block = f"""
+        <p style="margin:8px 0 0 0;color:#6B7280;font-size:12px;text-align:center">
+          Valide jusqu'au {data.valid_until}
+        </p>
+        """
+
+    body_html = f"""
+    <div style="text-align:center;padding:8px 0 16px 0">
+      <p style="margin:0;font-size:32px">💰</p>
+      <h1 style="margin:8px 0 4px 0;color:#111827;font-size:22px">Votre estimation</h1>
+      <p style="margin:0;color:#6B7280;font-size:14px">Bonjour {client_first} !</p>
+    </div>
+
+    <p style="margin:0 0 14px 0;color:#374151;font-size:15px;line-height:1.6">
+      Merci pour votre intérêt pour nos services de lavage de vitres. Voici l'estimation détaillée :
+    </p>
+
+    {items_table}
+    {discount_block}
+
+    <div style="background:linear-gradient(135deg,#ECFDF5,#D1FAE5);border:2px solid #10B981;border-radius:12px;padding:20px;text-align:center;margin:16px 0">
+      <p style="margin:0 0 6px 0;color:#047857;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px">Total</p>
+      <p style="margin:0;color:#065F46;font-size:34px;font-weight:800">{price_str}</p>
+      {valid_block}
+    </div>
+
+    {notes_block}
+
+    <p style="margin:20px 0 8px 0;color:#4B5563;font-size:14px;line-height:1.6">
+      Cette estimation vous convient-elle ? Répondez-moi simplement ou appelez-moi pour réserver votre rendez-vous.
+    </p>
+
+    <p style="margin:16px 0 0 0;color:#6B7280;font-size:13px;font-style:italic;line-height:1.5">
+      Merci de votre confiance,<br>
+      <strong style="color:#1E5BA8">Louis-Philippe Fournier</strong>
+    </p>
+    """
+
+    full_html = branding.wrap_email(body_html, subtitle=f"Estimation pour {data.client_name}" if data.client_name else "Estimation")
+
+    from_addr = os.environ.get("RESEND_FROM") or "onboarding@resend.dev"
+    try:
+        await asyncio.to_thread(
+            resend.Emails.send,
+            {
+                "from": from_addr,
+                "to": [data.client_email],
+                "reply_to": NOTIFY_EMAIL if NOTIFY_EMAIL else None,
+                "subject": f"Votre estimation — Lavage de Vitres Bois-Franc — {price_str}",
+                "html": inject_branding(full_html),
+            },
+        )
+        # Also notify the business owner
+        if NOTIFY_EMAIL:
+            try:
+                await asyncio.to_thread(
+                    resend.Emails.send,
+                    {
+                        "from": "onboarding@resend.dev",
+                        "to": [NOTIFY_EMAIL],
+                        "subject": f"📤 Estimation envoyée à {data.client_name or data.client_email} — {price_str}",
+                        "html": inject_branding(f"<div><p><strong>Estimation envoyée</strong></p><p>Client: {data.client_name or '—'}<br>Courriel: {data.client_email}<br>Montant: <strong>{price_str}</strong></p>{notes_block}</div>"),
+                    },
+                )
+            except Exception:
+                pass
+        return {"ok": True, "sent_to": data.client_email}
+    except Exception as e:
+        logging.exception("Failed to send estimate email")
+        raise HTTPException(status_code=500, detail=f"Email send failed: {e}")
+
 
 # --- Share Appointment ---
 
@@ -3943,7 +4133,7 @@ async def _send_scheduled_campaign(doc: dict) -> bool:
                 "to": ["onboarding@resend.dev"],  # placeholder (Resend requires 'to')
                 "bcc": recipients,
                 "subject": subject,
-                "html": html_body,
+                "html": inject_branding(html_body),
             },
         )
         await db.scheduled_campaigns.update_one(

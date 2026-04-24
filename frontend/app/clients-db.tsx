@@ -704,37 +704,44 @@ export default function ClientsDbScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.label}>Nom *</Text>
-            <TextInput style={styles.input} placeholder="ex. Jean Tremblay" value={newName} onChangeText={setNewName} />
+            <ScrollView
+              style={{ flexGrow: 0 }}
+              contentContainerStyle={{ paddingBottom: 16 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={true}
+            >
+              <Text style={styles.label}>Nom *</Text>
+              <TextInput style={styles.input} placeholder="ex. Jean Tremblay" value={newName} onChangeText={setNewName} />
 
-            <Text style={styles.label}>Courriel</Text>
-            <TextInput style={styles.input} placeholder="jean@exemple.com" value={newEmail} onChangeText={setNewEmail} keyboardType="email-address" autoCapitalize="none" />
+              <Text style={styles.label}>Courriel</Text>
+              <TextInput style={styles.input} placeholder="jean@exemple.com" value={newEmail} onChangeText={setNewEmail} keyboardType="email-address" autoCapitalize="none" />
 
-            <Text style={styles.label}>Téléphone</Text>
-            <TextInput style={styles.input} placeholder="514-555-1234" value={newPhone} onChangeText={setNewPhone} keyboardType="phone-pad" />
+              <Text style={styles.label}>Téléphone</Text>
+              <TextInput style={styles.input} placeholder="514-555-1234" value={newPhone} onChangeText={setNewPhone} keyboardType="phone-pad" />
 
-            <Text style={styles.label}>Adresse</Text>
-            <TextInput style={styles.input} placeholder="123 Rue Principale" value={newAddress} onChangeText={setNewAddress} />
+              <Text style={styles.label}>Adresse</Text>
+              <TextInput style={styles.input} placeholder="123 Rue Principale" value={newAddress} onChangeText={setNewAddress} />
 
-            <Text style={styles.label}>Notes</Text>
-            <TextInput style={[styles.input, { minHeight: 60 }]} placeholder="Notes..." value={newNotes} onChangeText={setNewNotes} multiline />
+              <Text style={styles.label}>Notes</Text>
+              <TextInput style={[styles.input, { minHeight: 60 }]} placeholder="Notes..." value={newNotes} onChangeText={setNewNotes} multiline />
 
-            {/* Duplicate warning banner */}
-            {dupMatch && dupMatch.client && (
-              <View style={styles.dupBanner}>
-                <Feather name="alert-triangle" size={18} color="#B45309" />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.dupBannerTitle}>Client existant trouvé</Text>
-                  <Text style={styles.dupBannerText}>
-                    {`"${dupMatch.client.name}" — correspond par ${dupMatch.by === 'email' ? 'courriel' : dupMatch.by === 'phone' ? 'téléphone' : 'nom'}.\nTaper "Créer" proposera de mettre à jour la fiche existante.`}
-                  </Text>
+              {/* Duplicate warning banner */}
+              {dupMatch && dupMatch.client && (
+                <View style={styles.dupBanner}>
+                  <Feather name="alert-triangle" size={18} color="#B45309" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.dupBannerTitle}>Client existant trouvé</Text>
+                    <Text style={styles.dupBannerText}>
+                      {`"${dupMatch.client.name}" — correspond par ${dupMatch.by === 'email' ? 'courriel' : dupMatch.by === 'phone' ? 'téléphone' : 'nom'}.\nTaper "Créer" proposera de mettre à jour la fiche existante.`}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-            )}
+              )}
 
-            <TouchableOpacity onPress={createClient} style={styles.saveBtn} activeOpacity={0.8} disabled={creating}>
-              {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>{dupMatch ? 'Créer / Mettre à jour' : 'Créer'}</Text>}
-            </TouchableOpacity>
+              <TouchableOpacity onPress={createClient} style={styles.saveBtn} activeOpacity={0.8} disabled={creating}>
+                {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>{dupMatch ? 'Créer / Mettre à jour' : 'Créer'}</Text>}
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>

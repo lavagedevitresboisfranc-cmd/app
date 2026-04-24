@@ -7,6 +7,8 @@ import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import AppHeader from '../components/AppHeader';
 
+const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+
 const PRICES_STORAGE_KEY = 'brightcalendar_window_prices_v1';
 
 const WINDOW_TYPES = [
@@ -73,6 +75,10 @@ export default function EstimateScreen() {
   const [photos, setPhotos] = useState<string[]>([]);
   const [fixedPrice, setFixedPrice] = useState('');
   const [useFixed, setUseFixed] = useState(false);
+  const [clientName, setClientName] = useState('');
+  const [clientEmail, setClientEmail] = useState('');
+  const [notes, setNotes] = useState('');
+  const [sendingEmail, setSendingEmail] = useState(false);
 
   const takePhoto = async () => {
     try {
@@ -144,19 +150,78 @@ export default function EstimateScreen() {
   };
 
   const sendByEmail = async () => {
+    // If an email is filled in the form, send a beautifully branded HTML email
+    // via our backend (includes the business logo, items, notes, etc.).
+    const prefillEmail = clientEmail.trim();
+
+    const doBrandedSend = async (email: string) => {
+      if (totalPrice <= 0) {
+        Alert.alert('Erreur', 'Le total de l\'estimation doit être supérieur à 0.');
+        return;
+      }
+      setSendingEmail(true);
+      try {
+        const items = WINDOW_TYPES
+          .filter((t) => (counts[t.key] || 0) > 0)
+          .map((t) => ({ label: t.label, qty: counts[t.key] || 0, unit_price: prices[t.key] || 0 }));
+        if (useFixed && fixedValue > 0) {
+          items.length = 0;
+          items.push({ label: 'Forfait lavage de vitres', qty: 1, unit_price: fixedValue });
+        }
+        const res = await fetch(`${API_URL}/api/estimate/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            client_name: clientName.trim(),
+            client_email: email,
+            items,
+            fixed_price: useFixed ? fixedValue : null,
+            discount_percent: discount,
+            total: totalPrice,
+            notes: notes.trim(),
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: 'Erreur' }));
+          throw new Error(err.detail || 'Erreur d\'envoi');
+        }
+        Alert.alert(
+          '✅ Estimation envoyée',
+          `L'estimation HTML avec logo a été envoyée à ${email}.`,
+          [{ text: 'OK' }]
+        );
+      } catch (e: any) {
+        Alert.alert('❌ Erreur', e?.message || 'Impossible d\'envoyer l\'estimation');
+      } finally {
+        setSendingEmail(false);
+      }
+    };
+
+    if (prefillEmail && prefillEmail.includes('@')) {
+      await doBrandedSend(prefillEmail);
+      return;
+    }
+
+    // Fallback: prompt for email (legacy behaviour)
     Alert.prompt(
       'Envoyer par courriel',
       'Adresse courriel du client :',
       async (email) => {
         if (!email || !email.trim()) return;
-        const subject = `Estimation — Lavage de vitres`;
-        const body = buildEstimateText();
-        const url = `mailto:${email.trim()}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-        try {
-          const can = await Linking.canOpenURL(url);
-          if (can) { await Linking.openURL(url); }
-          else { Alert.alert('Erreur', 'Aucune app courriel disponible'); }
-        } catch { Alert.alert('Erreur', 'Impossible d\'ouvrir l\'app courriel'); }
+        const trimmed = email.trim();
+        if (trimmed.includes('@')) {
+          setClientEmail(trimmed);
+          await doBrandedSend(trimmed);
+        } else {
+          // Final fallback: open mailto with plain text
+          const subject = `Estimation — Lavage de vitres`;
+          const body = buildEstimateText();
+          const url = `mailto:${trimmed}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+          try {
+            const can = await Linking.canOpenURL(url);
+            if (can) { await Linking.openURL(url); }
+          } catch { Alert.alert('Erreur', 'Impossible d\'ouvrir l\'app courriel'); }
+        }
       },
       'plain-text'
     );
@@ -373,12 +438,59 @@ export default function EstimateScreen() {
           </View>
         </View>
 
+        {/* Client info + Notes (for branded HTML email) */}
+        <View style={styles.clientSection}>
+          <Text style={styles.clientSectionLabel}>📧 COURRIEL AVEC LOGO — INFOS CLIENT</Text>
+
+          <Text style={styles.clientInputLabel}>Nom du client</Text>
+          <TextInput
+            testID="client-name"
+            style={styles.clientInput}
+            placeholder="Ex: Jean Tremblay"
+            placeholderTextColor="#A3A3A3"
+            value={clientName}
+            onChangeText={setClientName}
+          />
+
+          <Text style={styles.clientInputLabel}>Courriel du client</Text>
+          <TextInput
+            testID="client-email"
+            style={styles.clientInput}
+            placeholder="jean@exemple.com"
+            placeholderTextColor="#A3A3A3"
+            value={clientEmail}
+            onChangeText={setClientEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+
+          <Text style={styles.clientInputLabel}>Notes / Informations supplémentaires</Text>
+          <TextInput
+            testID="client-notes"
+            style={[styles.clientInput, { minHeight: 90, textAlignVertical: 'top' }]}
+            placeholder={"Ex: Maison à 2 étages, 10 fenêtres au sous-sol incluses, valide 30 jours..."}
+            placeholderTextColor="#A3A3A3"
+            value={notes}
+            onChangeText={setNotes}
+            multiline
+          />
+
+          <View style={styles.clientHintRow}>
+            <Feather name="info" size={13} color="#0891B2" />
+            <Text style={styles.clientHint}>
+              {clientEmail.trim() && clientEmail.includes('@')
+                ? '✨ Le courriel envoyé inclura votre logo, les détails et les notes'
+                : 'Remplissez le courriel ci-dessus pour envoyer une estimation professionnelle avec logo'}
+            </Text>
+          </View>
+        </View>
+
         {/* Send actions */}
         <Text style={styles.sendLabel}>ENVOYER L'ESTIMATION</Text>
         <View style={styles.sendRow}>
-          <TouchableOpacity testID="send-email" style={[styles.sendBtn, { borderColor: '#059669' }]} activeOpacity={0.7} onPress={sendByEmail}>
+          <TouchableOpacity testID="send-email" style={[styles.sendBtn, { borderColor: '#059669' }, sendingEmail && { opacity: 0.5 }]} activeOpacity={0.7} onPress={sendByEmail} disabled={sendingEmail}>
             <Feather name="mail" size={20} color="#059669" />
-            <Text style={[styles.sendBtnText, { color: '#059669' }]}>Courriel</Text>
+            <Text style={[styles.sendBtnText, { color: '#059669' }]}>{sendingEmail ? 'Envoi…' : 'Courriel'}</Text>
           </TouchableOpacity>
           <TouchableOpacity testID="send-sms" style={[styles.sendBtn, { borderColor: '#0891B2' }]} activeOpacity={0.7} onPress={sendBySMS}>
             <Feather name="message-circle" size={20} color="#0891B2" />
@@ -474,6 +586,42 @@ const styles = StyleSheet.create({
     paddingVertical: 14, borderRadius: 10, borderWidth: 1.5, backgroundColor: '#FFFFFF',
   },
   sendBtnText: { fontSize: 13, fontWeight: '700' },
+  // Client info section (for branded HTML email with logo)
+  clientSection: {
+    marginTop: 16, marginBottom: 4,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E0F2FE',
+    padding: 14,
+  },
+  clientSectionLabel: {
+    fontSize: 11, fontWeight: '800', color: '#0369A1',
+    textTransform: 'uppercase', letterSpacing: 0.8,
+    marginBottom: 10,
+  },
+  clientInputLabel: {
+    fontSize: 11, fontWeight: '700', color: '#6B7280',
+    textTransform: 'uppercase', letterSpacing: 0.4,
+    marginTop: 8, marginBottom: 4,
+  },
+  clientInput: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1, borderColor: '#E5E7EB',
+    borderRadius: 8,
+    paddingHorizontal: 12, paddingVertical: 10,
+    fontSize: 14, color: '#111827',
+  },
+  clientHintRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 6,
+    marginTop: 10, paddingTop: 10,
+    borderTopWidth: 1, borderTopColor: '#F3F4F6',
+  },
+  clientHint: {
+    flex: 1,
+    fontSize: 11, color: '#0891B2', lineHeight: 15,
+    fontStyle: 'italic',
+  },
   photoSection: { marginTop: 8, marginBottom: 16 },
   photoLabel: { fontSize: 12, fontWeight: '600', color: '#737373', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 },
   photoActions: { flexDirection: 'row', gap: 10 },
