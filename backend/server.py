@@ -720,15 +720,24 @@ async def get_request(request_id: str):
 
 class AcceptRequest(BaseModel):
     price: Optional[float] = 0.0
+    date: Optional[str] = None  # override preferred_date (YYYY-MM-DD)
+    time: Optional[str] = None  # override preferred_time (HH:MM)
+    duration_minutes: Optional[int] = None
 
 @api_router.put("/requests/{request_id}/accept", response_model=AppointmentResponse)
 async def accept_request(request_id: str, data: AcceptRequest = AcceptRequest()):
-    """Accept a request: creates a confirmed appointment and marks request as accepted"""
+    """Accept a request: creates a confirmed appointment and marks request as accepted.
+    Optionally override date/time/duration (used when the user picks a different slot from
+    the day's availability view)."""
     req = await db.appointment_requests.find_one({"id": request_id}, {"_id": 0})
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
     if req["status"] == "accepted":
         raise HTTPException(status_code=400, detail="Request already accepted")
+
+    final_date = data.date or req["preferred_date"]
+    final_time = data.time or req["preferred_time"]
+    final_duration = data.duration_minutes if data.duration_minutes is not None else 30
 
     # Create appointment from request — preserve client_id link from the request
     appointment = {
@@ -738,9 +747,9 @@ async def accept_request(request_id: str, data: AcceptRequest = AcceptRequest())
         "client_email": req.get("customer_email", ""),
         "client_phone": req.get("customer_phone", ""),
         "client_address": req.get("customer_address", ""),
-        "date": req["preferred_date"],
-        "time_slot": req["preferred_time"],
-        "duration_minutes": 30,
+        "date": final_date,
+        "time_slot": final_time,
+        "duration_minutes": final_duration,
         "price": data.price or 0.0,
         "notes": req.get("message", ""),
         "status": "upcoming",

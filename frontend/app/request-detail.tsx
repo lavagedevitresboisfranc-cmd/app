@@ -65,6 +65,10 @@ export default function RequestDetailScreen() {
   const [showEstimate, setShowEstimate] = useState(false);
   const [estimatePrice, setEstimatePrice] = useState('');
   const [estimateNote, setEstimateNote] = useState('');
+  // Day availability (for pending RDV requests)
+  const [dayAppointments, setDayAppointments] = useState<any[]>([]);
+  const [loadingDay, setLoadingDay] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -81,6 +85,10 @@ export default function RequestDetailScreen() {
         setRequest(data);
         // Pre-fill suggest date from preferred
         if (!suggestedDate) setSuggestedDate(data.preferred_date);
+        // Fetch appointments for that day to show availability
+        if (data.preferred_date && data.request_type !== 'est') {
+          loadDayAppointments(data.preferred_date);
+        }
       }
     } catch (e) {
       console.error('Failed to fetch request', e);
@@ -89,17 +97,43 @@ export default function RequestDetailScreen() {
     }
   };
 
+  const loadDayAppointments = async (dateStr: string) => {
+    setLoadingDay(true);
+    try {
+      const res = await fetch(`${API_URL}/api/appointments?date=${dateStr}`);
+      if (res.ok) {
+        const data = await res.json();
+        // Only count upcoming (not archived) appointments as occupying the slot
+        setDayAppointments(
+          Array.isArray(data) ? data.filter((a: any) => a.status !== 'archived') : []
+        );
+      }
+    } catch (e) {
+      console.warn('loadDayAppointments', e);
+    } finally {
+      setLoadingDay(false);
+    }
+  };
+
   const handleAccept = async () => {
     Keyboard.dismiss();
     setActing(true);
     try {
+      const body: any = { price: acceptPrice ? parseFloat(acceptPrice) : 0 };
+      // If user picked a different time from the day's availability view, override
+      if (selectedSlot && request && selectedSlot !== request.preferred_time) {
+        body.time = selectedSlot;
+      }
       const res = await fetch(`${API_URL}/api/requests/${id}/accept`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ price: acceptPrice ? parseFloat(acceptPrice) : 0 }),
+        body: JSON.stringify(body),
       });
       if (res.ok) {
-        Alert.alert('Confirmé!', 'Rendez-vous créé avec succès', [{ text: 'OK', onPress: () => router.back() }]);
+        const timeMsg = selectedSlot && selectedSlot !== request?.preferred_time
+          ? `\nRDV planifié à ${selectedSlot} (au lieu de ${request?.preferred_time})`
+          : '';
+        Alert.alert('Confirmé!', `Rendez-vous créé avec succès${timeMsg}`, [{ text: 'OK', onPress: () => router.back() }]);
       } else {
         Alert.alert('Erreur', 'Échec de l\'acceptation');
       }
@@ -487,6 +521,140 @@ export default function RequestDetailScreen() {
           {/* Actions for pending requests */}
           {request.status === 'pending' && !showSuggest && (
             <View style={styles.actionsSection}>
+              {/* === DAY AVAILABILITY PANEL === */}
+              {request.request_type !== 'est' && (
+                <View style={styles.availCard}>
+                  <View style={styles.availHeader}>
+                    <Feather name="calendar" size={16} color="#0891B2" />
+                    <Text style={styles.availTitle}>
+                      Disponibilités du {request.preferred_date}
+                    </Text>
+                  </View>
+
+                  {loadingDay ? (
+                    <ActivityIndicator size="small" color="#0891B2" style={{ padding: 12 }} />
+                  ) : (
+                    (() => {
+                      // Compute occupied slots
+                      const occupiedBy: Record<string, any> = {};
+                      for (const a of dayAppointments) {
+                        const t = (a.time_slot || '').slice(0, 5);
+                        if (t) occupiedBy[t] = a;
+                      }
+                      const SLOTS = [
+                        '08:00', '08:30', '09:00', '09:30', '10:00', '10:30',
+                        '11:00', '11:30', '12:00', '12:30', '13:00', '13:30',
+                        '14:00', '14:30', '15:00', '15:30', '16:00',
+                      ];
+                      const requested = (request.preferred_time || '').slice(0, 5);
+                      const isRequestedFree = !occupiedBy[requested];
+
+                      return (
+                        <>
+                          {/* Status banner */}
+                          <View
+                            style={[
+                              styles.availBanner,
+                              {
+                                backgroundColor: isRequestedFree ? '#DCFCE7' : '#FEF3C7',
+                                borderColor: isRequestedFree ? '#86EFAC' : '#FCD34D',
+                              },
+                            ]}
+                          >
+                            <Feather
+                              name={isRequestedFree ? 'check-circle' : 'alert-triangle'}
+                              size={16}
+                              color={isRequestedFree ? '#059669' : '#B45309'}
+                            />
+                            <Text
+                              style={[
+                                styles.availBannerText,
+                                { color: isRequestedFree ? '#065F46' : '#92400E' },
+                              ]}
+                            >
+                              {isRequestedFree
+                                ? `Créneau demandé ${requested} disponible !`
+                                : `Créneau demandé ${requested} déjà occupé — choisissez une alternative`}
+                            </Text>
+                          </View>
+
+                          {/* Existing appointments list */}
+                          {dayAppointments.length > 0 && (
+                            <View style={{ marginTop: 10, gap: 6 }}>
+                              <Text style={styles.availSubLabel}>
+                                📌 RDV existants ({dayAppointments.length})
+                              </Text>
+                              {dayAppointments.map((a, idx) => (
+                                <View key={idx} style={styles.existingSlot}>
+                                  <Text style={styles.existingSlotTime}>
+                                    {(a.time_slot || '').slice(0, 5)}
+                                  </Text>
+                                  <Text style={styles.existingSlotName} numberOfLines={1}>
+                                    {a.client_name || 'Sans nom'}
+                                  </Text>
+                                  <Text style={styles.existingSlotDuration}>
+                                    {a.duration_minutes || 30}min
+                                  </Text>
+                                </View>
+                              ))}
+                            </View>
+                          )}
+
+                          {/* Available slots grid */}
+                          <Text style={[styles.availSubLabel, { marginTop: 12 }]}>
+                            ✅ Créneaux libres — tapez pour choisir
+                          </Text>
+                          <View style={styles.slotsGrid}>
+                            {SLOTS.map((slot) => {
+                              const isOccupied = !!occupiedBy[slot];
+                              const isRequested = slot === requested;
+                              const isSelected = selectedSlot === slot;
+                              return (
+                                <TouchableOpacity
+                                  key={slot}
+                                  testID={`slot-${slot}`}
+                                  disabled={isOccupied}
+                                  onPress={() => setSelectedSlot(slot)}
+                                  style={[
+                                    styles.slotChip,
+                                    isOccupied && styles.slotChipOccupied,
+                                    isRequested && styles.slotChipRequested,
+                                    isSelected && styles.slotChipSelected,
+                                  ]}
+                                  activeOpacity={0.7}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.slotChipText,
+                                      isOccupied && styles.slotChipTextOccupied,
+                                      isSelected && styles.slotChipTextSelected,
+                                    ]}
+                                  >
+                                    {slot}
+                                  </Text>
+                                  {isRequested && !isOccupied && !isSelected && (
+                                    <Text style={styles.slotChipHint}>demandé</Text>
+                                  )}
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+
+                          {selectedSlot && selectedSlot !== requested && (
+                            <View style={styles.slotSelectedBanner}>
+                              <Feather name="clock" size={14} color="#0891B2" />
+                              <Text style={styles.slotSelectedText}>
+                                RDV sera créé à {selectedSlot} (au lieu de {requested})
+                              </Text>
+                            </View>
+                          )}
+                        </>
+                      );
+                    })()
+                  )}
+                </View>
+              )}
+
               <Text style={styles.sectionLabel}>ACTIONS</Text>
 
               {/* Price input for accept */}
@@ -960,6 +1128,54 @@ const styles = StyleSheet.create({
     marginTop: 20,
     gap: 12,
   },
+  // Availability / Day slots
+  availCard: {
+    backgroundColor: '#F0F9FF',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    marginBottom: 10,
+  },
+  availHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  availTitle: { fontSize: 14, fontWeight: '800', color: '#0E7490' },
+  availBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    padding: 10, borderRadius: 10, borderWidth: 1,
+  },
+  availBannerText: { fontSize: 13, fontWeight: '700', flexShrink: 1 },
+  availSubLabel: {
+    fontSize: 12, fontWeight: '800', color: '#0369A1',
+    letterSpacing: 0.3, textTransform: 'uppercase',
+  },
+  existingSlot: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#FEF2F2', padding: 8, borderRadius: 8,
+    borderLeftWidth: 3, borderLeftColor: '#DC2626',
+  },
+  existingSlotTime: { fontSize: 13, fontWeight: '800', color: '#991B1B', minWidth: 48 },
+  existingSlotName: { flex: 1, fontSize: 13, color: '#374151', fontWeight: '600' },
+  existingSlotDuration: { fontSize: 11, color: '#6B7280', fontWeight: '600' },
+  slotsGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8,
+  },
+  slotChip: {
+    paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8,
+    backgroundColor: '#DCFCE7', borderWidth: 1, borderColor: '#86EFAC',
+    minWidth: 62, alignItems: 'center',
+  },
+  slotChipOccupied: { backgroundColor: '#F3F4F6', borderColor: '#E5E7EB', opacity: 0.5 },
+  slotChipRequested: { backgroundColor: '#FEF3C7', borderColor: '#FCD34D', borderWidth: 2 },
+  slotChipSelected: { backgroundColor: '#0891B2', borderColor: '#0E7490', borderWidth: 2 },
+  slotChipText: { fontSize: 13, fontWeight: '700', color: '#065F46' },
+  slotChipTextOccupied: { color: '#9CA3AF', textDecorationLine: 'line-through' },
+  slotChipTextSelected: { color: '#FFFFFF' },
+  slotChipHint: { fontSize: 8, color: '#B45309', fontWeight: '700', marginTop: 1 },
+  slotSelectedBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#CFFAFE', padding: 8, borderRadius: 8, marginTop: 10,
+  },
+  slotSelectedText: { fontSize: 12, fontWeight: '700', color: '#0E7490', flexShrink: 1 },
   sectionLabel: {
     fontSize: 13,
     fontWeight: '600',
