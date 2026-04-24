@@ -18,6 +18,7 @@ import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useAudioRecorder, useAudioPlayer, RecordingPresets, setAudioModeAsync, requestRecordingPermissionsAsync, AudioModule } from 'expo-audio';
 import * as ImagePicker from 'expo-image-picker';
 import AppHeader from '../components/AppHeader';
+import { wrapSms } from '../src/utils/smsTemplate';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -213,7 +214,8 @@ export default function DetailScreen() {
       return;
     }
     const sep = Platform.OS === 'ios' ? '&' : '?';
-    const url = `sms:${phone}${sep}body=${encodeURIComponent(message)}`;
+    const wrappedMessage = wrapSms(message);
+    const url = `sms:${phone}${sep}body=${encodeURIComponent(wrappedMessage)}`;
     try {
       const can = await Linking.canOpenURL(url);
       if (can) { await Linking.openURL(url); }
@@ -339,7 +341,7 @@ export default function DetailScreen() {
       const phone = (appointment.client_phone || '').replace(/\D/g, '');
       if (phone) {
         const sep = Platform.OS === 'ios' ? '&' : '?';
-        const url = `sms:${phone}${sep}body=${encodeURIComponent(data.text)}`;
+        const url = `sms:${phone}${sep}body=${encodeURIComponent(wrapSms(data.text))}`;
         const can = await Linking.canOpenURL(url);
         if (can) { await Linking.openURL(url); return; }
       }
@@ -379,7 +381,7 @@ export default function DetailScreen() {
     const msg = `Bonjour ${clientName}, merci pour votre confiance! Nous aimerions avoir votre avis: ${reviewUrl}`;
     try {
       const sep = Platform.OS === 'ios' ? '&' : '?';
-      const url = `sms:${phone}${sep}body=${encodeURIComponent(msg)}`;
+      const url = `sms:${phone}${sep}body=${encodeURIComponent(wrapSms(msg))}`;
       const can = await Linking.canOpenURL(url);
       if (can) { await Linking.openURL(url); }
       else { Alert.alert('Erreur', 'SMS non supporté sur cet appareil'); }

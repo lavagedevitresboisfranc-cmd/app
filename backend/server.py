@@ -34,7 +34,7 @@ resend.api_key = os.environ.get('RESEND_API_KEY', '')
 NOTIFY_EMAIL = os.environ.get('NOTIFY_EMAIL', '')
 
 
-def inject_branding(html: str) -> str:
+def inject_branding(html: str, recipient_email: str = "") -> str:
     """Insert the branded business header into any outgoing HTML email.
 
     - If the template already contains a <body> tag, the header is inserted
@@ -43,34 +43,110 @@ def inject_branding(html: str) -> str:
     - Idempotent: if the template already contains the header signature OR
       already embeds the business logo near the top, it's left alone
       (prevents double-branding on emails that used branding.wrap_email).
+    - Includes a CASL-compliant "Se désabonner" link in the footer.
     """
     if not html:
         return html
+    # Build unsubscribe URL (per-recipient if known)
+    app_url = os.environ.get("APP_URL", "").rstrip("/")
+    if recipient_email and app_url:
+        from urllib.parse import quote
+        unsub_url = f"{app_url}/api/unsubscribe?email={quote(recipient_email)}"
+    elif app_url:
+        unsub_url = f"{app_url}/api/unsubscribe"
+    else:
+        unsub_url = ""
+
     # Already branded? Either our tagged header, OR the logo data URL appears
     # near the top (wrap_email already inserted it)
     top_slice = html[:4000]
     if 'data-gexia-header="1"' in html:
         return html
-    # wrap_email / manual templates already including the logo data URL
-    # near the top — skip to avoid duplicate header.
     if 'data:image/jpeg;base64' in top_slice and branding.LOGO_BASE64[:30] in top_slice:
         return html
 
     header = branding.build_email_header_html()
-    footer = branding.build_email_footer_html()
+    footer = branding.build_email_footer_html(unsub_url)
     header_tagged = header.replace('<div ', '<div data-gexia-header="1" ', 1)
     if "<body" in html:
-        # inject footer before </body>
         if "</body>" in html:
             html = html.replace("</body>", footer + "</body>", 1)
-        # inject header right after opening <body ...>
         html = re.sub(r"(<body[^>]*>)", r"\1" + header_tagged, html, count=1)
         return html
-    # Plain HTML fragment: wrap fully
-    return branding.wrap_email(html)
+    return branding.wrap_email(html, unsubscribe_url=unsub_url)
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
+
+
+# --- Unsubscribe (CASL/CAN-SPAM compliance) ---
+
+@api_router.get("/unsubscribe", response_class=HTMLResponse)
+async def unsubscribe_page(email: str = ""):
+    """Show a confirmation page for unsubscribing.
+    Email is pre-filled from query param if available."""
+    safe_email = (email or "").strip().lower()
+    is_unsubbed = False
+    if safe_email:
+        existing = await db.unsubscribes.find_one({"email": safe_email})
+        is_unsubbed = bool(existing)
+
+    if is_unsubbed:
+        body = f"""
+        <div style="background:#FEF3C7;border-left:4px solid #F59E0B;padding:16px;border-radius:8px">
+          <h2 style="margin:0 0 8px 0;color:#92400E">Déjà désabonné</h2>
+          <p style="margin:0;color:#78350F">L'adresse <strong>{safe_email}</strong> est déjà désabonnée. Vous ne recevrez plus de courriels promotionnels.</p>
+        </div>
+        <p style="margin-top:20px;font-size:13px;color:#6B7280">Vous pouvez fermer cette page.</p>
+        """
+    else:
+        body = f"""
+        <h2 style="color:#1E5BA8;margin-top:0">Se désabonner</h2>
+        <p>Confirmer le désabonnement de l'adresse :</p>
+        <form method="POST" action="/api/unsubscribe">
+          <input type="email" name="email" value="{safe_email}" required
+            style="width:100%;padding:12px;border:1px solid #D1D5DB;border-radius:6px;font-size:14px;box-sizing:border-box;margin-bottom:12px" />
+          <button type="submit" style="width:100%;background:#DC2626;color:white;border:none;padding:14px;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer">Confirmer le désabonnement</button>
+        </form>
+        <p style="margin-top:16px;font-size:12px;color:#6B7280">Vous ne recevrez plus de courriels promotionnels (campagnes saisonnières) de Lavage de Vitres Bois-Franc. Les courriels de service comme les confirmations de RDV continueront d'arriver.</p>
+        """
+    return branding.wrap_email(body, subtitle="Préférences de courriel")
+
+
+@api_router.post("/unsubscribe", response_class=HTMLResponse)
+async def unsubscribe_submit(request: Request):
+    """Process unsubscribe request from the form."""
+    form = await request.form()
+    email = (form.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        return HTMLResponse(branding.wrap_email(
+            "<p style='color:#DC2626'>Adresse courriel invalide.</p>",
+            subtitle="Erreur"
+        ), status_code=400)
+    # Idempotent insert
+    await db.unsubscribes.update_one(
+        {"email": email},
+        {"$set": {"email": email, "unsubscribed_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+    body = f"""
+    <div style="background:#D1FAE5;border-left:4px solid #10B981;padding:16px;border-radius:8px;text-align:center">
+      <h2 style="margin:0 0 8px 0;color:#065F46">✅ Désabonnement confirmé</h2>
+      <p style="margin:0;color:#047857">L'adresse <strong>{email}</strong> ne recevra plus de courriels promotionnels.</p>
+    </div>
+    <p style="margin-top:20px;font-size:13px;color:#6B7280;text-align:center">Vous pouvez fermer cette page. Si c'était une erreur, écrivez-nous à {branding.BUSINESS_EMAIL}.</p>
+    """
+    return branding.wrap_email(body, subtitle="Désabonnement réussi")
+
+
+async def is_email_unsubscribed(email: str) -> bool:
+    """Returns True if the given email has unsubscribed from marketing."""
+    if not email:
+        return False
+    e = email.strip().lower()
+    doc = await db.unsubscribes.find_one({"email": e})
+    return bool(doc)
+
 
 # --- Models ---
 
@@ -2697,7 +2773,8 @@ async def send_estimate_email(data: EstimateSendRequest):
     </p>
     """
 
-    full_html = branding.wrap_email(body_html, subtitle=f"Estimation pour {data.client_name}" if data.client_name else "Estimation")
+    full_html = branding.wrap_email(body_html, subtitle=f"Estimation pour {data.client_name}" if data.client_name else "Estimation",
+                                     unsubscribe_url=(f"{os.environ.get('APP_URL', '').rstrip('/')}/api/unsubscribe?email={data.client_email}" if os.environ.get('APP_URL') else ""))
 
     from_addr = os.environ.get("RESEND_FROM") or "onboarding@resend.dev"
     try:
@@ -4116,8 +4193,17 @@ async def _send_scheduled_campaign(doc: dict) -> bool:
     cid = doc["id"]
     subject = doc["subject"]
     body = doc["body"]
-    recipients = doc.get("recipients") or []
+    recipients_raw = doc.get("recipients") or []
     now_iso = datetime.now(timezone.utc).isoformat()
+
+    # Filter out unsubscribed addresses (CASL compliance)
+    unsubbed_set = set()
+    async for u in db.unsubscribes.find({}, {"email": 1, "_id": 0}):
+        unsubbed_set.add((u.get("email") or "").lower())
+    recipients = [r for r in recipients_raw if r and r.lower() not in unsubbed_set]
+    skipped = len(recipients_raw) - len(recipients)
+    if skipped > 0:
+        logger.info(f"Campaign {cid}: skipped {skipped} unsubscribed recipient(s)")
 
     if not recipients:
         await db.scheduled_campaigns.update_one(

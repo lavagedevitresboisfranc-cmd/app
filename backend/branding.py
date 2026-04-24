@@ -62,8 +62,20 @@ def build_email_header_html(subtitle: str = "") -> str:
     """.strip()
 
 
-def build_email_footer_html() -> str:
-    """Return the branded HTML footer shown at the bottom of every email."""
+def build_email_footer_html(unsubscribe_url: str = "") -> str:
+    """Return the branded HTML footer shown at the bottom of every email.
+
+    If `unsubscribe_url` is provided, a "Se désabonner" link is added under
+    the contact info — required for CASL/CAN-SPAM compliance on marketing
+    emails."""
+    unsubscribe_html = ""
+    if unsubscribe_url:
+        unsubscribe_html = f"""
+        <div style="margin-top:10px;padding-top:8px;border-top:1px dashed {BRAND_BORDER};font-size:11px;color:#9CA3AF">
+            Vous ne souhaitez plus recevoir de courriels ?
+            <a href="{unsubscribe_url}" style="color:{BRAND_BLUE};text-decoration:underline">Se désabonner</a>
+        </div>
+        """
     return f"""
     <div style="margin-top:24px;padding:16px 12px;border-top:1px solid {BRAND_BORDER};background:#F9FAFB;text-align:center;font-size:12px;color:{BRAND_TEXT};line-height:1.6">
         <div style="font-weight:700;color:{BRAND_DARK};font-size:13px">{BUSINESS_NAME}</div>
@@ -71,11 +83,12 @@ def build_email_footer_html() -> str:
         <div>📞 <a href="tel:{BUSINESS_PHONE.replace('-','')}" style="color:{BRAND_BLUE};text-decoration:none">{BUSINESS_PHONE}</a>
             &nbsp;•&nbsp; ✉️ <a href="mailto:{BUSINESS_EMAIL}" style="color:{BRAND_BLUE};text-decoration:none">{BUSINESS_EMAIL}</a></div>
         <div>🌐 <a href="https://{BUSINESS_WEBSITE}" style="color:{BRAND_BLUE};text-decoration:none">{BUSINESS_WEBSITE}</a></div>
+        {unsubscribe_html}
     </div>
     """.strip()
 
 
-def wrap_email(body_html: str, subtitle: str = "") -> str:
+def wrap_email(body_html: str, subtitle: str = "", unsubscribe_url: str = "") -> str:
     """Wrap a body content with the branded header and footer, in a responsive container."""
     return f"""
 <!DOCTYPE html>
@@ -87,7 +100,7 @@ def wrap_email(body_html: str, subtitle: str = "") -> str:
     <div style="padding:20px 24px;color:{BRAND_DARK};font-size:15px;line-height:1.6">
       {body_html}
     </div>
-    {build_email_footer_html()}
+    {build_email_footer_html(unsubscribe_url)}
   </div>
 </body>
 </html>

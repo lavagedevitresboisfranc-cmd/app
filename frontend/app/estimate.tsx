@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import AppHeader from '../components/AppHeader';
+import { wrapSms } from '../src/utils/smsTemplate';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -136,18 +137,18 @@ export default function EstimateScreen() {
 
   // Build estimate text (simplified: description + total only)
   const buildEstimateText = () => {
-    const lines: string[] = ['📋 ESTIMATION — Lavage de Vitres Bois-Franc', ''];
-    lines.push('Lavage de vitres');
+    const lines: string[] = [];
+    lines.push('Estimation — Lavage de vitres');
     lines.push('');
     if (discount > 0) {
       lines.push(`Rabais: -${discount}%`);
     }
     lines.push(`💰 TOTAL: ${totalPrice.toFixed(2)} $`);
-    lines.push('');
-    lines.push('📞 514-570-9802');
-    lines.push('✉ lavagedevitreboisfranc@live.com');
-    lines.push('🌐 Lavagedevitre.org');
-    return lines.join('\n');
+    if (notes.trim()) {
+      lines.push('');
+      lines.push(notes.trim());
+    }
+    return wrapSms(lines.join('\n'));
   };
 
   const sendByEmail = async () => {

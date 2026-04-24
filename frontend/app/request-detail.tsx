@@ -20,6 +20,7 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Calendar } from 'react-native-calendars';
 import AppHeader from '../components/AppHeader';
+import { wrapSms } from '../src/utils/smsTemplate';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -249,7 +250,7 @@ export default function RequestDetailScreen() {
               text: '💬 SMS',
               onPress: async () => {
                 const sep = Platform.OS === 'ios' ? '&' : '?';
-                const url = `sms:${customerPhone}${sep}body=${encodeURIComponent(message)}`;
+                const url = `sms:${customerPhone}${sep}body=${encodeURIComponent(wrapSms(message))}`;
                 try {
                   const can = await Linking.canOpenURL(url);
                   if (can) await Linking.openURL(url);
@@ -309,7 +310,7 @@ export default function RequestDetailScreen() {
         if (customerPhone) {
           options.push({
             text: '📱 SMS',
-            onPress: () => Linking.openURL(`sms:${customerPhone}${Platform.OS === 'ios' ? '&' : '?'}body=${encodeURIComponent(message)}`),
+            onPress: () => Linking.openURL(`sms:${customerPhone}${Platform.OS === 'ios' ? '&' : '?'}body=${encodeURIComponent(wrapSms(message))}`),
           });
         }
         options.push({ text: 'OK (déjà envoyé via Resend)', style: 'cancel' });
