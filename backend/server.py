@@ -7,6 +7,7 @@ import os
 import logging
 import asyncio
 import base64
+import certifi
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional
@@ -19,7 +20,11 @@ load_dotenv(ROOT_DIR / '.env', override=False)
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
+# Use TLS with certifi CA bundle for MongoDB Atlas (mongodb+srv://)
+if mongo_url.startswith("mongodb+srv://") or "mongodb.net" in mongo_url:
+    client = AsyncIOMotorClient(mongo_url, tls=True, tlsCAFile=certifi.where())
+else:
+    client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 # Resend email config
