@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { Calendar } from 'react-native-calendars';
 import AppHeader from '../components/AppHeader';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -114,6 +115,14 @@ export default function RequestDetailScreen() {
       setLoadingDay(false);
     }
   };
+
+  // When the suggest-alternative form is open, reload availability whenever the
+  // user picks a different date on the calendar.
+  useEffect(() => {
+    if (showSuggest && suggestedDate) {
+      loadDayAppointments(suggestedDate);
+    }
+  }, [showSuggest, suggestedDate]);
 
   const handleAccept = async () => {
     Keyboard.dismiss();
@@ -856,61 +865,186 @@ export default function RequestDetailScreen() {
           {showSuggest && (
             <View style={styles.suggestForm}>
               <View style={styles.suggestFormHeader}>
-                <Text style={styles.sectionLabel}>SUGGEST ALTERNATIVE</Text>
+                <Text style={styles.sectionLabel}>PROPOSER UNE ALTERNATIVE</Text>
                 <TouchableOpacity testID="cancel-suggest" onPress={() => setShowSuggest(false)} activeOpacity={0.7}>
                   <Feather name="x" size={20} color="#737373" />
                 </TouchableOpacity>
               </View>
 
               <Text style={styles.fieldLabel}>DATE</Text>
-              <View style={styles.dateRow}>
-                <TouchableOpacity testID="suggest-date-prev" onPress={() => changeDate(-1)} activeOpacity={0.7} style={styles.dateArrow}>
-                  <Feather name="chevron-left" size={20} color="#0A0A0A" />
-                </TouchableOpacity>
-                <Text testID="suggest-date-display" style={styles.dateText}>
-                  {formatShortDate(suggestedDate)}
-                </Text>
-                <TouchableOpacity testID="suggest-date-next" onPress={() => changeDate(1)} activeOpacity={0.7} style={styles.dateArrow}>
-                  <Feather name="chevron-right" size={20} color="#0A0A0A" />
-                </TouchableOpacity>
+              <Calendar
+                current={suggestedDate}
+                onDayPress={(day: { dateString: string }) => {
+                  setSuggestedDate(day.dateString);
+                  setSuggestedTime(''); // reset time selection when date changes
+                }}
+                markedDates={{
+                  [suggestedDate]: { selected: true, selectedColor: '#FF9500' },
+                }}
+                firstDay={1}
+                theme={{
+                  backgroundColor: '#FAFAFA',
+                  calendarBackground: '#FFFFFF',
+                  textSectionTitleColor: '#737373',
+                  selectedDayBackgroundColor: '#FF9500',
+                  selectedDayTextColor: '#FFFFFF',
+                  todayTextColor: '#0891B2',
+                  todayBackgroundColor: '#E5F5F6',
+                  dayTextColor: '#0A0A0A',
+                  textDisabledColor: '#D4D4D4',
+                  arrowColor: '#FF9500',
+                  monthTextColor: '#0A0A0A',
+                  textMonthFontWeight: '700',
+                  textMonthFontSize: 16,
+                  textDayFontSize: 15,
+                  textDayHeaderFontSize: 13,
+                  textDayFontWeight: '500',
+                  textDayHeaderFontWeight: '600',
+                }}
+                style={styles.calendarBox}
+              />
+
+              {/* Pretty date recap */}
+              <View style={styles.pickedDateRecap}>
+                <Feather name="calendar" size={14} color="#FF9500" />
+                <Text style={styles.pickedDateText}>{formatDate(suggestedDate)}</Text>
               </View>
 
-              <Text style={styles.fieldLabel}>TIME</Text>
-              <View style={styles.slotsGrid}>
-                {TIME_SLOTS.map((slot) => (
-                  <TouchableOpacity
-                    key={slot}
-                    testID={`suggest-time-${slot}`}
-                    style={[styles.slotBtn, suggestedTime === slot && styles.slotBtnActive]}
-                    activeOpacity={0.7}
-                    onPress={() => setSuggestedTime(slot)}
-                  >
-                    <Text style={[styles.slotText, suggestedTime === slot && styles.slotTextActive]}>
-                      {slot}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              <Text style={[styles.fieldLabel, { marginTop: 16 }]}>HEURE</Text>
+              {(() => {
+                // Compute occupied slots for the selected date
+                const occupiedBy: Record<string, any> = {};
+                for (const a of dayAppointments) {
+                  const t = (a.time_slot || '').slice(0, 5);
+                  if (t) occupiedBy[t] = a;
+                }
+                const hasOccupied = Object.keys(occupiedBy).length > 0;
 
-              <Text style={styles.fieldLabel}>NOTE (OPTIONAL)</Text>
+                return (
+                  <>
+                    {loadingDay ? (
+                      <ActivityIndicator size="small" color="#FF9500" style={{ padding: 12 }} />
+                    ) : (
+                      <>
+                        {/* Availability banner */}
+                        <View
+                          style={[
+                            styles.availBanner,
+                            {
+                              backgroundColor: hasOccupied ? '#FEF3C7' : '#DCFCE7',
+                              borderColor: hasOccupied ? '#FCD34D' : '#86EFAC',
+                              marginBottom: 10,
+                            },
+                          ]}
+                        >
+                          <Feather
+                            name={hasOccupied ? 'info' : 'check-circle'}
+                            size={16}
+                            color={hasOccupied ? '#B45309' : '#059669'}
+                          />
+                          <Text
+                            style={[
+                              styles.availBannerText,
+                              { color: hasOccupied ? '#92400E' : '#065F46' },
+                            ]}
+                          >
+                            {hasOccupied
+                              ? `${Object.keys(occupiedBy).length} RDV déjà prévu(s) — créneaux grisés non disponibles`
+                              : 'Aucun RDV ce jour — toutes les heures sont libres'}
+                          </Text>
+                        </View>
+
+                        {/* Existing appointments list */}
+                        {hasOccupied && (
+                          <View style={{ marginBottom: 10, gap: 6 }}>
+                            <Text style={styles.availSubLabel}>
+                              📌 RDV existants
+                            </Text>
+                            {dayAppointments.map((a, idx) => (
+                              <View key={idx} style={styles.existingSlot}>
+                                <Text style={styles.existingSlotTime}>
+                                  {(a.time_slot || '').slice(0, 5)}
+                                </Text>
+                                <Text style={styles.existingSlotName} numberOfLines={1}>
+                                  {a.client_name || 'Sans nom'}
+                                </Text>
+                                <Text style={styles.existingSlotDuration}>
+                                  {a.duration_minutes || 30}min
+                                </Text>
+                              </View>
+                            ))}
+                          </View>
+                        )}
+
+                        {/* Slots grid with availability */}
+                        <Text style={[styles.availSubLabel, { marginBottom: 6 }]}>
+                          ✅ Créneaux libres — tapez pour choisir
+                        </Text>
+                        <View style={styles.slotsGrid}>
+                          {TIME_SLOTS.map((slot) => {
+                            const isOccupied = !!occupiedBy[slot];
+                            const isSelected = suggestedTime === slot;
+                            return (
+                              <TouchableOpacity
+                                key={slot}
+                                testID={`suggest-time-${slot}`}
+                                disabled={isOccupied}
+                                style={[
+                                  styles.slotBtn,
+                                  isOccupied && styles.slotBtnOccupied,
+                                  isSelected && styles.slotBtnActive,
+                                ]}
+                                activeOpacity={isOccupied ? 1 : 0.7}
+                                onPress={() => {
+                                  if (!isOccupied) setSuggestedTime(slot);
+                                }}
+                              >
+                                <Text
+                                  style={[
+                                    styles.slotText,
+                                    isOccupied && styles.slotTextOccupied,
+                                    isSelected && styles.slotTextActive,
+                                  ]}
+                                >
+                                  {slot}
+                                </Text>
+                                {isOccupied && (
+                                  <Text style={styles.slotOccupiedBadge}>Occupé</Text>
+                                )}
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </>
+                    )}
+                  </>
+                );
+              })()}
+
+              <Text style={[styles.fieldLabel, { marginTop: 16 }]}>NOTE (OPTIONNEL)</Text>
               <TextInput
                 testID="suggest-note-input"
                 style={styles.noteInput}
                 value={suggestNote}
                 onChangeText={setSuggestNote}
-                placeholder="e.g. This time works better for me..."
+                placeholder="Ex: Cette heure me convient mieux..."
                 placeholderTextColor="#A3A3A3"
                 multiline
               />
 
               <TouchableOpacity
                 testID="send-suggestion-button"
-                style={styles.sendSuggestBtn}
+                style={[
+                  styles.sendSuggestBtn,
+                  (!suggestedTime || acting) && { opacity: 0.5 },
+                ]}
                 activeOpacity={0.7}
                 onPress={handleSuggest}
-                disabled={acting}
+                disabled={acting || !suggestedTime}
               >
-                <Text style={styles.sendSuggestText}>{acting ? 'Sending...' : 'Send Suggestion'}</Text>
+                <Text style={styles.sendSuggestText}>
+                  {acting ? 'Envoi...' : suggestedTime ? `Envoyer la proposition (${suggestedTime})` : 'Choisissez une heure'}
+                </Text>
               </TouchableOpacity>
             </View>
           )}
@@ -1480,5 +1614,48 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  // Inline calendar + availability inside the suggest-alternative form
+  calendarBox: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    marginBottom: 4,
+  },
+  pickedDateRecap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    borderRadius: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  pickedDateText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#9A3412',
+    textTransform: 'capitalize',
+  },
+  slotBtnOccupied: {
+    backgroundColor: '#F3F4F6',
+    borderColor: '#E5E7EB',
+    opacity: 0.55,
+  },
+  slotTextOccupied: {
+    color: '#9CA3AF',
+    textDecorationLine: 'line-through',
+  },
+  slotOccupiedBadge: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#DC2626',
+    marginTop: 1,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
 });
