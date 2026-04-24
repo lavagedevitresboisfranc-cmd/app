@@ -40,19 +40,24 @@ def inject_branding(html: str) -> str:
     - If the template already contains a <body> tag, the header is inserted
       right after it and the footer right before </body>.
     - Otherwise, the header/footer are prepended/appended.
-    - Idempotent: if the template already contains the header signature, it's
-      left alone (prevents double-branding).
+    - Idempotent: if the template already contains the header signature OR
+      already embeds the business logo near the top, it's left alone
+      (prevents double-branding on emails that used branding.wrap_email).
     """
-    if not html or branding.BUSINESS_NAME in html[:500]:
-        # Template likely already contains the business name/logo near the top
-        # — still try to inject the standard header so every outgoing email
-        # carries the official logo; we simply avoid duplicating it twice.
-        pass
-    header = branding.build_email_header_html()
-    footer = branding.build_email_footer_html()
-    # Already branded (our own header signature)?
+    if not html:
+        return html
+    # Already branded? Either our tagged header, OR the logo data URL appears
+    # near the top (wrap_email already inserted it)
+    top_slice = html[:4000]
     if 'data-gexia-header="1"' in html:
         return html
+    # wrap_email / manual templates already including the logo data URL
+    # near the top — skip to avoid duplicate header.
+    if 'data:image/jpeg;base64' in top_slice and branding.LOGO_BASE64[:30] in top_slice:
+        return html
+
+    header = branding.build_email_header_html()
+    footer = branding.build_email_footer_html()
     header_tagged = header.replace('<div ', '<div data-gexia-header="1" ', 1)
     if "<body" in html:
         # inject footer before </body>
