@@ -2577,6 +2577,7 @@ class EstimateSendRequest(BaseModel):
     total: float = 0.0
     notes: str = ""
     valid_until: Optional[str] = ""  # ISO date
+    detailed: bool = True  # If False, hide the item breakdown and show only the total
 
 
 @api_router.post("/estimate/send")
@@ -2609,7 +2610,7 @@ async def send_estimate_email(data: EstimateSendRequest):
         </tr>
         """
     items_table = ""
-    if has_items:
+    if has_items and data.detailed:
         items_table = f"""
         <table style="width:100%;border-collapse:collapse;margin:16px 0;background:#FAFAFA;border-radius:8px;overflow:hidden">
           <thead>
@@ -2625,9 +2626,16 @@ async def send_estimate_email(data: EstimateSendRequest):
           </tbody>
         </table>
         """
+    elif not data.detailed:
+        # Non-detailed mode: show a simple service description instead of the breakdown
+        items_table = f"""
+        <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;padding:14px 16px;margin:16px 0">
+          <p style="margin:0;color:#374151;font-size:15px;font-weight:600;text-align:center">🪟 Service de lavage de vitres</p>
+        </div>
+        """
 
     discount_block = ""
-    if data.discount_percent and data.discount_percent > 0:
+    if data.discount_percent and data.discount_percent > 0 and data.detailed:
         discount_block = f"""
         <p style="margin:4px 0;text-align:right;color:#059669;font-weight:700;font-size:14px">
           Rabais: -{data.discount_percent:.0f}%

@@ -79,6 +79,7 @@ export default function EstimateScreen() {
   const [clientEmail, setClientEmail] = useState('');
   const [notes, setNotes] = useState('');
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [detailed, setDetailed] = useState(true); // Show/hide item breakdown in email
 
   const takePhoto = async () => {
     try {
@@ -179,6 +180,7 @@ export default function EstimateScreen() {
             discount_percent: discount,
             total: totalPrice,
             notes: notes.trim(),
+            detailed: detailed,
           }),
         });
         if (!res.ok) {
@@ -475,6 +477,40 @@ export default function EstimateScreen() {
             multiline
           />
 
+          {/* Detailed vs Non-detailed toggle */}
+          <Text style={styles.clientInputLabel}>Format de l'estimation</Text>
+          <View style={styles.formatToggleRow}>
+            <TouchableOpacity
+              testID="format-detailed"
+              style={[styles.formatBtn, detailed && styles.formatBtnActive]}
+              onPress={() => setDetailed(true)}
+              activeOpacity={0.7}
+            >
+              <Feather name="list" size={16} color={detailed ? '#FFFFFF' : '#6B7280'} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.formatBtnTitle, detailed && styles.formatBtnTitleActive]}>Détaillé</Text>
+                <Text style={[styles.formatBtnDesc, detailed && styles.formatBtnDescActive]}>
+                  Afficher chaque fenêtre + rabais
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              testID="format-simple"
+              style={[styles.formatBtn, !detailed && styles.formatBtnActive]}
+              onPress={() => setDetailed(false)}
+              activeOpacity={0.7}
+            >
+              <Feather name="minimize-2" size={16} color={!detailed ? '#FFFFFF' : '#6B7280'} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.formatBtnTitle, !detailed && styles.formatBtnTitleActive]}>Simple</Text>
+                <Text style={[styles.formatBtnDesc, !detailed && styles.formatBtnDescActive]}>
+                  Seulement le prix total
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.clientHintRow}>
             <Feather name="info" size={13} color="#0891B2" />
             <Text style={styles.clientHint}>
@@ -622,6 +658,28 @@ const styles = StyleSheet.create({
     fontSize: 11, color: '#0891B2', lineHeight: 15,
     fontStyle: 'italic',
   },
+  formatToggleRow: {
+    flexDirection: 'row', gap: 8,
+    marginTop: 4,
+  },
+  formatBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 10, paddingHorizontal: 12,
+    borderRadius: 8, borderWidth: 1.5,
+    borderColor: '#E5E7EB', backgroundColor: '#FFFFFF',
+  },
+  formatBtnActive: {
+    backgroundColor: '#0891B2',
+    borderColor: '#0891B2',
+  },
+  formatBtnTitle: {
+    fontSize: 13, fontWeight: '700', color: '#111827',
+  },
+  formatBtnTitleActive: { color: '#FFFFFF' },
+  formatBtnDesc: {
+    fontSize: 10, color: '#6B7280', marginTop: 1,
+  },
+  formatBtnDescActive: { color: 'rgba(255,255,255,0.85)' },
   photoSection: { marginTop: 8, marginBottom: 16 },
   photoLabel: { fontSize: 12, fontWeight: '600', color: '#737373', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 },
   photoActions: { flexDirection: 'row', gap: 10 },
