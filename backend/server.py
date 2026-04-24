@@ -735,7 +735,7 @@ async def create_request(data: RequestCreate):
             </div>
             """
             await asyncio.to_thread(resend.Emails.send, {
-                "from": "onboarding@resend.dev",
+                "from": os.environ.get("RESEND_FROM") or "onboarding@resend.dev",
                 "to": [NOTIFY_EMAIL],
                 "subject": f"Nouveau RDV — {request_doc['customer_name']}",
                 "html": inject_branding(html),
@@ -2312,7 +2312,7 @@ async def send_review_request(appointment_id: str):
     if resend.api_key:
         try:
             await asyncio.to_thread(resend.Emails.send, {
-                "from": "onboarding@resend.dev",
+                "from": os.environ.get("RESEND_FROM") or "onboarding@resend.dev",
                 "to": [client_email],
                 "subject": "Comment était votre expérience? — Gexia360",
                 "html": inject_branding(html),
@@ -2528,7 +2528,7 @@ async def backup_by_email():
     if NOTIFY_EMAIL and resend.api_key:
         try:
             await asyncio.to_thread(resend.Emails.send, {
-                "from": "onboarding@resend.dev",
+                "from": os.environ.get("RESEND_FROM") or "onboarding@resend.dev",
                 "to": [NOTIFY_EMAIL],
                 "subject": f"Backup Gexia360 — {now}",
                 "html": inject_branding(html),
@@ -2717,7 +2717,7 @@ async def send_estimate_email(data: EstimateSendRequest):
                 await asyncio.to_thread(
                     resend.Emails.send,
                     {
-                        "from": "onboarding@resend.dev",
+                        "from": os.environ.get("RESEND_FROM") or "onboarding@resend.dev",
                         "to": [NOTIFY_EMAIL],
                         "subject": f"📤 Estimation envoyée à {data.client_name or data.client_email} — {price_str}",
                         "html": inject_branding(f"<div><p><strong>Estimation envoyée</strong></p><p>Client: {data.client_name or '—'}<br>Courriel: {data.client_email}<br>Montant: <strong>{price_str}</strong></p>{notes_block}</div>"),
@@ -4142,7 +4142,7 @@ async def _send_scheduled_campaign(doc: dict) -> bool:
         await asyncio.to_thread(
             resend.Emails.send,
             {
-                "from": "onboarding@resend.dev",
+                "from": os.environ.get("RESEND_FROM") or "onboarding@resend.dev",
                 "to": ["onboarding@resend.dev"],  # placeholder (Resend requires 'to')
                 "bcc": recipients,
                 "subject": subject,
