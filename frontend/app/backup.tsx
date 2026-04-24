@@ -21,20 +21,47 @@ export default function BackupScreen() {
       const data = await res.json();
       const json = JSON.stringify(data, null, 2);
       const today = new Date().toISOString().split('T')[0];
-      const fileName = `crystaltask-backup-${today}.json`;
+      const fileName = `gexia360-sauvegarde-${today}.json`;
 
       if (Platform.OS === 'web') {
-        // Web: trigger download
+        // Web: trigger download (with iOS Safari fallback)
         const blob = new Blob([json], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = fileName;
-        a.click();
-        URL.revokeObjectURL(url);
-        Alert.alert('Exporté!', 'Votre sauvegarde a été téléchargée.');
+
+        // Detect iOS Safari — it doesn't support the download attribute
+        // reliably; best UX is to open in a new tab and let the user use
+        // the Share sheet to save to Files / iCloud Drive.
+        const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+        const isIOS = /iPad|iPhone|iPod/.test(ua);
+
+        if (isIOS) {
+          // Open JSON in a new tab — user can then use iOS Share to save
+          window.open(url, '_blank');
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+          Alert.alert(
+            '📱 Sauvegarde prête',
+            'La sauvegarde s\'est ouverte dans un nouvel onglet.\n\n' +
+            '➡️ Appuyez sur l\'icône de partage (carré avec flèche ↑)\n' +
+            '➡️ Choisissez "Enregistrer dans Fichiers", "iCloud Drive" ou envoyez-la par courriel\n\n' +
+            '💡 Si rien ne s\'ouvre, vérifiez que les pop-ups ne sont pas bloqués dans Safari.'
+          );
+        } else {
+          // Desktop / Android web: classic download with visible link
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fileName;
+          a.style.display = 'none';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 2000);
+          Alert.alert(
+            '✅ Exporté !',
+            `Sauvegarde téléchargée :\n${fileName}\n\nRegardez dans votre dossier Téléchargements.`
+          );
+        }
       } else {
-        // Mobile: write file and open share sheet (AirDrop, iCloud Drive, Google Drive, etc.)
+        // Native (Expo Go / TestFlight / build): write file and open share sheet
         const fileUri = FileSystem.documentDirectory + fileName;
         await FileSystem.writeAsStringAsync(fileUri, json, { encoding: FileSystem.EncodingType.UTF8 });
         const available = await Sharing.isAvailableAsync();
@@ -48,8 +75,9 @@ export default function BackupScreen() {
           Alert.alert('Sauvegarde créée', `Fichier : ${fileUri}`);
         }
       }
-    } catch (e) {
-      Alert.alert('Erreur', "Impossible d'exporter les données");
+    } catch (e: any) {
+      console.error('Export backup failed', e);
+      Alert.alert('❌ Erreur', `Impossible d'exporter les données\n\n${e?.message || 'Erreur inconnue'}`);
     } finally {
       setExporting(false);
     }
