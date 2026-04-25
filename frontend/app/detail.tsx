@@ -882,8 +882,24 @@ export default function DetailScreen() {
           </View>
         </View>
 
-        {/* Modifier + Archiver */}
+        {/* Reprogrammer + Modifier + Archiver */}
         <View style={styles.editSection}>
+          <TouchableOpacity
+            testID="reschedule-button"
+            style={[styles.editBtn, { backgroundColor: '#0891B2', marginBottom: 10 }]}
+            activeOpacity={0.7}
+            onPress={() => {
+              if (!appointment) return;
+              router.push({
+                pathname: '/reschedule',
+                params: { id: appointment.id },
+              } as any);
+            }}
+          >
+            <Feather name="calendar" size={18} color="#FFFFFF" />
+            <Text style={styles.editBtnText}>Reprogrammer (voir créneaux libres)</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity
             testID="edit-button"
             style={styles.editBtn}

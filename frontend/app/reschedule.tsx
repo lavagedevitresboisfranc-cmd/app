@@ -1,0 +1,325 @@
+import React, { useState, useCallback, useEffect } from 'react';
+import {
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  ActivityIndicator, Alert, Platform,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import AppHeader from '../components/AppHeader';
+
+const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+
+const TIME_SLOTS = [
+  '08:00', '08:30', '09:00', '09:30', '10:00', '10:30',
+  '11:00', '11:30', '12:00', '12:30', '13:00', '13:30',
+  '14:00', '14:30', '15:00', '15:30', '16:00',
+];
+
+interface Appointment {
+  id: string;
+  client_name: string;
+  client_email: string | null;
+  date: string;
+  time_slot: string;
+  duration_minutes: number;
+  status: string;
+}
+
+const fmtDateISO = (d: Date) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const dayNames = ['DIM', 'LUN', 'MAR', 'MER', 'JEU', 'VEN', 'SAM'];
+const monthNames = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+export default function RescheduleScreen() {
+  const router = useRouter();
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const [appointment, setAppointment] = useState<Appointment | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [allAppts, setAllAppts] = useState<any[]>([]);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [notifyClient, setNotifyClient] = useState(true);
+
+  // Build the list of 14 days starting from today
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days: { iso: string; date: Date }[] = [];
+  for (let i = 0; i < 14; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    days.push({ iso: fmtDateISO(d), date: d });
+  }
+
+  const loadData = useCallback(async () => {
+    if (!id) return;
+    setLoading(true);
+    try {
+      // Load appointment + all appointments in the 14-day window
+      const [aptRes, allRes] = await Promise.all([
+        fetch(`${API_URL}/api/appointments/${id}`),
+        fetch(`${API_URL}/api/appointments`),
+      ]);
+      if (aptRes.ok) {
+        const apt = await aptRes.json();
+        setAppointment(apt);
+      }
+      if (allRes.ok) {
+        const all = await allRes.json();
+        setAllAppts(Array.isArray(all) ? all.filter((a: any) => a.status !== 'archived') : []);
+      }
+    } catch (e) {
+      console.warn('reschedule load', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // Compute occupied slots per date (excluding the appointment we're rescheduling)
+  const occupiedByDate: Record<string, Record<string, any>> = {};
+  for (const a of allAppts) {
+    if (!a?.date || a.id === id) continue;
+    const t = (a.time_slot || '').slice(0, 5);
+    if (!t) continue;
+    if (!occupiedByDate[a.date]) occupiedByDate[a.date] = {};
+    occupiedByDate[a.date][t] = a;
+  }
+
+  const submitReschedule = async () => {
+    if (!appointment || !selectedDate || !selectedSlot) {
+      Alert.alert('Sélection requise', 'Choisis une date et un créneau.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${API_URL}/api/appointments/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: selectedDate,
+          time_slot: selectedSlot,
+          notify_client: notifyClient,
+        }),
+      });
+      if (!res.ok) throw new Error('Échec de la reprogrammation');
+      Alert.alert(
+        '✅ Rendez-vous reprogrammé',
+        notifyClient && appointment.client_email
+          ? `Nouveau créneau: ${selectedDate} à ${selectedSlot}\n\nUn courriel a été envoyé à ${appointment.client_email}.`
+          : `Nouveau créneau: ${selectedDate} à ${selectedSlot}`,
+        [{ text: 'OK', onPress: () => router.back() }]
+      );
+    } catch (e: any) {
+      Alert.alert('❌ Erreur', e?.message || 'Reprogrammation impossible');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <AppHeader />
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#0891B2" />
+        </View>
+      </SafeAreaView>
+    );
+  }
+  if (!appointment) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <AppHeader />
+        <Text style={{ padding: 20 }}>Rendez-vous introuvable</Text>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <AppHeader />
+      <ScrollView contentContainerStyle={{ padding: 14, paddingBottom: 60 }}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Feather name="arrow-left" size={22} color="#0A0A0A" />
+          </TouchableOpacity>
+          <Text style={styles.title}>Reprogrammer</Text>
+          <View style={{ width: 22 }} />
+        </View>
+
+        <View style={styles.currentBox}>
+          <Text style={styles.currentLabel}>RENDEZ-VOUS ACTUEL</Text>
+          <Text style={styles.currentClient}>{appointment.client_name}</Text>
+          <Text style={styles.currentSlot}>
+            📅 {appointment.date}  ⏰ {appointment.time_slot}  ({appointment.duration_minutes} min)
+          </Text>
+        </View>
+
+        <Text style={styles.sectionTitle}>📅 14 PROCHAINS JOURS — Choisis un nouveau créneau</Text>
+
+        {days.map(({ iso, date }) => {
+          const occupied = occupiedByDate[iso] || {};
+          const occupiedCount = Object.keys(occupied).length;
+          const isSelectedDate = selectedDate === iso;
+          const dayLabel = `${dayNames[date.getDay()]} ${date.getDate()} ${monthNames[date.getMonth()].slice(0, 3)}`;
+          const isToday = iso === fmtDateISO(today);
+
+          return (
+            <View key={iso} style={[styles.dayCard, isSelectedDate && styles.dayCardActive]}>
+              <View style={styles.dayHeader}>
+                <Text style={[styles.dayLabel, isToday && { color: '#0891B2' }]}>
+                  {dayLabel} {isToday ? '— Aujourd\'hui' : ''}
+                </Text>
+                <View style={[
+                  styles.statusPill,
+                  occupiedCount === 0 ? styles.statusFree : styles.statusBusy,
+                ]}>
+                  <Text style={[
+                    styles.statusText,
+                    occupiedCount === 0 ? { color: '#065F46' } : { color: '#92400E' },
+                  ]}>
+                    {occupiedCount === 0 ? '✓ Libre' : `${occupiedCount} RDV`}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.slotsGrid}>
+                {TIME_SLOTS.map((slot) => {
+                  const isOccupied = !!occupied[slot];
+                  const isSelected = isSelectedDate && selectedSlot === slot;
+                  return (
+                    <TouchableOpacity
+                      key={slot}
+                      testID={`slot-${iso}-${slot}`}
+                      disabled={isOccupied}
+                      style={[
+                        styles.slotBtn,
+                        isOccupied && styles.slotOccupied,
+                        isSelected && styles.slotSelected,
+                      ]}
+                      activeOpacity={isOccupied ? 1 : 0.7}
+                      onPress={() => {
+                        if (isOccupied) return;
+                        setSelectedDate(iso);
+                        setSelectedSlot(slot);
+                      }}
+                    >
+                      <Text style={[
+                        styles.slotText,
+                        isOccupied && styles.slotTextOccupied,
+                        isSelected && styles.slotTextSelected,
+                      ]}>{slot}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          );
+        })}
+
+        {/* Confirm */}
+        <View style={styles.confirmBar}>
+          {selectedDate && selectedSlot ? (
+            <>
+              <View style={{ marginBottom: 10 }}>
+                <Text style={styles.summaryTitle}>📌 Nouveau créneau choisi</Text>
+                <Text style={styles.summaryValue}>{selectedDate} à {selectedSlot}</Text>
+              </View>
+
+              {!!appointment.client_email && (
+                <TouchableOpacity
+                  onPress={() => setNotifyClient((v) => !v)}
+                  style={styles.checkboxRow}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.checkbox, notifyClient && styles.checkboxOn]}>
+                    {notifyClient && <Feather name="check" size={14} color="#FFFFFF" />}
+                  </View>
+                  <Text style={styles.checkboxLabel}>Aviser le client par courriel ({appointment.client_email})</Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity
+                testID="confirm-reschedule"
+                style={[styles.confirmBtn, submitting && { opacity: 0.6 }]}
+                activeOpacity={0.8}
+                onPress={submitReschedule}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.confirmBtnText}>Confirmer la reprogrammation</Text>
+                )}
+              </TouchableOpacity>
+            </>
+          ) : (
+            <Text style={styles.hintText}>👆 Tape sur un créneau libre pour le sélectionner</Text>
+          )}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#FAFAFA' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingHorizontal: 4 },
+  backBtn: { padding: 4 },
+  title: { fontSize: 18, fontWeight: '700', color: '#0A0A0A' },
+  currentBox: {
+    backgroundColor: '#FFFFFF', borderRadius: 12, padding: 14, marginBottom: 16,
+    borderLeftWidth: 4, borderLeftColor: '#0891B2',
+  },
+  currentLabel: { fontSize: 11, fontWeight: '700', color: '#737373', textTransform: 'uppercase', letterSpacing: 0.4 },
+  currentClient: { fontSize: 16, fontWeight: '700', color: '#0A0A0A', marginTop: 4 },
+  currentSlot: { fontSize: 13, color: '#525252', marginTop: 2 },
+  sectionTitle: { fontSize: 12, fontWeight: '700', color: '#525252', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.4 },
+  dayCard: {
+    backgroundColor: '#FFFFFF', borderRadius: 10, padding: 12, marginBottom: 10,
+    borderWidth: 1, borderColor: '#E5E5E5',
+  },
+  dayCardActive: { borderColor: '#0891B2', borderWidth: 2 },
+  dayHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  dayLabel: { fontSize: 13, fontWeight: '700', color: '#0A0A0A', textTransform: 'uppercase' },
+  statusPill: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20 },
+  statusFree: { backgroundColor: '#D1FAE5' },
+  statusBusy: { backgroundColor: '#FEF3C7' },
+  statusText: { fontSize: 11, fontWeight: '700' },
+  slotsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  slotBtn: {
+    width: '23%', paddingVertical: 8, alignItems: 'center', borderRadius: 6,
+    borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#F9FAFB',
+  },
+  slotOccupied: { backgroundColor: '#F3F4F6', opacity: 0.5 },
+  slotSelected: { backgroundColor: '#0891B2', borderColor: '#0891B2' },
+  slotText: { fontSize: 12, fontWeight: '600', color: '#374151' },
+  slotTextOccupied: { color: '#9CA3AF', textDecorationLine: 'line-through' },
+  slotTextSelected: { color: '#FFFFFF' },
+  confirmBar: {
+    backgroundColor: '#FFFFFF', borderRadius: 12, padding: 14, marginTop: 14,
+    borderTopWidth: 3, borderTopColor: '#0891B2',
+  },
+  summaryTitle: { fontSize: 11, fontWeight: '700', color: '#525252', textTransform: 'uppercase', letterSpacing: 0.4 },
+  summaryValue: { fontSize: 16, fontWeight: '700', color: '#0891B2', marginTop: 2 },
+  checkboxRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  checkbox: {
+    width: 22, height: 22, borderRadius: 4, borderWidth: 2, borderColor: '#0891B2',
+    backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
+  },
+  checkboxOn: { backgroundColor: '#0891B2' },
+  checkboxLabel: { flex: 1, fontSize: 13, color: '#374151' },
+  confirmBtn: {
+    backgroundColor: '#0891B2', borderRadius: 10, paddingVertical: 14, alignItems: 'center',
+  },
+  confirmBtnText: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' },
+  hintText: { fontSize: 13, color: '#9CA3AF', textAlign: 'center', fontStyle: 'italic', padding: 8 },
+});
