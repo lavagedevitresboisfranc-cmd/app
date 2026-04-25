@@ -2282,10 +2282,21 @@ body{{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;max-width:780px;mar
   body{{padding:20px 28px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
   .top-banner,.service-table thead th,.total-row td,.card,.thankyou{{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
   .page{{page-break-after:avoid;page-break-inside:avoid;}}
+  .actions-bar{{display:none!important;}}
 }}
+.actions-bar{{position:sticky;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 14px;background:rgba(255,255,255,0.95);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-bottom:1px solid #E5E7EB;margin:-22px -28px 14px -28px;z-index:10;}}
+.btn-back,.btn-print{{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border-radius:8px;font-size:13px;font-weight:600;border:none;cursor:pointer;font-family:inherit;}}
+.btn-back{{background:#F3F4F6;color:#111827;}}
+.btn-back:active{{background:#E5E7EB;}}
+.btn-print{{background:#0891B2;color:#FFF;}}
+.btn-print:active{{background:#0E7490;}}
 </style></head><body>
 
 <div class="page">
+<div class="actions-bar">
+  <button class="btn-back" onclick="(function(){{ if(window.history.length>1){{ window.history.back(); }} else if(window.opener){{ window.close(); }} else {{ window.location.href='/'; }} }})()">← Retour</button>
+  <button class="btn-print" onclick="window.print()">🖨️ Imprimer / PDF</button>
+</div>
 <div class="top-banner"></div>
 
 <div class="header">

@@ -436,8 +436,23 @@ export default function ClientsDbScreen() {
         const message = `Un client correspondant existe déjà (par ${byLabel}):\n\n• ${c.name}\n• ${c.email || '(sans courriel)'}\n• ${c.phone || '(sans téléphone)'}\n\nQue voulez-vous faire ?`;
         if (Platform.OS === 'web') {
           // eslint-disable-next-line no-alert
-          const choice = window.confirm(`${title}\n\n${message}\n\n[OK] → Mettre à jour la fiche existante\n[Annuler] → Ne rien faire (cliquez à nouveau sur Créer pour créer quand même)`);
-          if (choice) doUpdate(); else resolve();
+          const wantsUpdate = window.confirm(
+            `${title}\n\n${message}\n\n[OK] → Mettre à jour la fiche existante\n[Annuler] → Voir les autres options`
+          );
+          if (wantsUpdate) {
+            doUpdate();
+          } else {
+            // Second confirm: force create OR do nothing
+            // eslint-disable-next-line no-alert
+            const wantsForceCreate = window.confirm(
+              `Créer un NOUVEAU client malgré le doublon ?\n\n[OK] → Créer quand même (un 2e dossier sera ajouté)\n[Annuler] → Ne rien faire`
+            );
+            if (wantsForceCreate) {
+              doCreateAnyway();
+            } else {
+              resolve();
+            }
+          }
         } else {
           Alert.alert(title, message, [
             { text: 'Annuler', style: 'cancel', onPress: () => resolve() },
