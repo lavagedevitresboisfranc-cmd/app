@@ -1,327 +1,321 @@
 """
-Backend tests — STRICTLY for receipt deletion feature.
-Targets:
-  1) DELETE /api/expenses/{id}/receipt?type=photo|pdf|all
-  2) PUT /api/expenses/{id} — accept null for receipt_photo/receipt_pdf (and description/vendor)
+Backend test for: PUT /api/appointments/{id} — Reschedule with email notification.
+Scope strictly limited to PUT /api/appointments/{id} with the new `notify_client` flag,
+the email-on-reschedule logic, and the helper _fmt_date_fr.
 """
 import os
 import sys
-import base64
-import io
-from datetime import date
+import time
 import requests
 
-BASE = os.environ.get("EXPO_PUBLIC_BACKEND_URL") or "https://booking-hub-406.preview.emergentagent.com"
-API = f"{BASE.rstrip('/')}/api"
+BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL") or "https://booking-hub-406.preview.emergentagent.com"
+API = f"{BASE_URL.rstrip('/')}/api"
+
+NOTIFY_EMAIL = "lavagedevitreboisfranc@live.com"
 
 passed = 0
 failed = 0
-failures = []
-created_ids = []
+errors = []
 
 
-def check(cond, label):
+def assert_eq(label, actual, expected):
+    global passed, failed
+    if actual == expected:
+        passed += 1
+        print(f"PASS [{label}] {actual!r} == {expected!r}")
+    else:
+        failed += 1
+        msg = f"FAIL [{label}] expected {expected!r} got {actual!r}"
+        errors.append(msg)
+        print(msg)
+
+
+def assert_true(label, cond, info=""):
     global passed, failed
     if cond:
         passed += 1
-        print(f"  ✓ {label}")
+        print(f"PASS [{label}] {info}")
     else:
         failed += 1
-        failures.append(label)
-        print(f"  ✗ {label}")
+        msg = f"FAIL [{label}] {info}"
+        errors.append(msg)
+        print(msg)
 
 
-# --- helpers to fabricate small valid base64 photo / PDF strings ---
-
-def _png_base64_1x1():
-    # 1x1 red PNG
-    from PIL import Image
-    img = Image.new("RGB", (1, 1), (255, 0, 0))
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-    return f"data:image/png;base64,{b64}"
-
-
-def _pdf_base64_minimal():
-    # Reuse server's images-to-pdf to get a tiny real PDF
-    r = requests.post(f"{API}/expenses/images-to-pdf", json={"images": [_png_base64_1x1()]}, timeout=30)
-    r.raise_for_status()
-    return r.json()["pdf_base64"]
-
-
-def create_expense(photo=None, pdf=None, amount=42.0, category="gas",
-                   dt=None, vendor="Test Vendor", description="original"):
-    body = {
-        "amount": amount,
-        "category": category,
-        "date": dt or date.today().isoformat(),
-        "description": description,
-        "vendor": vendor,
-    }
-    if photo is not None:
-        body["receipt_photo"] = photo
-    if pdf is not None:
-        body["receipt_pdf"] = pdf
-    r = requests.post(f"{API}/expenses", json=body, timeout=30)
-    assert r.status_code == 200, f"create expense failed: {r.status_code} {r.text}"
-    j = r.json()
-    created_ids.append(j["id"])
-    return j
-
-
-def get_expense_from_list(eid):
-    r = requests.get(f"{API}/expenses", timeout=30)
-    assert r.status_code == 200
-    for it in r.json():
-        if it.get("id") == eid:
-            return it
-    return None
-
-
-def get_expense_direct(eid):
-    r = requests.get(f"{API}/expenses/{eid}", timeout=30)
-    if r.status_code != 200:
-        return None
-    return r.json()
+def get_log_tail(n=400):
+    """Return the last n lines of supervisor backend stderr+stdout combined."""
+    out = ""
+    for path in ("/var/log/supervisor/backend.err.log", "/var/log/supervisor/backend.out.log"):
+        try:
+            with open(path) as f:
+                lines = f.readlines()
+                out += "".join(lines[-n:]) + "\n"
+        except Exception:
+            pass
+    return out
 
 
 def main():
-    print(f"Backend: {API}\n")
+    global passed, failed
+    print(f"Using API base: {API}")
 
-    # Pre-existing expense count (to compare after cleanup)
-    r0 = requests.get(f"{API}/expenses", timeout=30)
-    pre_existing_ids = {it["id"] for it in r0.json()} if r0.status_code == 200 else set()
-    print(f"Pre-existing expense count: {len(pre_existing_ids)}\n")
+    created_ids = []
 
-    # Build reusable base64 assets (photo + pdf)
-    PHOTO = _png_base64_1x1()
-    PDF = _pdf_base64_minimal()
+    # ---------- SETUP: Create appointment 1 with client_email ----------
+    setup_payload = {
+        "title": "Test reprog",
+        "client_name": "Test Client",
+        "client_email": NOTIFY_EMAIL,
+        "client_phone": "5141234567",
+        "client_address": "123 Test St",
+        "date": "2026-12-01",
+        "time_slot": "09:00",
+        "duration_minutes": 60,
+        "status": "upcoming",
+    }
+    r = requests.post(f"{API}/appointments", json=setup_payload, timeout=30)
+    assert_eq("setup1.status", r.status_code, 200)
+    appt1 = r.json()
+    appt1_id = appt1.get("id")
+    created_ids.append(appt1_id)
+    assert_true("setup1.id_present", bool(appt1_id), f"id={appt1_id}")
+    assert_eq("setup1.client_email", appt1.get("client_email"), NOTIFY_EMAIL)
+    assert_eq("setup1.date", appt1.get("date"), "2026-12-01")
+    assert_eq("setup1.time_slot", appt1.get("time_slot"), "09:00")
 
-    # =========================================================================
-    # A. DELETE /receipt?type=photo
-    # =========================================================================
-    print("A. DELETE /receipt?type=photo")
-    e = create_expense(photo=PHOTO, pdf=PDF)
-    eid = e["id"]
-    check(e.get("receipt_photo") is not None and e.get("receipt_pdf") is not None,
-          "A.setup: expense has both receipt_photo and receipt_pdf")
+    # ---------- CASE 1: PUT date+time change with notify_client=True ----------
+    log_before_t1 = get_log_tail(150)
+    sent_before_t1 = log_before_t1.count("Reschedule email sent")
+    failed_before_t1 = log_before_t1.count("Failed to send reschedule email")
 
-    r = requests.delete(f"{API}/expenses/{eid}/receipt", params={"type": "photo"}, timeout=30)
-    check(r.status_code == 200, f"A.status 200 (got {r.status_code})")
-    body = r.json() if r.status_code == 200 else {}
-    check(body.get("deleted") == "photo", f"A.response deleted=='photo' (got {body.get('deleted')!r})")
-    exp = body.get("expense", {})
-    check(exp.get("receipt_photo") is None, f"A.response expense.receipt_photo is None (got {type(exp.get('receipt_photo')).__name__})")
-    check(exp.get("receipt_pdf") is not None, "A.response expense.receipt_pdf still has value")
+    body1 = {"date": "2026-12-15", "time_slot": "10:30", "notify_client": True}
+    r = requests.put(f"{API}/appointments/{appt1_id}", json=body1, timeout=30)
+    assert_eq("case1.status", r.status_code, 200)
+    j1 = r.json()
+    assert_eq("case1.date", j1.get("date"), "2026-12-15")
+    assert_eq("case1.time_slot", j1.get("time_slot"), "10:30")
+    assert_true("case1.no_notify_client_in_resp", "notify_client" not in j1,
+                f"keys={list(j1.keys())}")
 
-    # Persistence via GET /{id} and list
-    fetched = get_expense_direct(eid)
-    check(fetched is not None and fetched.get("receipt_photo") is None, "A.persist (GET /{id}): receipt_photo is None")
-    check(fetched is not None and fetched.get("receipt_pdf") is not None, "A.persist (GET /{id}): receipt_pdf still present")
-    in_list = get_expense_from_list(eid)
-    check(in_list is not None and in_list.get("receipt_photo") is None, "A.persist (GET list): receipt_photo is None")
-    check(in_list is not None and in_list.get("receipt_pdf") is not None, "A.persist (GET list): receipt_pdf still present")
+    time.sleep(3)
+    log_after_t1 = get_log_tail(200)
+    sent_after_t1 = log_after_t1.count("Reschedule email sent")
+    failed_after_t1 = log_after_t1.count("Failed to send reschedule email")
+    has_new_send_log = (sent_after_t1 > sent_before_t1) or (failed_after_t1 > failed_before_t1)
+    assert_true("case1.log_email_attempt", has_new_send_log,
+                f"sent before={sent_before_t1} after={sent_after_t1}; "
+                f"failed before={failed_before_t1} after={failed_after_t1}")
 
-    # =========================================================================
-    # B. DELETE /receipt?type=pdf
-    # =========================================================================
-    print("\nB. DELETE /receipt?type=pdf")
-    e = create_expense(photo=PHOTO, pdf=PDF)
-    eid = e["id"]
-    r = requests.delete(f"{API}/expenses/{eid}/receipt", params={"type": "pdf"}, timeout=30)
-    check(r.status_code == 200, f"B.status 200 (got {r.status_code})")
-    body = r.json() if r.status_code == 200 else {}
-    check(body.get("deleted") == "pdf", "B.response deleted=='pdf'")
-    exp = body.get("expense", {})
-    check(exp.get("receipt_pdf") is None, "B.response expense.receipt_pdf is None")
-    check(exp.get("receipt_photo") is not None, "B.response expense.receipt_photo still present")
-    fetched = get_expense_direct(eid)
-    check(fetched.get("receipt_pdf") is None, "B.persist: receipt_pdf is None")
-    check(fetched.get("receipt_photo") is not None, "B.persist: receipt_photo still present")
+    # ---------- CASE 2: PUT status=completed with notify_client=True (no date/time change) ----------
+    log_before_t2 = get_log_tail(200)
+    sent_before_t2 = log_before_t2.count("Reschedule email sent")
+    failed_before_t2 = log_before_t2.count("Failed to send reschedule email")
 
-    # =========================================================================
-    # C. DELETE /receipt?type=all (default)
-    # =========================================================================
-    print("\nC. DELETE /receipt?type=all")
-    e = create_expense(photo=PHOTO, pdf=PDF)
-    eid = e["id"]
-    r = requests.delete(f"{API}/expenses/{eid}/receipt", params={"type": "all"}, timeout=30)
-    check(r.status_code == 200, f"C.status 200 (got {r.status_code})")
-    body = r.json() if r.status_code == 200 else {}
-    check(body.get("deleted") == "all", "C.response deleted=='all'")
-    exp = body.get("expense", {})
-    check(exp.get("receipt_photo") is None and exp.get("receipt_pdf") is None,
-          "C.response both receipt_photo and receipt_pdf are None")
-    fetched = get_expense_direct(eid)
-    check(fetched.get("receipt_photo") is None and fetched.get("receipt_pdf") is None,
-          "C.persist: both receipt fields None after re-GET")
+    body2 = {"status": "completed", "notify_client": True}
+    r = requests.put(f"{API}/appointments/{appt1_id}", json=body2, timeout=30)
+    assert_eq("case2.status", r.status_code, 200)
+    j2 = r.json()
+    assert_eq("case2.status_field", j2.get("status"), "completed")
+    assert_true("case2.no_notify_client_in_resp", "notify_client" not in j2,
+                f"keys={list(j2.keys())}")
+    assert_eq("case2.date_unchanged", j2.get("date"), "2026-12-15")
+    assert_eq("case2.time_slot_unchanged", j2.get("time_slot"), "10:30")
+    time.sleep(2)
+    log_after_t2 = get_log_tail(250)
+    sent_after_t2 = log_after_t2.count("Reschedule email sent")
+    failed_after_t2 = log_after_t2.count("Failed to send reschedule email")
+    assert_true("case2.no_new_send_log", sent_after_t2 == sent_before_t2,
+                f"before={sent_before_t2} after={sent_after_t2}")
+    assert_true("case2.no_new_failed_log", failed_after_t2 == failed_before_t2,
+                f"before={failed_before_t2} after={failed_after_t2}")
 
-    # Also test default (no type param) — should behave as 'all'
-    e2 = create_expense(photo=PHOTO, pdf=PDF)
-    eid2 = e2["id"]
-    r = requests.delete(f"{API}/expenses/{eid2}/receipt", timeout=30)
-    check(r.status_code == 200, "C.default(no-param) status 200")
-    body = r.json()
-    check(body.get("deleted") == "all", "C.default: deleted=='all' when no type param")
-    check(body.get("expense", {}).get("receipt_photo") is None and body.get("expense", {}).get("receipt_pdf") is None,
-          "C.default: both receipt fields None")
+    # ---------- CASE 3: PUT date change with notify_client=False ----------
+    log_before_t3 = get_log_tail(250)
+    sent_before_t3 = log_before_t3.count("Reschedule email sent")
+    failed_before_t3 = log_before_t3.count("Failed to send reschedule email")
 
-    # =========================================================================
-    # D. DELETE /receipt with invalid type
-    # =========================================================================
-    print("\nD. DELETE /receipt?type=invalid")
-    e = create_expense(photo=PHOTO, pdf=PDF)
-    eid = e["id"]
-    r = requests.delete(f"{API}/expenses/{eid}/receipt", params={"type": "invalid"}, timeout=30)
-    check(r.status_code == 400, f"D.status 400 (got {r.status_code})")
-    detail = r.json().get("detail", "") if r.status_code == 400 else ""
-    check("Type invalide" in detail, f"D.detail contains 'Type invalide' (got {detail!r})")
+    body3 = {"date": "2026-12-20", "notify_client": False}
+    r = requests.put(f"{API}/appointments/{appt1_id}", json=body3, timeout=30)
+    assert_eq("case3.status", r.status_code, 200)
+    j3 = r.json()
+    assert_eq("case3.date", j3.get("date"), "2026-12-20")
+    assert_true("case3.no_notify_client_in_resp", "notify_client" not in j3,
+                f"keys={list(j3.keys())}")
+    time.sleep(2)
+    log_after_t3 = get_log_tail(300)
+    sent_after_t3 = log_after_t3.count("Reschedule email sent")
+    failed_after_t3 = log_after_t3.count("Failed to send reschedule email")
+    assert_true("case3.no_new_send_log", sent_after_t3 == sent_before_t3,
+                f"before={sent_before_t3} after={sent_after_t3}")
+    assert_true("case3.no_new_failed_log", failed_after_t3 == failed_before_t3,
+                f"before={failed_before_t3} after={failed_after_t3}")
 
-    # =========================================================================
-    # E. DELETE /receipt on non-existent expense
-    # =========================================================================
-    print("\nE. DELETE /receipt on non-existent expense")
-    r = requests.delete(f"{API}/expenses/nonexistent-xyz-uuid-1234/receipt",
-                        params={"type": "photo"}, timeout=30)
-    check(r.status_code == 404, f"E.status 404 (got {r.status_code})")
-    detail = r.json().get("detail", "") if r.status_code == 404 else ""
-    check("introuvable" in detail, f"E.detail contains 'introuvable' (got {detail!r})")
+    # ---------- CASE 4: PUT time_slot change with no notify_client ----------
+    log_before_t4 = get_log_tail(300)
+    sent_before_t4 = log_before_t4.count("Reschedule email sent")
+    failed_before_t4 = log_before_t4.count("Failed to send reschedule email")
 
-    # =========================================================================
-    # F. PUT with explicit null on receipt_photo (bug fix)
-    # =========================================================================
-    print("\nF. PUT {receipt_photo: null}")
-    e = create_expense(photo=PHOTO, pdf=None)
-    eid = e["id"]
-    check(e.get("receipt_photo") is not None, "F.setup: receipt_photo present after create")
-    r = requests.put(f"{API}/expenses/{eid}", json={"receipt_photo": None}, timeout=30)
-    check(r.status_code == 200, f"F.PUT status 200 (got {r.status_code}: {r.text[:200]})")
-    if r.status_code == 200:
-        j = r.json()
-        check(j.get("receipt_photo") is None, f"F.PUT response receipt_photo is None (got {type(j.get('receipt_photo')).__name__})")
-    fetched = get_expense_direct(eid)
-    check(fetched and fetched.get("receipt_photo") is None, "F.persist: receipt_photo is None after GET")
+    body4 = {"time_slot": "11:00"}
+    r = requests.put(f"{API}/appointments/{appt1_id}", json=body4, timeout=30)
+    assert_eq("case4.status", r.status_code, 200)
+    j4 = r.json()
+    assert_eq("case4.time_slot", j4.get("time_slot"), "11:00")
+    assert_true("case4.no_notify_client_in_resp", "notify_client" not in j4,
+                f"keys={list(j4.keys())}")
+    time.sleep(2)
+    log_after_t4 = get_log_tail(350)
+    sent_after_t4 = log_after_t4.count("Reschedule email sent")
+    failed_after_t4 = log_after_t4.count("Failed to send reschedule email")
+    assert_true("case4.no_new_send_log", sent_after_t4 == sent_before_t4,
+                f"before={sent_before_t4} after={sent_after_t4}")
+    assert_true("case4.no_new_failed_log", failed_after_t4 == failed_before_t4,
+                f"before={failed_before_t4} after={failed_after_t4}")
 
-    # =========================================================================
-    # G. PUT with explicit null on receipt_pdf
-    # =========================================================================
-    print("\nG. PUT {receipt_pdf: null}")
-    e = create_expense(photo=None, pdf=PDF)
-    eid = e["id"]
-    check(e.get("receipt_pdf") is not None, "G.setup: receipt_pdf present after create")
-    r = requests.put(f"{API}/expenses/{eid}", json={"receipt_pdf": None}, timeout=30)
-    check(r.status_code == 200, f"G.PUT status 200 (got {r.status_code})")
-    if r.status_code == 200:
-        j = r.json()
-        check(j.get("receipt_pdf") is None, "G.PUT response receipt_pdf is None")
-    fetched = get_expense_direct(eid)
-    check(fetched and fetched.get("receipt_pdf") is None, "G.persist: receipt_pdf is None after GET")
+    # ---------- CASE 5: SECOND appointment with empty client_email ----------
+    setup2_payload = dict(setup_payload)
+    setup2_payload["client_email"] = ""
+    setup2_payload["title"] = "Test reprog 2 (no email)"
+    r = requests.post(f"{API}/appointments", json=setup2_payload, timeout=30)
+    assert_eq("setup2.status", r.status_code, 200)
+    appt2 = r.json()
+    appt2_id = appt2.get("id")
+    created_ids.append(appt2_id)
+    assert_eq("setup2.client_email_empty", appt2.get("client_email", ""), "")
 
-    # =========================================================================
-    # H. PUT with null on amount/category/date — must NOT wipe these
-    # =========================================================================
-    print("\nH. PUT {amount: null, vendor: 'New Vendor'} — amount should stay 42.0")
-    e = create_expense(amount=42.0, vendor="Original Vendor")
-    eid = e["id"]
-    r = requests.put(f"{API}/expenses/{eid}",
-                     json={"amount": None, "vendor": "New Vendor"}, timeout=30)
-    check(r.status_code == 200, f"H.status 200 (got {r.status_code}: {r.text[:200]})")
-    if r.status_code == 200:
-        j = r.json()
-        check(abs(j.get("amount", -1) - 42.0) < 1e-9, f"H.amount still 42.0 (got {j.get('amount')})")
-        check(j.get("vendor") == "New Vendor", f"H.vendor updated to 'New Vendor' (got {j.get('vendor')!r})")
-    fetched = get_expense_direct(eid)
-    check(fetched and abs(fetched.get("amount", -1) - 42.0) < 1e-9, "H.persist: amount STILL 42.0")
-    check(fetched and fetched.get("vendor") == "New Vendor", "H.persist: vendor IS 'New Vendor'")
+    log_before_t5 = get_log_tail(350)
+    sent_before_t5 = log_before_t5.count("Reschedule email sent")
+    failed_before_t5 = log_before_t5.count("Failed to send reschedule email")
 
-    # Additionally verify that PUT {category: null, date: null} doesn't wipe them
-    e2 = create_expense(amount=99.0, category="gas", dt="2026-01-15", vendor="V2")
-    eid2 = e2["id"]
-    r = requests.put(f"{API}/expenses/{eid2}",
-                     json={"category": None, "date": None, "amount": 123.45}, timeout=30)
-    check(r.status_code == 200, "H2.status 200 with null on category/date + amount update")
-    if r.status_code == 200:
-        j = r.json()
-        check(j.get("category") == "gas", f"H2.category unchanged 'gas' (got {j.get('category')!r})")
-        check(j.get("date") == "2026-01-15", f"H2.date unchanged '2026-01-15' (got {j.get('date')!r})")
-        check(abs(j.get("amount", -1) - 123.45) < 1e-9, f"H2.amount updated to 123.45 (got {j.get('amount')})")
+    body5 = {"date": "2026-12-25", "time_slot": "14:00", "notify_client": True}
+    r = requests.put(f"{API}/appointments/{appt2_id}", json=body5, timeout=30)
+    assert_eq("case5.status", r.status_code, 200)
+    j5 = r.json()
+    assert_eq("case5.date", j5.get("date"), "2026-12-25")
+    assert_eq("case5.time_slot", j5.get("time_slot"), "14:00")
+    assert_true("case5.no_notify_client_in_resp", "notify_client" not in j5,
+                f"keys={list(j5.keys())}")
+    time.sleep(2)
+    log_after_t5 = get_log_tail(400)
+    sent_after_t5 = log_after_t5.count("Reschedule email sent")
+    failed_after_t5 = log_after_t5.count("Failed to send reschedule email")
+    assert_true("case5.no_new_send_log", sent_after_t5 == sent_before_t5,
+                f"before={sent_before_t5} after={sent_after_t5}")
+    assert_true("case5.no_new_failed_log", failed_after_t5 == failed_before_t5,
+                f"before={failed_before_t5} after={failed_after_t5}")
 
-    # =========================================================================
-    # I. PUT with null on description/vendor — should clear text fields
-    # =========================================================================
-    print("\nI. PUT {description: null} — should clear description")
-    e = create_expense(description="original")
-    eid = e["id"]
-    check(e.get("description") == "original", "I.setup: description=='original'")
-    r = requests.put(f"{API}/expenses/{eid}", json={"description": None}, timeout=30)
-    check(r.status_code == 200, f"I.status 200 (got {r.status_code}: {r.text[:200]})")
-    if r.status_code == 200:
-        j = r.json()
-        # Accept either None or "" as long as 'original' is gone
-        desc = j.get("description")
-        check(desc in (None, ""), f"I.description cleared (got {desc!r})")
-    fetched = get_expense_direct(eid)
-    desc = fetched.get("description") if fetched else "???"
-    check(desc in (None, ""), f"I.persist: description cleared (got {desc!r})")
+    # ---------- CASE 6: GET /{id} confirm response has no notify_client field ----------
+    r = requests.get(f"{API}/appointments/{appt1_id}", timeout=30)
+    assert_eq("case6.status", r.status_code, 200)
+    j6 = r.json()
+    assert_true("case6.no_notify_client_field", "notify_client" not in j6,
+                f"keys={list(j6.keys())}")
 
-    # =========================================================================
-    # J. Verify expense itself NOT deleted after DELETE /receipt
-    # =========================================================================
-    print("\nJ. Expense NOT deleted after DELETE /receipt?type=all")
-    e = create_expense(photo=PHOTO, pdf=PDF)
-    eid = e["id"]
-    # Before: in list
-    in_list_before = get_expense_from_list(eid)
-    check(in_list_before is not None, "J.before: expense in GET /expenses list")
-    r = requests.delete(f"{API}/expenses/{eid}/receipt", params={"type": "all"}, timeout=30)
-    check(r.status_code == 200, "J.delete receipts 200")
-    # After: still in list
-    in_list_after = get_expense_from_list(eid)
-    check(in_list_after is not None, "J.after: expense STILL in GET /expenses list")
-    check(in_list_after and in_list_after.get("receipt_photo") is None and in_list_after.get("receipt_pdf") is None,
-          "J.after: expense present but both receipts None")
-    # Direct GET also still works
-    direct = get_expense_direct(eid)
-    check(direct is not None, "J.after: GET /{id} still returns 200")
+    # ---------- CASE 7: PUT empty body → 400 ----------
+    r = requests.put(f"{API}/appointments/{appt1_id}", json={}, timeout=30)
+    assert_eq("case7.status", r.status_code, 400)
+    detail = ""
+    try:
+        detail = r.json().get("detail", "")
+    except Exception:
+        detail = r.text
+    assert_true("case7.detail", "No fields to update" in str(detail),
+                f"detail={detail!r}")
 
-    # =========================================================================
-    # CLEANUP
-    # =========================================================================
-    print("\n--- CLEANUP ---")
-    for eid in created_ids:
+    # ---------- CASE 8: PUT nonexistent → 404 ----------
+    r = requests.put(f"{API}/appointments/nonexistent-uuid",
+                     json={"date": "2026-12-30", "notify_client": True}, timeout=30)
+    assert_eq("case8.status", r.status_code, 404)
+    detail8 = ""
+    try:
+        detail8 = r.json().get("detail", "")
+    except Exception:
+        detail8 = r.text
+    assert_true("case8.detail", "Appointment not found" in str(detail8),
+                f"detail={detail8!r}")
+
+    # ---------- CASE 9: _fmt_date_fr ----------
+    sys.path.insert(0, "/app/backend")
+    try:
+        import importlib
+        m = importlib.import_module("server")
+        assert_eq("case9.fmt_2026-12-15", m._fmt_date_fr("2026-12-15"), "15 décembre 2026")
+        assert_eq("case9.fmt_empty", m._fmt_date_fr(""), "")
+        assert_eq("case9.fmt_invalid", m._fmt_date_fr("not-a-date"), "not-a-date")
+    except Exception as e:
+        failed += 1
+        errors.append(f"case9.import_or_call exception: {e}")
+        print(f"FAIL [case9.import_or_call] {e}")
+
+    # ---------- CLEANUP ----------
+    print("\n--- Cleanup ---")
+    client_to_delete = None
+    try:
+        rc = requests.post(f"{API}/clients-db/match",
+                           json={"name": "Test Client", "email": NOTIFY_EMAIL,
+                                 "phone": "5141234567"}, timeout=30)
+        if rc.status_code == 200:
+            jj = rc.json()
+            if jj.get("matched") and jj.get("client"):
+                client_to_delete = jj["client"].get("id")
+                print(f"Found auto-linked client: {client_to_delete}")
+    except Exception as e:
+        print(f"clients-db/match error: {e}")
+
+    for aid in created_ids:
         try:
-            requests.delete(f"{API}/expenses/{eid}", timeout=15)
-        except Exception:
-            pass
+            rd = requests.delete(f"{API}/appointments/{aid}/permanent", timeout=30)
+            print(f"DELETE permanent {aid} -> {rd.status_code}")
+        except Exception as e:
+            print(f"delete error {aid}: {e}")
 
-    # Final GET /expenses state
-    rf = requests.get(f"{API}/expenses", timeout=30)
-    final_items = rf.json() if rf.status_code == 200 else []
-    remaining_test_ids = [it["id"] for it in final_items if it["id"] in created_ids]
-    check(len(remaining_test_ids) == 0,
-          f"Cleanup: no test expenses remain (remaining={remaining_test_ids})")
+    # Try to find a separate client for the second (empty-email) appointment
+    try:
+        rc2 = requests.post(f"{API}/clients-db/match",
+                            json={"name": "Test Client", "email": "",
+                                  "phone": "5141234567"}, timeout=30)
+        if rc2.status_code == 200:
+            jj2 = rc2.json()
+            if jj2.get("matched") and jj2.get("client"):
+                cid2 = jj2["client"].get("id")
+                if cid2 and cid2 != client_to_delete:
+                    try:
+                        rcd2 = requests.delete(f"{API}/clients-db/{cid2}", timeout=30)
+                        print(f"DELETE client (2) {cid2} -> {rcd2.status_code}")
+                    except Exception as e:
+                        print(f"client2 delete error: {e}")
+    except Exception:
+        pass
 
-    post_cleanup_ids = {it["id"] for it in final_items}
-    leaked = post_cleanup_ids - pre_existing_ids
-    check(len(leaked) == 0, f"Cleanup: no leaked test docs left (leaked={leaked})")
+    if client_to_delete:
+        try:
+            rcd = requests.delete(f"{API}/clients-db/{client_to_delete}", timeout=30)
+            print(f"DELETE client {client_to_delete} -> {rcd.status_code}")
+        except Exception as e:
+            print(f"client delete error: {e}")
 
-    print(f"\nFinal GET /api/expenses count: {len(final_items)} "
-          f"(pre-existing was {len(pre_existing_ids)})")
+    # Final confirmation
+    try:
+        rl = requests.get(f"{API}/appointments?include_archived=true", timeout=30)
+        if rl.status_code == 200:
+            ids_present = {a.get("id") for a in rl.json()}
+            for aid in created_ids:
+                assert_true(f"cleanup.absent[{aid}]", aid not in ids_present,
+                            "appt id absent from list")
+    except Exception as e:
+        print(f"final list error: {e}")
 
-    # =========================================================================
-    # REPORT
-    # =========================================================================
-    total = passed + failed
-    print(f"\n{'='*60}")
-    print(f"RESULTS: {passed}/{total} assertions passed")
-    if failures:
-        print(f"\nFAILURES ({len(failures)}):")
-        for f in failures:
-            print(f"  - {f}")
-    print(f"{'='*60}")
-    sys.exit(0 if failed == 0 else 1)
+    # ---------- SUMMARY ----------
+    print(f"\n=========================")
+    print(f"PASSED: {passed}")
+    print(f"FAILED: {failed}")
+    print(f"=========================")
+    if errors:
+        print("\nFailures:")
+        for e in errors:
+            print(f"  - {e}")
+    return failed == 0
 
 
 if __name__ == "__main__":
-    main()
+    ok = main()
+    sys.exit(0 if ok else 1)

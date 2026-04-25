@@ -83,14 +83,26 @@ export default function RescheduleScreen() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Compute occupied slots per date (excluding the appointment we're rescheduling)
+  // Compute occupied slots per date (excluding the appointment we're rescheduling).
+  // Block ALL 30-min slots overlapping the duration of an existing appointment.
+  const slotToMin = (s: string) => {
+    const [h, m] = (s || '0:0').split(':').map((n) => parseInt(n, 10) || 0);
+    return h * 60 + m;
+  };
   const occupiedByDate: Record<string, Record<string, any>> = {};
   for (const a of allAppts) {
     if (!a?.date || a.id === id) continue;
     const t = (a.time_slot || '').slice(0, 5);
     if (!t) continue;
+    const start = slotToMin(t);
+    const dur = Math.max(30, parseInt(a.duration_minutes, 10) || 60);
+    const end = start + dur;
     if (!occupiedByDate[a.date]) occupiedByDate[a.date] = {};
-    occupiedByDate[a.date][t] = a;
+    for (let m = start; m < end; m += 30) {
+      const hh = String(Math.floor(m / 60)).padStart(2, '0');
+      const mm = String(m % 60).padStart(2, '0');
+      occupiedByDate[a.date][`${hh}:${mm}`] = a;
+    }
   }
 
   const submitReschedule = async () => {

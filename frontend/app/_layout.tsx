@@ -25,6 +25,7 @@ function ThemedRoot() {
         <Stack.Screen name="estimate" />
         <Stack.Screen name="employees" />
         <Stack.Screen name="client-history" />
+        <Stack.Screen name="reschedule" />
       </Stack>
     </View>
   );

@@ -79,6 +79,17 @@ app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
 
+def _fmt_date_fr(d: str) -> str:
+    """Format an ISO date (YYYY-MM-DD) as a French long date, e.g. '25 avril 2026'."""
+    try:
+        dt = datetime.fromisoformat((d or "").strip())
+        months_fr = ["janvier", "février", "mars", "avril", "mai", "juin",
+                     "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+        return f"{dt.day} {months_fr[dt.month - 1]} {dt.year}"
+    except Exception:
+        return d or ""
+
+
 # --- Unsubscribe (CASL/CAN-SPAM compliance) ---
 
 @api_router.get("/unsubscribe", response_class=HTMLResponse)
@@ -176,6 +187,8 @@ class AppointmentUpdate(BaseModel):
     notes: Optional[str] = None
     status: Optional[str] = None
     client_photo: Optional[str] = None
+    # Non-stored flag: when true and date/time changed, send a reschedule email to client
+    notify_client: Optional[bool] = None
 
 class AppointmentResponse(BaseModel):
     id: str
@@ -710,13 +723,99 @@ async def get_appointment(appointment_id: str):
 
 @api_router.put("/appointments/{appointment_id}", response_model=AppointmentResponse)
 async def update_appointment(appointment_id: str, data: AppointmentUpdate):
-    update_data = {k: v for k, v in data.dict().items() if v is not None}
+    raw = data.dict()
+    notify_client = bool(raw.pop("notify_client", False))
+    update_data = {k: v for k, v in raw.items() if v is not None}
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")
+
+    # Read the current appointment first so we can detect date/time changes
+    current = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if not current:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+
+    old_date = current.get("date") or ""
+    old_time = (current.get("time_slot") or "")[:5]
+    new_date = update_data.get("date", old_date) or old_date
+    new_time = (update_data.get("time_slot", old_time) or old_time)[:5]
+    is_reschedule = (new_date != old_date) or (new_time != old_time)
+
     result = await db.appointments.update_one({"id": appointment_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Appointment not found")
     appointment = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+
+    # If this update is a real date/time reschedule, send a branded email to the client
+    if is_reschedule and notify_client:
+        client_email = (appointment.get("client_email") or "").strip()
+        if client_email and resend.api_key:
+            try:
+                client_name = appointment.get("client_name", "")
+                duration = int(appointment.get("duration_minutes") or 60)
+                address = appointment.get("client_address", "")
+                fmt_date_fr = _fmt_date_fr(new_date)
+                old_fmt = _fmt_date_fr(old_date)
+
+                html = f"""<!DOCTYPE html>
+<html><body style="margin:0;padding:0;background:#F1F5F9;font-family:'Segoe UI',Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F1F5F9;padding:24px 12px;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#FFFFFF;border-radius:14px;overflow:hidden;box-shadow:0 6px 24px rgba(15,23,42,0.08);">
+        <tr><td style="background:linear-gradient(135deg,#0891B2 0%,#0E7490 100%);padding:24px 28px;">
+          <h1 style="margin:0;color:#FFFFFF;font-size:22px;font-weight:700;">📅 Rendez-vous reprogrammé</h1>
+          <p style="margin:6px 0 0 0;color:#E0F2FE;font-size:14px;">Votre rendez-vous a été déplacé</p>
+        </td></tr>
+        <tr><td style="padding:28px;">
+          <p style="margin:0 0 16px 0;font-size:15px;color:#0F172A;">Bonjour <strong>{client_name}</strong>,</p>
+          <p style="margin:0 0 18px 0;font-size:14px;color:#334155;line-height:1.6;">
+            Nous vous informons que votre rendez-vous a été <strong>reprogrammé</strong>.
+            Voici les nouveaux détails&nbsp;:
+          </p>
+
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px 0;">
+            <tr><td style="background:#FEE2E2;border-left:4px solid #DC2626;padding:14px 16px;border-radius:8px;">
+              <div style="font-size:11px;font-weight:700;color:#991B1B;text-transform:uppercase;letter-spacing:0.5px;">Ancien créneau</div>
+              <div style="font-size:15px;color:#7F1D1D;margin-top:4px;text-decoration:line-through;">{old_fmt} à {old_time}</div>
+            </td></tr>
+            <tr><td style="height:10px;"></td></tr>
+            <tr><td style="background:#D1FAE5;border-left:4px solid #059669;padding:14px 16px;border-radius:8px;">
+              <div style="font-size:11px;font-weight:700;color:#065F46;text-transform:uppercase;letter-spacing:0.5px;">✅ Nouveau créneau</div>
+              <div style="font-size:18px;font-weight:700;color:#064E3B;margin-top:4px;">{fmt_date_fr}</div>
+              <div style="font-size:15px;color:#065F46;margin-top:2px;">⏰ {new_time} ({duration} min)</div>
+              {f'<div style="font-size:13px;color:#065F46;margin-top:6px;">📍 {address}</div>' if address else ''}
+            </td></tr>
+          </table>
+
+          <p style="margin:0 0 6px 0;font-size:13px;color:#475569;line-height:1.6;">
+            Si ce nouveau créneau ne vous convient pas, n'hésitez pas à nous contacter pour en convenir d'un autre.
+          </p>
+          <p style="margin:0;font-size:13px;color:#475569;line-height:1.6;">
+            Merci de votre compréhension et au plaisir de vous voir bientôt&nbsp;!
+          </p>
+        </td></tr>
+        <tr><td style="padding:16px 28px;background:#0F172A;text-align:center;">
+          <p style="margin:0;font-size:12px;color:#94A3B8;">Merci de votre confiance!</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+
+                from_addr = os.environ.get("RESEND_FROM") or "onboarding@resend.dev"
+                await asyncio.to_thread(
+                    resend.Emails.send,
+                    {
+                        "from": from_addr,
+                        "to": [client_email],
+                        "reply_to": NOTIFY_EMAIL if NOTIFY_EMAIL else None,
+                        "subject": f"Rendez-vous reprogrammé — {fmt_date_fr} à {new_time}",
+                        "html": inject_branding(html, recipient_email=client_email),
+                    },
+                )
+                logger.info(f"Reschedule email sent to client {client_email}")
+            except Exception as e:
+                logger.error(f"Failed to send reschedule email to {client_email}: {e}")
+
     return AppointmentResponse(**appointment)
 
 @api_router.delete("/appointments/{appointment_id}")
