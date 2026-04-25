@@ -86,10 +86,10 @@ export default function CreateScreen() {
           } else if (j.display_name) {
             setClientAddress(j.display_name);
           } else {
-            Alert.alert('Introuvable', 'Adresse non trouvée');
+            Alert.alert('Introuvable', 'Adresse non trouvée pour ces coordonnées.');
           }
         } else {
-          Alert.alert('Erreur', 'Service de géocodage indisponible');
+          Alert.alert('Erreur', 'Service de géocodage indisponible (OpenStreetMap).');
         }
         setGettingLocation(false);
         return;
@@ -113,8 +113,28 @@ export default function CreateScreen() {
         Alert.alert('Introuvable', 'Impossible de trouver votre adresse');
       }
     } catch (e: any) {
-      const msg = (e && e.message) ? e.message : 'Impossible d\'obtenir votre position';
-      Alert.alert('Erreur GPS', msg);
+      // PositionError codes: 1=PERMISSION_DENIED, 2=POSITION_UNAVAILABLE, 3=TIMEOUT
+      const code = e?.code;
+      let title = 'Erreur GPS';
+      let msg = e?.message || 'Impossible d\'obtenir votre position';
+      if (Platform.OS === 'web' && code === 1) {
+        title = 'Localisation refusée';
+        msg = 'Pour activer la localisation sur iPhone:\n\n' +
+              '📱 Si vous utilisez l\'app installée (PWA):\n' +
+              '1. Ouvrez Réglages iPhone\n' +
+              '2. Confidentialité & Sécurité → Service de localisation\n' +
+              '3. Trouvez "Gexia360" (ou Safari) → Autoriser\n\n' +
+              '🌐 Si vous êtes dans Safari:\n' +
+              '1. Réglages → Safari → Localisation → Autoriser\n' +
+              '2. Rechargez la page et réessayez';
+      } else if (Platform.OS === 'web' && code === 2) {
+        title = 'Position indisponible';
+        msg = 'Votre position GPS n\'a pas pu être déterminée. Vérifiez que le GPS de votre iPhone est activé (Réglages → Confidentialité → Service de localisation = Activé) et réessayez à l\'extérieur ou près d\'une fenêtre.';
+      } else if (Platform.OS === 'web' && code === 3) {
+        title = 'Délai dépassé';
+        msg = 'La recherche de position a pris trop de temps. Réessayez avec une meilleure connexion ou à l\'extérieur.';
+      }
+      Alert.alert(title, msg);
     } finally {
       setGettingLocation(false);
     }

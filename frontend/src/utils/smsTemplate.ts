@@ -14,7 +14,7 @@ export const APP_BRAND = 'Powered by Gexia360';
 // We keep startsWith() detection working by exposing the legacy single-line.
 export const SMS_HEADER_TITLE_LINE_1 = 'Lavage de vitre';
 export const SMS_HEADER_TITLE_LINE_2 = 'Bois-Franc';
-export const SMS_HEADER = `${SMS_HEADER_TITLE_LINE_1}\n${SMS_HEADER_TITLE_LINE_2}\n${BUSINESS_PHONE}\n\n`;
+export const SMS_HEADER = `${SMS_HEADER_TITLE_LINE_1}\n${SMS_HEADER_TITLE_LINE_2}\n\n`;
 export const SMS_FOOTER = `\n\n— ${APP_BRAND}`;
 
 /**

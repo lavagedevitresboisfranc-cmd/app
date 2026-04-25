@@ -10,6 +10,42 @@ import { wrapSms } from '../src/utils/smsTemplate';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
+/**
+ * Cross-platform prompt for a single text value.
+ * - Web: native browser prompt
+ * - iOS: Alert.prompt (native dialog with input)
+ * - Android: Alert.prompt fallback to window.prompt-like (native Alert prompt is iOS only)
+ */
+const promptInput = (
+  title: string,
+  message: string,
+  onSubmit: (value: string) => void,
+  defaultValue: string = ''
+): void => {
+  if (Platform.OS === 'web') {
+    // eslint-disable-next-line no-alert
+    const v = window.prompt(`${title}\n\n${message}`, defaultValue);
+    if (v != null) onSubmit(v);
+    return;
+  }
+  if (Platform.OS === 'ios' && (Alert as any).prompt) {
+    (Alert as any).prompt(title, message, (v: string) => {
+      if (v != null) onSubmit(v);
+    }, 'plain-text', defaultValue);
+    return;
+  }
+  // Android: no native prompt — try window.prompt (some webview embeds work),
+  // else show alert with instructions
+  try {
+    if (typeof window !== 'undefined' && (window as any).prompt) {
+      const v = (window as any).prompt(`${title}\n\n${message}`, defaultValue);
+      if (v != null) onSubmit(v);
+      return;
+    }
+  } catch {}
+  Alert.alert(title, message + '\n\n(Saisissez la valeur dans le formulaire principal)');
+};
+
 const PRICES_STORAGE_KEY = 'brightcalendar_window_prices_v1';
 
 const WINDOW_TYPES = [
@@ -207,7 +243,7 @@ export default function EstimateScreen() {
     }
 
     // Fallback: prompt for email (legacy behaviour)
-    Alert.prompt(
+    promptInput(
       'Envoyer par courriel',
       'Adresse courriel du client :',
       async (email) => {
@@ -226,13 +262,12 @@ export default function EstimateScreen() {
             if (can) { await Linking.openURL(url); }
           } catch { Alert.alert('Erreur', 'Impossible d\'ouvrir l\'app courriel'); }
         }
-      },
-      'plain-text'
+      }
     );
   };
 
   const sendBySMS = async () => {
-    Alert.prompt(
+    promptInput(
       'Envoyer par SMS',
       'Numéro de téléphone du client :',
       async (phone) => {
@@ -247,10 +282,7 @@ export default function EstimateScreen() {
           if (can) { await Linking.openURL(url); }
           else { Alert.alert('Erreur', 'SMS non supporté sur cet appareil'); }
         } catch { Alert.alert('Erreur', 'Impossible d\'ouvrir SMS'); }
-      },
-      'plain-text',
-      '',
-      'phone-pad'
+      }
     );
   };
 
