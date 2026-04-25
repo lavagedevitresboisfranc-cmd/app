@@ -59,18 +59,50 @@ export default function CreateScreen() {
   const [title, setTitle] = useState(params.editTitle || '');
   const [gettingLocation, setGettingLocation] = useState(false);
 
+  // Cross-platform alert: Alert.alert is silently broken on web/PWA
+  const showAlert = (title: string, message: string) => {
+    if (Platform.OS === 'web') {
+      // eslint-disable-next-line no-alert
+      window.alert(`${title}\n\n${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  };
+
   const getCurrentLocation = async () => {
+    if (Platform.OS === 'web') {
+      console.log('[GPS] Button tapped, checking geolocation availability...');
+      console.log('[GPS] navigator.geolocation available:', typeof navigator !== 'undefined' && !!navigator.geolocation);
+      console.log('[GPS] window.isSecureContext:', typeof window !== 'undefined' && window.isSecureContext);
+    }
     setGettingLocation(true);
     try {
       // On web/PWA, expo-location is unreliable on iOS Safari PWA — use browser API directly
       if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.geolocation) {
-        const coords: { latitude: number; longitude: number } = await new Promise((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(
-            (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
-            (err) => reject(err),
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
-          );
-        });
+        if (typeof window !== 'undefined' && !window.isSecureContext) {
+          showAlert('GPS bloqué', 'La géolocalisation requiert une connexion sécurisée (HTTPS). Cette page ne semble pas être servie en HTTPS.');
+          setGettingLocation(false);
+          return;
+        }
+        // Race the geolocation against a hard 20s timeout (iOS 17/18 PWA can hang silently)
+        const coords: { latitude: number; longitude: number } = await Promise.race([
+          new Promise<{ latitude: number; longitude: number }>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(
+              (pos) => {
+                console.log('[GPS] Success:', pos.coords.latitude, pos.coords.longitude);
+                resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+              },
+              (err) => {
+                console.error('[GPS] Error:', err.code, err.message);
+                reject(err);
+              },
+              { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+            );
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(Object.assign(new Error('Délai dépassé (20s)'), { code: 3 })), 20000)
+          ),
+        ]);
         // Reverse-geocode using OpenStreetMap (no API key required)
         const r = await fetch(
           `https://nominatim.openstreetmap.org/reverse?format=json&zoom=18&addressdetails=1&accept-language=fr&lat=${coords.latitude}&lon=${coords.longitude}`,
@@ -83,13 +115,14 @@ export default function CreateScreen() {
           const parts = [street, a.city || a.town || a.village || a.municipality, a.state, a.postcode].filter(Boolean).join(', ');
           if (parts) {
             setClientAddress(parts);
+            console.log('[GPS] Address set:', parts);
           } else if (j.display_name) {
             setClientAddress(j.display_name);
           } else {
-            Alert.alert('Introuvable', 'Adresse non trouvée pour ces coordonnées.');
+            showAlert('Introuvable', 'Adresse non trouvée pour ces coordonnées.');
           }
         } else {
-          Alert.alert('Erreur', 'Service de géocodage indisponible (OpenStreetMap).');
+          showAlert('Erreur', 'Service de géocodage indisponible (OpenStreetMap).');
         }
         setGettingLocation(false);
         return;
@@ -98,7 +131,7 @@ export default function CreateScreen() {
       // Native (iOS/Android via Expo Go or built app)
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permission refusée', 'Accès à la localisation requis.');
+        showAlert('Permission refusée', 'Accès à la localisation requis.');
         setGettingLocation(false);
         return;
       }
@@ -110,7 +143,7 @@ export default function CreateScreen() {
         const parts = [street, p.city || p.subregion, p.region, p.postalCode].filter(Boolean).join(', ');
         setClientAddress(parts);
       } else {
-        Alert.alert('Introuvable', 'Impossible de trouver votre adresse');
+        showAlert('Introuvable', 'Impossible de trouver votre adresse');
       }
     } catch (e: any) {
       // PositionError codes: 1=PERMISSION_DENIED, 2=POSITION_UNAVAILABLE, 3=TIMEOUT
@@ -120,21 +153,19 @@ export default function CreateScreen() {
       if (Platform.OS === 'web' && code === 1) {
         title = 'Localisation refusée';
         msg = 'Pour activer la localisation sur iPhone:\n\n' +
-              '📱 Si vous utilisez l\'app installée (PWA):\n' +
               '1. Ouvrez Réglages iPhone\n' +
-              '2. Confidentialité & Sécurité → Service de localisation\n' +
-              '3. Trouvez "Gexia360" (ou Safari) → Autoriser\n\n' +
-              '🌐 Si vous êtes dans Safari:\n' +
-              '1. Réglages → Safari → Localisation → Autoriser\n' +
-              '2. Rechargez la page et réessayez';
+              '2. Confidentialité et sécurité → Service de localisation\n' +
+              '3. Trouvez Safari (ou Gexia360 si visible) → Autoriser\n' +
+              '4. Rechargez l\'app et réessayez';
       } else if (Platform.OS === 'web' && code === 2) {
         title = 'Position indisponible';
-        msg = 'Votre position GPS n\'a pas pu être déterminée. Vérifiez que le GPS de votre iPhone est activé (Réglages → Confidentialité → Service de localisation = Activé) et réessayez à l\'extérieur ou près d\'une fenêtre.';
+        msg = 'GPS indisponible. Vérifiez que la localisation iPhone est activée et réessayez près d\'une fenêtre ou à l\'extérieur.';
       } else if (Platform.OS === 'web' && code === 3) {
         title = 'Délai dépassé';
-        msg = 'La recherche de position a pris trop de temps. Réessayez avec une meilleure connexion ou à l\'extérieur.';
+        msg = 'La position met trop de temps à arriver. Réessayez à l\'extérieur ou avec une meilleure connexion. Si vous êtes en PWA, essayez aussi dans Safari classique.';
       }
-      Alert.alert(title, msg);
+      console.error('[GPS] Final error:', title, msg);
+      showAlert(title, msg);
     } finally {
       setGettingLocation(false);
     }
