@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Image, TextInput, Linking, Platform, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import AppHeader from '../components/AppHeader';
@@ -29,6 +29,7 @@ const DEFAULT_PRICES: Record<string, number> = WINDOW_TYPES.reduce((acc, t) => {
 
 export default function EstimateScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ prefName?: string; prefEmail?: string; prefPhone?: string }>();
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [prices, setPrices] = useState<Record<string, number>>(DEFAULT_PRICES);
   const [editingPriceKey, setEditingPriceKey] = useState<string | null>(null);
@@ -76,8 +77,8 @@ export default function EstimateScreen() {
   const [photos, setPhotos] = useState<string[]>([]);
   const [fixedPrice, setFixedPrice] = useState('');
   const [useFixed, setUseFixed] = useState(false);
-  const [clientName, setClientName] = useState('');
-  const [clientEmail, setClientEmail] = useState('');
+  const [clientName, setClientName] = useState(params.prefName || '');
+  const [clientEmail, setClientEmail] = useState(params.prefEmail || '');
   const [notes, setNotes] = useState('');
   const [sendingEmail, setSendingEmail] = useState(false);
   const [detailed, setDetailed] = useState(true); // Show/hide item breakdown in email

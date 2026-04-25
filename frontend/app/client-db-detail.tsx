@@ -181,6 +181,44 @@ export default function ClientDbDetailScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Create from client (Pré-rempli) */}
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              testID="create-appointment-from-client"
+              onPress={() => router.push({
+                pathname: '/create',
+                params: {
+                  editClient: name || '',
+                  editEmail: email || '',
+                  editPhone: phone || '',
+                  editAddress: address || '',
+                },
+              } as any)}
+              style={[styles.actionBtn, { backgroundColor: '#0891B2' }]}
+              activeOpacity={0.85}
+            >
+              <Feather name="calendar" size={18} color="#FFFFFF" />
+              <Text style={styles.actionBtnText}>Nouveau RDV</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              testID="create-estimate-from-client"
+              onPress={() => router.push({
+                pathname: '/estimate',
+                params: {
+                  prefName: name || '',
+                  prefEmail: email || '',
+                  prefPhone: phone || '',
+                },
+              } as any)}
+              style={[styles.actionBtn, { backgroundColor: '#FB923C' }]}
+              activeOpacity={0.85}
+            >
+              <Feather name="dollar-sign" size={18} color="#FFFFFF" />
+              <Text style={styles.actionBtnText}>Estimation</Text>
+            </TouchableOpacity>
+          </View>
+
           {/* Info block */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -275,6 +313,9 @@ const styles = StyleSheet.create({
   qa: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 10, backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB' },
   qaText: { fontSize: 14, fontWeight: '700', color: '#111' },
   qaDisabled: { opacity: 0.5 },
+  actionRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 10 },
+  actionBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
   section: { backgroundColor: '#fff', padding: 16, borderRadius: 14, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 12 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   sectionTitle: { fontSize: 16, fontWeight: '800', color: '#111', marginBottom: 8 },
