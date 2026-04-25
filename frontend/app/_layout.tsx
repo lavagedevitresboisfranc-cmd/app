@@ -27,6 +27,7 @@ function ThemedRoot() {
         <Stack.Screen name="client-history" />
         <Stack.Screen name="reschedule" />
         <Stack.Screen name="reminders" />
+        <Stack.Screen name="propose-alternatives" />
       </Stack>
     </View>
   );

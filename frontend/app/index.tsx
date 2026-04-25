@@ -53,12 +53,15 @@ interface PendingRequest {
 // Unified item for list display
 interface CalendarItem {
   id: string;
-  type: 'appointment' | 'request';
+  type: 'appointment' | 'request' | 'tentative';
   name: string;
   date: string;
   time: string;
   duration?: number;
   status: string;
+  // For tentative: link back to the parent appointment
+  parentId?: string;
+  parentTime?: string;
 }
 
 const LOGO_URL = process.env.EXPO_PUBLIC_LOGO_URL || '';
@@ -247,12 +250,35 @@ export default function CalendarScreen() {
   const fetchDayItems = useCallback(async (date: string) => {
     setLoading(true);
     try {
-      const [apptRes, reqRes] = await Promise.all([
+      const [apptDayRes, allApptsRes, reqRes] = await Promise.all([
         fetch(`${API_URL}/api/appointments?date=${date}`),
+        fetch(`${API_URL}/api/appointments`),
         fetch(`${API_URL}/api/requests?status=pending`),
       ]);
-      const appts: Appointment[] = await apptRes.json();
+      const appts: Appointment[] = await apptDayRes.json();
+      const allAppts: any[] = await allApptsRes.json();
       const reqs: PendingRequest[] = await reqRes.json();
+
+      // Tentative items: any appointment whose proposed_alternatives include this date
+      const tentatives: CalendarItem[] = [];
+      for (const a of allAppts || []) {
+        const alts = (a as any).proposed_alternatives || [];
+        for (const alt of alts) {
+          if (alt && alt.date === date) {
+            tentatives.push({
+              id: `${a.id}_alt_${alt.date}_${alt.time_slot}`,
+              type: 'tentative',
+              name: a.client_name || '',
+              date: alt.date,
+              time: alt.time_slot,
+              duration: alt.duration_minutes,
+              status: 'tentative',
+              parentId: a.id,
+              parentTime: a.time_slot,
+            });
+          }
+        }
+      }
 
       const items: CalendarItem[] = [
         ...appts.map((a) => ({
@@ -264,6 +290,7 @@ export default function CalendarScreen() {
           duration: a.duration_minutes,
           status: a.status,
         })),
+        ...tentatives,
         ...reqs
           .filter((r) => r.preferred_date === date)
           .map((r) => ({
@@ -513,15 +540,19 @@ export default function CalendarScreen() {
 
   const renderItem = ({ item }: { item: CalendarItem }) => {
     const isRequest = item.type === 'request';
-    const accentColor = isRequest ? '#FF3B30' : '#34C759';
+    const isTentative = item.type === 'tentative';
+    const accentColor = isTentative ? '#D97706' : (isRequest ? '#FF3B30' : '#34C759');
+    const bgColor = isTentative ? '#FEF3C7' : '#FFFFFF';
 
     return (
       <TouchableOpacity
         testID={`calendar-item-${item.id}`}
-        style={[styles.card, { borderLeftWidth: 4, borderLeftColor: accentColor }]}
+        style={[styles.card, { borderLeftWidth: 4, borderLeftColor: accentColor, backgroundColor: bgColor }]}
         activeOpacity={0.7}
         onPress={() => {
-          if (isRequest) {
+          if (isTentative && item.parentId) {
+            router.push({ pathname: '/detail', params: { id: item.parentId } });
+          } else if (isRequest) {
             router.push({ pathname: '/request-detail', params: { id: item.id } });
           } else {
             router.push({ pathname: '/detail', params: { id: item.id } });
@@ -534,11 +565,15 @@ export default function CalendarScreen() {
         </View>
         <View style={styles.cardDivider} />
         <View style={styles.cardRight}>
-          <Text style={styles.cardTitle} numberOfLines={1}>{item.name}</Text>
+          <Text style={styles.cardTitle} numberOfLines={1}>
+            {isTentative ? '⏳ ' : ''}{item.name}
+          </Text>
           <View style={styles.statusRow}>
             <View style={[styles.statusDot, { backgroundColor: accentColor }]} />
             <Text style={[styles.statusText, { color: accentColor }]}>
-              {isRequest ? 'En attente' : item.status === 'upcoming' ? 'Confirmé' : item.status}
+              {isTentative ? `Alternative en attente (RDV ${item.parentTime || ''})`
+                : isRequest ? 'En attente'
+                : item.status === 'upcoming' ? 'Confirmé' : item.status}
             </Text>
           </View>
         </View>

@@ -62,26 +62,59 @@ export default function CreateScreen() {
   const getCurrentLocation = async () => {
     setGettingLocation(true);
     try {
+      // On web/PWA, expo-location is unreliable on iOS Safari PWA — use browser API directly
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.geolocation) {
+        const coords: { latitude: number; longitude: number } = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+            (err) => reject(err),
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+          );
+        });
+        // Reverse-geocode using OpenStreetMap (no API key required)
+        const r = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&zoom=18&addressdetails=1&accept-language=fr&lat=${coords.latitude}&lon=${coords.longitude}`,
+          { headers: { 'Accept': 'application/json' } }
+        );
+        if (r.ok) {
+          const j = await r.json();
+          const a = j.address || {};
+          const street = [a.house_number, a.road].filter(Boolean).join(' ');
+          const parts = [street, a.city || a.town || a.village || a.municipality, a.state, a.postcode].filter(Boolean).join(', ');
+          if (parts) {
+            setClientAddress(parts);
+          } else if (j.display_name) {
+            setClientAddress(j.display_name);
+          } else {
+            Alert.alert('Introuvable', 'Adresse non trouvée');
+          }
+        } else {
+          Alert.alert('Erreur', 'Service de géocodage indisponible');
+        }
+        setGettingLocation(false);
+        return;
+      }
+
+      // Native (iOS/Android via Expo Go or built app)
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permission refusée', 'Accès à la localisation requis.');
         setGettingLocation(false);
         return;
       }
-      // Precise location (best accuracy)
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
       const places = await Location.reverseGeocodeAsync({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
       if (places && places.length > 0) {
         const p = places[0];
-        // Precise: street number, street, city, region, postal code (editable after)
         const street = [p.streetNumber, p.street].filter(Boolean).join(' ');
         const parts = [street, p.city || p.subregion, p.region, p.postalCode].filter(Boolean).join(', ');
         setClientAddress(parts);
       } else {
         Alert.alert('Introuvable', 'Impossible de trouver votre adresse');
       }
-    } catch (e) {
-      Alert.alert('Erreur', 'Impossible d\'obtenir votre position');
+    } catch (e: any) {
+      const msg = (e && e.message) ? e.message : 'Impossible d\'obtenir votre position';
+      Alert.alert('Erreur GPS', msg);
     } finally {
       setGettingLocation(false);
     }

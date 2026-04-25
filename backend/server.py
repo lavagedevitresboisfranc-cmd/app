@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Request
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Request, Body
 from fastapi.responses import HTMLResponse, Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -11,7 +11,7 @@ import base64
 import certifi
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone
 import resend
@@ -212,6 +212,14 @@ class AppointmentResponse(BaseModel):
     client_photo: Optional[str] = None
     client_id: Optional[str] = None
     archived_at: Optional[str] = None
+    # Up to 3 tentatively-proposed alternative slots while waiting for the client's reply.
+    # Each entry: {"date": "YYYY-MM-DD", "time_slot": "HH:MM", "duration_minutes": int}
+    proposed_alternatives: Optional[List[Dict[str, Any]]] = None
+
+# --- Proposed alternatives model ---
+
+class ProposedAlternativesUpdate(BaseModel):
+    alternatives: List[Dict[str, Any]]  # [{date, time_slot, duration_minutes}, ...] up to 3
 
 # --- Request Models ---
 
@@ -2486,6 +2494,74 @@ async def mark_reminder_sms_unsent(appointment_id: str):
         {"$unset": {"reminder_sms_sent_at": ""}},
     )
     return {"id": appointment_id, "reminder_sms_sent_at": None}
+
+
+# --- Proposed alternatives (3 tentative slots while waiting for client reply) ---
+
+@api_router.put("/appointments/{appointment_id}/proposed-alternatives")
+async def set_proposed_alternatives(appointment_id: str, data: ProposedAlternativesUpdate):
+    """Save up to 3 tentatively-proposed alternative slots on an appointment.
+
+    Each item must have date (YYYY-MM-DD), time_slot (HH:MM) and duration_minutes (int).
+    These are shown in YELLOW on the calendar so the user doesn't double-book those
+    slots while waiting for the client's confirmation.
+    """
+    appt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if not appt:
+        raise HTTPException(status_code=404, detail="Rendez-vous introuvable")
+    cleaned = []
+    for item in (data.alternatives or [])[:3]:
+        d = (item.get("date") or "").strip()
+        t = (item.get("time_slot") or "")[:5]
+        dur = int(item.get("duration_minutes") or 60)
+        if d and t:
+            cleaned.append({"date": d, "time_slot": t, "duration_minutes": dur})
+    await db.appointments.update_one(
+        {"id": appointment_id},
+        {"$set": {"proposed_alternatives": cleaned}},
+    )
+    return {"id": appointment_id, "proposed_alternatives": cleaned}
+
+
+@api_router.delete("/appointments/{appointment_id}/proposed-alternatives")
+async def clear_proposed_alternatives(appointment_id: str):
+    """Clear all tentatively-proposed alternative slots on an appointment."""
+    appt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if not appt:
+        raise HTTPException(status_code=404, detail="Rendez-vous introuvable")
+    await db.appointments.update_one(
+        {"id": appointment_id},
+        {"$unset": {"proposed_alternatives": ""}},
+    )
+    return {"id": appointment_id, "proposed_alternatives": []}
+
+
+@api_router.post("/appointments/{appointment_id}/confirm-alternative")
+async def confirm_alternative(appointment_id: str, payload: Dict[str, Any] = Body(...)):
+    """Confirm one of the proposed alternatives → updates date/time and clears the rest.
+
+    Body: { "date": "YYYY-MM-DD", "time_slot": "HH:MM", "notify_client": bool }
+    """
+    appt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if not appt:
+        raise HTTPException(status_code=404, detail="Rendez-vous introuvable")
+    new_date = (payload.get("date") or "").strip()
+    new_time = (payload.get("time_slot") or "")[:5]
+    if not new_date or not new_time:
+        raise HTTPException(status_code=400, detail="date et time_slot requis")
+    update = AppointmentUpdate(
+        date=new_date,
+        time_slot=new_time,
+        notify_client=bool(payload.get("notify_client", False)),
+    )
+    # Reuse update_appointment to also send the reschedule email (if requested)
+    response = await update_appointment(appointment_id, update)
+    # Then clear proposed_alternatives
+    await db.appointments.update_one(
+        {"id": appointment_id},
+        {"$unset": {"proposed_alternatives": ""}},
+    )
+    return response
 
 
 # --- Monthly Report ---

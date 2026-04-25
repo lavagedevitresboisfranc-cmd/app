@@ -904,10 +904,10 @@ export default function DetailScreen() {
               testID="reschedule-sms-button"
               style={[styles.toolBtn, { borderColor: '#7C3AED', backgroundColor: '#F5F3FF' }]}
               activeOpacity={0.7}
-              onPress={() => handleReschedule('sms')}
+              onPress={() => router.push({ pathname: '/propose-alternatives', params: { id: appointment!.id } } as any)}
             >
               <Feather name="message-circle" size={20} color="#6D28D9" />
-              <Text style={[styles.toolBtnText, { color: '#6D28D9' }]}>SMS replanifier</Text>
+              <Text style={[styles.toolBtnText, { color: '#6D28D9' }]}>Proposer 3 alternatives (SMS)</Text>
             </TouchableOpacity>
             <TouchableOpacity
               testID="reschedule-email-button"
