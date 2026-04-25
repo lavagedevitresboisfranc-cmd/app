@@ -2246,18 +2246,25 @@ async def generate_invoice(appointment_id: str):
 html,body{{margin:0;padding:0;}}
 body{{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;max-width:780px;margin:0 auto;padding:22px 28px;color:#1F2937;font-size:12px;background:#FFFFFF;}}
 .top-banner{{background:linear-gradient(135deg,#0891B2 0%,#06B6D4 100%);height:6px;border-radius:3px;margin-bottom:14px;}}
-.header{{display:flex;justify-content:space-between;align-items:center;gap:18px;margin-bottom:16px;padding-bottom:14px;border-bottom:2px solid #F3F4F6;}}
-.brand{{display:flex;align-items:center;gap:14px;flex:1;}}
-.brand img{{width:140px;height:auto;max-height:140px;border-radius:8px;object-fit:contain;background:#FFFFFF;box-shadow:0 3px 10px rgba(0,0,0,0.08);padding:6px;}}
-.brand-info{{display:flex;flex-direction:column;gap:2px;}}
-.company-name{{font-size:14px;font-weight:700;color:#111827;line-height:1.25;}}
-.company-tagline{{font-size:9px;color:#6B7280;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;}}
-.company-contact{{font-size:11px;color:#6B7280;line-height:1.6;margin-top:6px;}}
-.company-contact strong{{color:#0891B2;font-weight:600;}}
-.invoice-block{{text-align:right;flex-shrink:0;}}
+.header{{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-bottom:16px;padding-bottom:14px;border-bottom:2px solid #F3F4F6;}}
+.brand{{display:flex;align-items:center;gap:14px;flex:1;min-width:0;}}
+.brand img{{width:120px;height:auto;max-height:120px;border-radius:8px;object-fit:contain;background:#FFFFFF;flex-shrink:0;}}
+.brand-info{{display:flex;flex-direction:column;gap:4px;min-width:0;}}
+.company-contact{{font-size:11px;color:#374151;line-height:1.7;}}
+.company-contact .row{{display:flex;align-items:center;gap:6px;}}
+.company-contact .icon{{color:#0891B2;font-weight:700;flex-shrink:0;}}
+.company-contact a{{color:#374151;text-decoration:none;word-break:break-word;}}
+.invoice-block{{text-align:right;flex-shrink:0;min-width:140px;}}
 .invoice-title{{font-size:26px;font-weight:800;color:#0891B2;letter-spacing:-1px;line-height:1;}}
 .invoice-meta{{font-size:11px;color:#6B7280;margin-top:6px;line-height:1.5;}}
 .invoice-meta strong{{color:#111827;font-weight:600;}}
+@media (max-width:480px){{
+  .header{{flex-wrap:wrap;gap:10px;}}
+  .brand{{flex:1 1 100%;}}
+  .brand img{{width:90px;max-height:90px;}}
+  .invoice-block{{flex:1 1 100%;text-align:left;border-top:1px solid #F3F4F6;padding-top:8px;}}
+  .invoice-title{{font-size:22px;}}
+}}
 .greeting{{font-size:12px;color:#374151;margin-bottom:12px;line-height:1.5;}}
 .greeting .name{{font-weight:700;color:#0891B2;}}
 .card{{background:#F9FAFB;border-radius:10px;padding:12px 16px;margin-bottom:12px;border-left:4px solid #0891B2;}}
@@ -2304,12 +2311,10 @@ body{{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;max-width:780px;mar
   <div class="brand">
     <img src="{logo_url}" alt="Logo" />
     <div class="brand-info">
-      <div class="company-tagline">Lavage professionnel</div>
-      <div class="company-name">Lavage de Vitres<br>Bois-Franc</div>
       <div class="company-contact">
-        <strong>☎</strong> 514-570-9802<br>
-        <strong>✉</strong> lavagedevitreboisfranc@live.com<br>
-        <strong>🌐</strong> Lavagedevitre.org
+        <div class="row"><span class="icon">☎</span><span>Tel.: 514-570-9802</span></div>
+        <div class="row"><span class="icon">✉</span><a href="mailto:lavagedevitreboisfranc@live.com">lavagedevitreboisfranc@live.com</a></div>
+        <div class="row"><span class="icon">🌐</span><a href="https://lavagedevitre.org">Lavagedevitre.org</a></div>
       </div>
     </div>
   </div>
