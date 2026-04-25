@@ -153,6 +153,22 @@ export default function DetailScreen() {
     } catch { Alert.alert('Erreur', 'Erreur réseau'); }
   };
 
+  const openInBrowser = (url: string) => {
+    try {
+      if (Platform.OS === 'web') {
+        // On web/PWA, Linking.openURL gets intercepted by Expo Router → 404.
+        // Use window.open in a new tab so the FastAPI HTML page renders properly.
+        if (typeof window !== 'undefined' && window.open) {
+          window.open(url, '_blank');
+          return;
+        }
+      }
+      Linking.openURL(url).catch(() => Alert.alert('Erreur', 'Impossible d\'ouvrir le lien'));
+    } catch {
+      Alert.alert('Erreur', 'Impossible d\'ouvrir le lien');
+    }
+  };
+
   const handleEmailInvoice = async () => {
     if (!appointment) return;
     const email = (appointment.client_email || '').trim();
@@ -223,7 +239,7 @@ export default function DetailScreen() {
       ? `d'environ ${Math.round(minutes / 60)} h${minutes >= 120 ? 'eures' : 'eure'}`
       : `d'environ ${minutes} minutes`;
     const subject = `Léger retard — ${_formatTimeForClient()}`;
-    const body = `Bonjour ${name},\n\nJe vous écris pour vous informer que je serai en retard ${delayText} pour notre rendez-vous prévu le ${when}.\n\nToutes mes excuses pour l'inconvénient. Je vous préviens dès que je suis en route.\n\nMerci de votre compréhension!\n— Lavage de Vitres Bois-Franc\n📞 514-570-9802`;
+    const body = `Bonjour ${name},\n\nJe vous écris pour vous informer que je serai en retard ${delayText} pour notre rendez-vous prévu le ${when}.\n\nToutes mes excuses pour l'inconvénient. Je vous préviens dès que je suis en route.\n\nMerci de votre compréhension!`;
     return { subject, body };
   };
 
@@ -232,7 +248,7 @@ export default function DetailScreen() {
     const name = appointment.client_name || '';
     const when = _formatTimeForClient();
     const subject = `Reporter votre rendez-vous — ${_formatTimeForClient()}`;
-    const body = `Bonjour ${name},\n\nMalheureusement, je dois reporter notre rendez-vous prévu le ${when}.\n\nJe vous propose les disponibilités suivantes:\n• Option 1: ______________\n• Option 2: ______________\n• Option 3: ______________\n\nLaquelle vous conviendrait le mieux? Ou dites-moi votre préférence et je fais de mon mieux pour m'adapter.\n\nMerci de votre compréhension!\n— Lavage de Vitres Bois-Franc\n📞 514-570-9802`;
+    const body = `Bonjour ${name},\n\nMalheureusement, je dois reporter notre rendez-vous prévu le ${when}.\n\nQuelles sont vos disponibilités dans les prochains jours? Dites-moi votre préférence et je fais de mon mieux pour m'adapter.\n\nMerci de votre compréhension!`;
     return { subject, body };
   };
 
@@ -451,7 +467,7 @@ export default function DetailScreen() {
 
   const handlePrint = () => {
     if (!appointment) return;
-    Linking.openURL(`${API_URL}/api/print/appointment/${appointment.id}`);
+    openInBrowser(`${API_URL}/api/print/appointment/${appointment.id}`);
   };
 
   const handleDelete = () => {
@@ -769,7 +785,7 @@ export default function DetailScreen() {
               testID="invoice-button"
               style={[styles.toolBtn, { borderColor: '#0891B2' }]}
               activeOpacity={0.7}
-              onPress={() => Linking.openURL(`${API_URL}/api/invoice/${appointment!.id}`)}
+              onPress={() => openInBrowser(`${API_URL}/api/invoice/${appointment!.id}`)}
             >
               <Feather name="file-text" size={20} color="#0891B2" />
               <Text style={[styles.toolBtnText, { color: '#0891B2' }]}>Facture PDF</Text>
@@ -782,6 +798,25 @@ export default function DetailScreen() {
             >
               <Feather name="mail" size={20} color="#059669" />
               <Text style={[styles.toolBtnText, { color: '#059669' }]}>Envoyer facture</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="sms-invoice-button"
+              style={[styles.toolBtn, { borderColor: '#10B981' }]}
+              activeOpacity={0.7}
+              onPress={() => {
+                if (!appointment) return;
+                const phone = (appointment.client_phone || '').replace(/\D/g, '');
+                if (!phone) {
+                  Alert.alert('Téléphone manquant', 'Ce client n\'a pas de numéro.');
+                  return;
+                }
+                const invoiceUrl = `${API_URL}/api/invoice/${appointment.id}`;
+                const msg = `Bonjour ${appointment.client_name || ''},\n\nVoici votre facture: ${invoiceUrl}\n\nMerci pour votre confiance!`;
+                _sendSms(msg);
+              }}
+            >
+              <Feather name="message-square" size={20} color="#10B981" />
+              <Text style={[styles.toolBtnText, { color: '#10B981' }]}>SMS facture</Text>
             </TouchableOpacity>
             <TouchableOpacity
               testID="review-request-button"
