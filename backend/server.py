@@ -16,6 +16,7 @@ import uuid
 from datetime import datetime, timezone
 import resend
 import branding
+import invoice_logo
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env', override=False)
@@ -2216,7 +2217,8 @@ async def generate_invoice(appointment_id: str):
 
     invoice_num = appointment_id[:8].upper()
     price = appt.get('price', 0)
-    logo_url = branding.LOGO_DATA_URL or os.environ.get('INVOICE_LOGO_URL', '')
+    # Invoice-only logo (different from email branding)
+    logo_url = invoice_logo.INVOICE_LOGO_DATA_URL or branding.LOGO_DATA_URL or os.environ.get('INVOICE_LOGO_URL', '')
 
     # Seasonal promo: 10% automne (sept-nov)
     from datetime import datetime
