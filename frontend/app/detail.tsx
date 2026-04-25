@@ -160,15 +160,45 @@ export default function DetailScreen() {
       Alert.alert('Courriel manquant', 'Ce client n\'a pas de courriel.');
       return;
     }
-    const invoiceUrl = `${API_URL}/api/invoice/${appointment.id}`;
-    const subject = `Facture — ${appointment.title || 'Service'} — ${appointment.date}`;
-    const body = `Bonjour ${appointment.client_name || ''},\n\nVeuillez trouver votre facture ci-jointe:\n${invoiceUrl}\n\nMerci pour votre confiance!`;
-    const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    try {
-      const can = await Linking.canOpenURL(url);
-      if (can) { await Linking.openURL(url); }
-      else { Alert.alert('Erreur', 'Aucune app courriel disponible'); }
-    } catch { Alert.alert('Erreur', 'Impossible d\'ouvrir l\'app courriel'); }
+
+    // Confirmation BEFORE sending
+    const confirmTitle = '📧 Envoyer la facture ?';
+    const confirmMsg =
+      `La facture sera envoyée à :\n` +
+      `• ${email}\n\n` +
+      `Une copie sera également envoyée en BCC à votre courriel professionnel.`;
+
+    const proceed = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/invoice/${appointment.id}/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data?.detail || 'Échec d\'envoi');
+        }
+        // Confirmation AFTER sending
+        const bccLine = data.bcc ? `\n📬 BCC : ${data.bcc}` : '';
+        Alert.alert(
+          '✅ Facture envoyée',
+          `📧 Destinataire : ${data.to}${bccLine}\n📄 Facture #${data.invoice_num}`
+        );
+      } catch (e: any) {
+        Alert.alert('❌ Erreur', e?.message || 'Envoi impossible');
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      // eslint-disable-next-line no-alert
+      const ok = window.confirm(`${confirmTitle}\n\n${confirmMsg}`);
+      if (ok) await proceed();
+    } else {
+      Alert.alert(confirmTitle, confirmMsg, [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Envoyer', onPress: () => { proceed(); } },
+      ]);
+    }
   };
 
   // --- Retard / Replanifier ---

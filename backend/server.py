@@ -2369,6 +2369,67 @@ body{{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;max-width:780px;mar
 </body></html>"""
     return HTMLResponse(content=html)
 
+
+@api_router.post("/invoice/{appointment_id}/send")
+async def send_invoice_email(appointment_id: str):
+    """Email the invoice HTML to the client + BCC the business owner.
+
+    - Reuses the same HTML template as GET /api/invoice/{id}
+    - Strips the print/action UI for clean email rendering
+    - BCC: NOTIFY_EMAIL (so the owner keeps a copy of every sent invoice)
+    - Returns {sent: true, to, bcc} on success or 502 on Resend failure
+    """
+    appt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if not appt:
+        raise HTTPException(status_code=404, detail="Rendez-vous introuvable")
+    client_email = (appt.get("client_email") or "").strip()
+    if not client_email:
+        raise HTTPException(status_code=400, detail="Ce client n'a pas de courriel.")
+    if not resend.api_key:
+        raise HTTPException(status_code=503, detail="Service email non configuré.")
+
+    # Re-use the existing invoice HTML by calling the GET endpoint internally
+    inner = await generate_invoice(appointment_id)
+    html = inner.body.decode("utf-8") if hasattr(inner, "body") else str(inner)
+    # Strip the on-screen actions bar and the auto-print script (not wanted in emails)
+    html = re.sub(r'<div class="actions-bar">[\s\S]*?</div>', '', html, count=1)
+    html = re.sub(r'<script>\s*window\.onload\s*=\s*function\(\)\s*\{[^<]*\}\s*</script>', '', html, count=1)
+
+    invoice_num = appointment_id[:8].upper()
+    subject = f"Votre facture #{invoice_num} — Lavage de Vitres Bois-Franc"
+    from_addr = os.environ.get("RESEND_FROM") or "onboarding@resend.dev"
+
+    payload = {
+        "from": from_addr,
+        "to": [client_email],
+        "subject": subject,
+        "html": html,
+    }
+    bcc_addr = (NOTIFY_EMAIL or "").strip()
+    if bcc_addr and bcc_addr.lower() != client_email.lower():
+        payload["bcc"] = [bcc_addr]
+
+    try:
+        result = await asyncio.to_thread(resend.Emails.send, payload)
+        sent_id = (result or {}).get("id", "")
+        logger.info(
+            f"Invoice #{invoice_num} sent to {client_email}"
+            + (f" (BCC: {bcc_addr})" if bcc_addr else "")
+            + (f" - resend_id={sent_id}" if sent_id else "")
+        )
+        return {
+            "sent": True,
+            "to": client_email,
+            "bcc": bcc_addr or None,
+            "subject": subject,
+            "invoice_num": invoice_num,
+            "resend_id": sent_id,
+        }
+    except Exception as e:
+        logger.error(f"Failed to send invoice #{invoice_num} to {client_email}: {e}")
+        raise HTTPException(status_code=502, detail=f"Échec d'envoi: {e}")
+
+
 # --- Monthly Report ---
 
 @api_router.get("/report/monthly")
