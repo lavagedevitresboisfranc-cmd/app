@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 import resend
 import branding
 import invoice_logo
+import reminders as reminders_module
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env', override=False)
@@ -2430,6 +2431,58 @@ async def send_invoice_email(appointment_id: str):
         raise HTTPException(status_code=502, detail=f"Échec d'envoi: {e}")
 
 
+# --- 24-hour reminders ---
+
+@api_router.get("/reminders/tomorrow")
+async def get_tomorrow_reminders():
+    """List all upcoming appointments scheduled for tomorrow (Eastern time).
+
+    Returns: { date, date_label, count, appointments: [...] }.
+    Each appointment includes its reminder_email_sent_at / reminder_sms_sent_at fields.
+    """
+    return await reminders_module.get_tomorrow_appointments(db)
+
+
+@api_router.post("/reminders/run-now")
+async def run_reminders_now():
+    """Manually trigger the 24h reminder job (sends emails to clients + summary to owner).
+
+    Useful for testing or for the user to re-trigger if the 9 AM job missed.
+    """
+    return await reminders_module.send_24h_reminders_for_tomorrow(db)
+
+
+@api_router.post("/reminders/{appointment_id}/mark-sms-sent")
+async def mark_reminder_sms_sent(appointment_id: str):
+    """Mark that the user manually sent the SMS reminder via their phone.
+
+    Called from the frontend after the iPhone SMS sheet is opened so the
+    /reminders screen can display a green checkmark.
+    """
+    appt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if not appt:
+        raise HTTPException(status_code=404, detail="Rendez-vous introuvable")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.appointments.update_one(
+        {"id": appointment_id},
+        {"$set": {"reminder_sms_sent_at": now_iso}},
+    )
+    return {"id": appointment_id, "reminder_sms_sent_at": now_iso}
+
+
+@api_router.post("/reminders/{appointment_id}/mark-sms-unsent")
+async def mark_reminder_sms_unsent(appointment_id: str):
+    """Reset the SMS-sent marker (in case the user tapped by mistake)."""
+    appt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if not appt:
+        raise HTTPException(status_code=404, detail="Rendez-vous introuvable")
+    await db.appointments.update_one(
+        {"id": appointment_id},
+        {"$unset": {"reminder_sms_sent_at": ""}},
+    )
+    return {"id": appointment_id, "reminder_sms_sent_at": None}
+
+
 # --- Monthly Report ---
 
 @api_router.get("/report/monthly")
@@ -4463,10 +4516,25 @@ async def start_scheduler():
     try:
         scheduler.add_job(_create_auto_backup, CronTrigger(hour=0, minute=0), id="daily_backup", replace_existing=True)
         scheduler.add_job(_process_due_campaigns, IntervalTrigger(minutes=1), id="process_campaigns", replace_existing=True)
+        scheduler.add_job(
+            _run_24h_reminders,
+            CronTrigger(hour=9, minute=0),
+            id="daily_24h_reminders",
+            replace_existing=True,
+        )
         scheduler.start()
-        logger.info("Scheduler started: daily backup @ 00:00 + campaigns check every minute")
+        logger.info("Scheduler started: daily backup @ 00:00 + campaigns every minute + 24h reminders @ 09:00 ET")
     except Exception as e:
         logger.error(f"Scheduler failed to start: {e}")
+
+
+async def _run_24h_reminders():
+    """Daily 9 AM ET job: send 24h reminders to clients + summary to owner."""
+    try:
+        result = await reminders_module.send_24h_reminders_for_tomorrow(db)
+        logger.info(f"24h reminder job done: {result}")
+    except Exception as e:
+        logger.error(f"24h reminder job error: {e}")
 
 
 # Include router AT THE END so all route definitions are registered

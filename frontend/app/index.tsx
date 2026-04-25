@@ -140,6 +140,7 @@ export default function CalendarScreen() {
         { icon: 'list' as const, labelKey: 'menu.items.allAppointments', route: '/appointments' },
         { icon: 'archive' as const, labelKey: 'menu.items.appointmentsArchive', route: '/appointments-archive' },
         { icon: 'plus-circle' as const, labelKey: 'menu.items.newAppointment', route: '/create' },
+        { icon: 'bell' as const, labelKey: 'menu.items.reminders', route: '/reminders' },
         { icon: 'dollar-sign' as const, labelKey: 'menu.items.estimate', route: '/estimate' },
         { icon: 'inbox' as const, labelKey: 'menu.items.requests', route: '/requests' },
       ],

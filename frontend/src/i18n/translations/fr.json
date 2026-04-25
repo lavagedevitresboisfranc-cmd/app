@@ -18,6 +18,7 @@
       "allAppointments": "Tous les RDV",
       "appointmentsArchive": "Archives RDV",
       "newAppointment": "Nouveau RDV",
+      "reminders": "Rappels (24h)",
       "requests": "Demandes",
       "clientsDb": "Base Clients",
       "clientsArchive": "Corbeille Clients",
