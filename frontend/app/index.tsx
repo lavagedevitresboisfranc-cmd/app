@@ -121,11 +121,10 @@ export default function CalendarScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [allItems, setAllItems] = useState<CalendarItem[]>([]);
   const [isOffline, setIsOffline] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  // Ensure menu is ALWAYS closed when the home screen mounts (PWA launch, refresh, etc.)
+  const [menuOpen, setMenuOpen] = useState(true);
+  // Open the hamburger menu by default on PWA launch (the user prefers menu-first navigation)
   useEffect(() => {
-    setMenuOpen(false);
-    setLangOpen(false);
+    setMenuOpen(true);
   }, []);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ agenda: true });
   const [langOpen, setLangOpen] = useState(false);
