@@ -104,6 +104,45 @@ export default function BackupScreen() {
     }
   };
 
+  const [emailing, setEmailing] = useState(false);
+
+  const handleEmailBackup = async () => {
+    setEmailing(true);
+    try {
+      const res = await fetch(`${API_URL}/api/backup/email`, { method: 'POST' });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.detail || 'Échec de l\'envoi');
+      const c = j.counts || {};
+      const msg =
+        `📧 Sauvegarde envoyée à : ${j.to}\n\n` +
+        `📎 Pièce jointe: ${j.filename}\n` +
+        `📦 Taille: ${j.size_kb} Ko\n\n` +
+        `📊 Contenu:\n` +
+        `• ${c.appointments || 0} rendez-vous\n` +
+        `• ${c.requests || 0} demandes\n` +
+        `• ${c.clients || 0} clients\n` +
+        `• ${c.revenues || 0} revenus\n` +
+        `• ${c.expenses || 0} dépenses\n\n` +
+        `💡 Ouvrez votre app Mail/Outlook → enregistrez la pièce jointe dans Fichiers ou iCloud Drive.`;
+      if (Platform.OS === 'web') {
+        // eslint-disable-next-line no-alert
+        window.alert(`✅ Sauvegarde envoyée\n\n${msg}`);
+      } else {
+        Alert.alert('✅ Sauvegarde envoyée', msg);
+      }
+    } catch (e: any) {
+      const errMsg = e?.message || 'Erreur inconnue';
+      if (Platform.OS === 'web') {
+        // eslint-disable-next-line no-alert
+        window.alert(`❌ Erreur\n\n${errMsg}`);
+      } else {
+        Alert.alert('❌ Erreur', errMsg);
+      }
+    } finally {
+      setEmailing(false);
+    }
+  };
+
   const handleImport = async () => {
     Alert.alert(
       'Restaurer les données',
@@ -205,7 +244,23 @@ export default function BackupScreen() {
             ) : (
               <>
                 <Feather name="download-cloud" size={18} color="#FFF" />
-                <Text style={styles.btnPrimaryText}>Exporter maintenant</Text>
+                <Text style={styles.btnPrimaryText}>Télécharger le fichier</Text>
+              </>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            testID="email-backup-btn"
+            style={[styles.btn, styles.btnEmail, { marginTop: 8 }]}
+            activeOpacity={0.7}
+            onPress={handleEmailBackup}
+            disabled={emailing}
+          >
+            {emailing ? (
+              <ActivityIndicator size="small" color="#FFF" />
+            ) : (
+              <>
+                <Feather name="mail" size={18} color="#FFF" />
+                <Text style={styles.btnPrimaryText}>📧 Recevoir par courriel (recommandé iPhone)</Text>
               </>
             )}
           </TouchableOpacity>
@@ -286,6 +341,7 @@ const styles = StyleSheet.create({
     paddingVertical: 13, borderRadius: 10, minHeight: 48,
   },
   btnPrimary: { backgroundColor: '#0891B2' },
+  btnEmail: { backgroundColor: '#10B981' },
   btnPrimaryText: { color: '#FFF', fontSize: 15, fontWeight: '700' },
   btnSecondary: { backgroundColor: '#F5F3FF', borderWidth: 1, borderColor: '#7C3AED' },
   btnSecondaryText: { color: '#7C3AED', fontSize: 15, fontWeight: '700' },

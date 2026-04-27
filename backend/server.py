@@ -8,6 +8,7 @@ import re
 import logging
 import asyncio
 import base64
+import json
 import certifi
 from pathlib import Path
 from pydantic import BaseModel, Field
@@ -3064,27 +3065,59 @@ td{{padding:10px 0;vertical-align:top;}}
 
 @api_router.post("/backup/email")
 async def backup_by_email():
-    """Send full backup to owner's email"""
+    """Send full backup to owner's email — with JSON file attached + HTML preview."""
     appointments = await db.appointments.find({}, {"_id": 0}).sort("date", -1).to_list(10000)
     requests_data = await db.appointment_requests.find({}, {"_id": 0}).sort("created_at", -1).to_list(10000)
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    clients_data = await db.clients.find({}, {"_id": 0}).to_list(10000)
+    revenues_data = await db.revenues.find({}, {"_id": 0}).to_list(10000)
+    expenses_data = await db.expenses.find({}, {"_id": 0}).to_list(10000)
 
-    # Build HTML email
+    now_full = datetime.now(timezone.utc)
+    now = now_full.strftime("%Y-%m-%d %H:%M")
+    today_iso = now_full.strftime("%Y-%m-%d")
+
+    # Build the full JSON payload (same shape as /api/backup/export)
+    payload = {
+        "exported_at": now_full.isoformat(),
+        "version": 1,
+        "appointments": appointments,
+        "appointment_requests": requests_data,
+        "clients": clients_data,
+        "revenues": revenues_data,
+        "expenses": expenses_data,
+    }
+    json_bytes = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+    filename = f"gexia360-sauvegarde-{today_iso}.json"
+    json_b64 = base64.b64encode(json_bytes).decode("ascii")
+
+    # Build HTML preview
     appt_rows = ""
-    for a in appointments:
-        appt_rows += f"<tr><td>{a.get('date','')}</td><td>{a.get('time_slot','')}</td><td>{a.get('client_name','')}</td><td>{a.get('client_phone','')}</td><td>{a.get('client_email','')}</td><td>{a.get('client_address','')}</td><td>{a.get('price',0):.2f}$</td><td>{a.get('status','')}</td></tr>"
-
+    for a in appointments[:50]:  # limit preview to 50 rows for performance
+        appt_rows += f"<tr><td>{a.get('date','')}</td><td>{a.get('time_slot','')}</td><td>{a.get('client_name','')}</td><td>{a.get('client_phone','')}</td><td>{a.get('client_email','')}</td><td>{a.get('client_address','')[:30]}</td><td>{a.get('price',0):.2f}$</td><td>{a.get('status','')}</td></tr>"
     req_rows = ""
-    for r in requests_data:
+    for r in requests_data[:30]:
         req_rows += f"<tr><td>{r.get('preferred_date','')}</td><td>{r.get('preferred_time','')}</td><td>{r.get('customer_name','')}</td><td>{r.get('customer_phone','')}</td><td>{r.get('customer_email','')}</td><td>{r.get('status','')}</td></tr>"
 
+    size_kb = round(len(json_bytes) / 1024, 1)
     html = f"""<div style="font-family:sans-serif;max-width:800px;margin:0 auto;font-size:13px;">
-    <h1 style="color:#0891B2;">Backup Gexia360</h1>
-    <p>{now} — {len(appointments)} rdv, {len(requests_data)} demandes</p>
-    <h2>Rendez-vous ({len(appointments)})</h2>
-    <table style="width:100%;border-collapse:collapse;"><tr style="background:#0891B2;color:white;"><th style="padding:6px;">Date</th><th style="padding:6px;">Heure</th><th style="padding:6px;">Client</th><th style="padding:6px;">Tél</th><th style="padding:6px;">Email</th><th style="padding:6px;">Adresse</th><th style="padding:6px;">Prix</th><th style="padding:6px;">Statut</th></tr>{appt_rows}</table>
-    <h2>Demandes ({len(requests_data)})</h2>
-    <table style="width:100%;border-collapse:collapse;"><tr style="background:#0891B2;color:white;"><th style="padding:6px;">Date</th><th style="padding:6px;">Heure</th><th style="padding:6px;">Client</th><th style="padding:6px;">Tél</th><th style="padding:6px;">Email</th><th style="padding:6px;">Statut</th></tr>{req_rows}</table>
+    <h1 style="color:#0891B2;margin:0 0 8px 0;">📦 Sauvegarde Gexia360</h1>
+    <p style="color:#475569;margin:0 0 16px 0;">{now} — Le fichier complet est <strong>en pièce jointe</strong> ({filename}, {size_kb} Ko)</p>
+    <div style="background:#F0F9FF;border-left:4px solid #0891B2;padding:12px 14px;border-radius:8px;margin:0 0 16px 0;">
+      <strong>📊 Contenu de la sauvegarde:</strong><br>
+      📅 Rendez-vous: <strong>{len(appointments)}</strong><br>
+      📨 Demandes: <strong>{len(requests_data)}</strong><br>
+      👥 Clients: <strong>{len(clients_data)}</strong><br>
+      💰 Revenus: <strong>{len(revenues_data)}</strong><br>
+      💸 Dépenses: <strong>{len(expenses_data)}</strong>
+    </div>
+    <p style="color:#64748B;font-size:12px;font-style:italic;margin:16px 0;">
+      💾 Pour restaurer: enregistrez la pièce jointe sur votre iPhone (Fichiers → iCloud Drive),
+      puis dans l'app Gexia360 → Sauvegarde → "Restaurer un fichier JSON".
+    </p>
+    <h2 style="color:#0F172A;margin:20px 0 8px 0;">Rendez-vous (aperçu — {min(50, len(appointments))}/{len(appointments)})</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:11px;"><tr style="background:#0891B2;color:white;"><th style="padding:6px;">Date</th><th style="padding:6px;">Heure</th><th style="padding:6px;">Client</th><th style="padding:6px;">Tél</th><th style="padding:6px;">Email</th><th style="padding:6px;">Adresse</th><th style="padding:6px;">Prix</th><th style="padding:6px;">Statut</th></tr>{appt_rows}</table>
+    <h2 style="color:#0F172A;margin:20px 0 8px 0;">Demandes (aperçu — {min(30, len(requests_data))}/{len(requests_data)})</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:11px;"><tr style="background:#0891B2;color:white;"><th style="padding:6px;">Date</th><th style="padding:6px;">Heure</th><th style="padding:6px;">Client</th><th style="padding:6px;">Tél</th><th style="padding:6px;">Email</th><th style="padding:6px;">Statut</th></tr>{req_rows}</table>
     </div>"""
 
     if NOTIFY_EMAIL and resend.api_key:
@@ -3092,11 +3125,32 @@ async def backup_by_email():
             await asyncio.to_thread(resend.Emails.send, {
                 "from": os.environ.get("RESEND_FROM") or "onboarding@resend.dev",
                 "to": [NOTIFY_EMAIL],
-                "subject": f"Backup Gexia360 — {now}",
+                "subject": f"📦 Sauvegarde Gexia360 — {now} ({size_kb} Ko)",
                 "html": inject_branding(html),
+                "attachments": [
+                    {
+                        "filename": filename,
+                        "content": json_b64,
+                        "content_type": "application/json",
+                    }
+                ],
             })
-            return {"message": f"Backup envoyé à {NOTIFY_EMAIL}"}
+            logger.info(f"Backup sent by email to {NOTIFY_EMAIL} ({size_kb} Ko, {len(appointments)} appts)")
+            return {
+                "message": f"Backup envoyé à {NOTIFY_EMAIL}",
+                "filename": filename,
+                "size_kb": size_kb,
+                "to": NOTIFY_EMAIL,
+                "counts": {
+                    "appointments": len(appointments),
+                    "requests": len(requests_data),
+                    "clients": len(clients_data),
+                    "revenues": len(revenues_data),
+                    "expenses": len(expenses_data),
+                },
+            }
         except Exception as e:
+            logger.error(f"Backup email failed: {e}")
             raise HTTPException(status_code=500, detail=f"Erreur envoi: {str(e)}")
     else:
         raise HTTPException(status_code=400, detail="Email non configuré")
