@@ -20,6 +20,7 @@ import resend
 import branding
 import invoice_logo
 import reminders as reminders_module
+import prod_sync as prod_sync_module
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env', override=False)
@@ -4894,8 +4895,14 @@ async def start_scheduler():
             id="daily_24h_reminders",
             replace_existing=True,
         )
+        scheduler.add_job(
+            _run_prod_sync,
+            IntervalTrigger(minutes=3),
+            id="prod_sync",
+            replace_existing=True,
+        )
         scheduler.start()
-        logger.info("Scheduler started: daily backup @ 00:00 + campaigns every minute + 24h reminders @ 09:00 ET")
+        logger.info("Scheduler started: daily backup @ 00:00 + campaigns every minute + 24h reminders @ 09:00 ET + prod sync every 3 min")
     except Exception as e:
         logger.error(f"Scheduler failed to start: {e}")
 
@@ -4907,6 +4914,17 @@ async def _run_24h_reminders():
         logger.info(f"24h reminder job done: {result}")
     except Exception as e:
         logger.error(f"24h reminder job error: {e}")
+
+
+async def _run_prod_sync():
+    """Every 3 min: pull new requests/appointments/clients from production DB to preview."""
+    try:
+        result = await prod_sync_module.run_sync(db)
+        # Only log if something was added (silent otherwise)
+        if any(result.values()):
+            logger.info(f"prod_sync synced: {result}")
+    except Exception as e:
+        logger.error(f"prod_sync job error: {e}")
 
 
 # Include router AT THE END so all route definitions are registered
