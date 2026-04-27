@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import resend
 import branding
 import invoice_logo
@@ -896,36 +897,111 @@ async def create_request(data: RequestCreate):
     }
     await db.appointment_requests.insert_one(request_doc)
 
-    # Send email notification
+    # Send branded email notification with rich layout + CTA button
     if NOTIFY_EMAIL and resend.api_key:
         try:
-            html = f"""
-            <div style="font-family:-apple-system,sans-serif;max-width:500px;margin:0 auto;padding:20px;">
-                <h2 style="color:#0A0A0A;margin-bottom:4px;">Nouvelle demande de rendez-vous</h2>
-                <hr style="border:none;border-top:1px solid #E5E5E5;margin:16px 0;">
-                <table style="width:100%;border-collapse:collapse;">
-                    <tr><td style="padding:8px 0;color:#737373;font-size:13px;font-weight:600;">NOM</td></tr>
-                    <tr><td style="padding:0 0 12px;font-size:16px;color:#0A0A0A;">{request_doc['customer_name']}</td></tr>
-                    <tr><td style="padding:8px 0;color:#737373;font-size:13px;font-weight:600;">COURRIEL</td></tr>
-                    <tr><td style="padding:0 0 12px;font-size:16px;color:#0A0A0A;">{request_doc['customer_email']}</td></tr>
-                    <tr><td style="padding:8px 0;color:#737373;font-size:13px;font-weight:600;">TÉLÉPHONE</td></tr>
-                    <tr><td style="padding:0 0 12px;font-size:16px;color:#0A0A0A;">{request_doc['customer_phone']}</td></tr>
-                    <tr><td style="padding:8px 0;color:#737373;font-size:13px;font-weight:600;">ADRESSE</td></tr>
-                    <tr><td style="padding:0 0 12px;font-size:16px;color:#0A0A0A;">{request_doc['customer_address']}</td></tr>
-                    <tr><td style="padding:8px 0;color:#737373;font-size:13px;font-weight:600;">DATE ET HEURE</td></tr>
-                    <tr><td style="padding:0 0 12px;font-size:16px;color:#0A0A0A;">{request_doc['preferred_date']} à {request_doc['preferred_time']}</td></tr>
+            app_url = os.environ.get("APP_URL", "").rstrip("/")
+            request_url = f"{app_url}/request-detail?id={request_doc['id']}" if app_url else ""
+            req_type = request_doc.get("request_type") or "rdv"
+            type_label = "Demande d'estimation" if req_type == "est" else "Demande de rendez-vous"
+            type_icon = "💰" if req_type == "est" else "📅"
+            type_color = "#7C3AED" if req_type == "est" else "#0891B2"
+
+            # Build long French date
+            long_date = _fmt_date_fr(request_doc['preferred_date'])
+
+            # Phone clickable for tel: + sms:
+            phone_clean = (request_doc.get('customer_phone') or '').replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
+            phone_block = f"""
+                <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+                  <a href="tel:{phone_clean}" style="background:#10B981;color:#FFFFFF;padding:8px 14px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700;">📞 Appeler</a>
+                  <a href="sms:{phone_clean}" style="background:#3B82F6;color:#FFFFFF;padding:8px 14px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:700;">💬 SMS</a>
+                </div>
+            """ if phone_clean else ""
+
+            # Email clickable
+            email_block = f'<a href="mailto:{request_doc["customer_email"]}" style="color:#0891B2;text-decoration:none;">{request_doc["customer_email"]}</a>' if request_doc.get('customer_email') else '—'
+
+            # Map link
+            address = request_doc.get('customer_address') or ''
+            map_link = ""
+            if address:
+                map_url = f"https://maps.apple.com/?q={address.replace(' ', '+')}"
+                map_link = f' &nbsp; <a href="{map_url}" style="color:#0891B2;text-decoration:none;font-size:12px;">🗺️ Carte</a>'
+
+            # Optional message block
+            message = (request_doc.get('message') or '').strip()
+            message_block = ""
+            if message:
+                safe_msg = message.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br>')
+                message_block = f"""
+                <div style="background:#FEF3C7;border-left:4px solid #F59E0B;padding:12px 14px;border-radius:8px;margin:14px 0;">
+                  <div style="font-size:11px;font-weight:700;color:#92400E;text-transform:uppercase;letter-spacing:0.5px;">💬 Message du client</div>
+                  <div style="font-size:14px;color:#78350F;margin-top:4px;line-height:1.5;">{safe_msg}</div>
+                </div>
+                """
+
+            cta_button = ""
+            if request_url:
+                cta_button = f"""
+                <table role="presentation" cellspacing="0" cellpadding="0" style="margin:24px auto 8px auto;">
+                  <tr><td style="background:{type_color};border-radius:10px;text-align:center;">
+                    <a href="{request_url}" style="display:inline-block;padding:14px 28px;color:#FFFFFF;font-size:15px;font-weight:700;text-decoration:none;border-radius:10px;">
+                      ✅ Voir et accepter
+                    </a>
+                  </td></tr>
                 </table>
-                <hr style="border:none;border-top:1px solid #E5E5E5;margin:16px 0;">
-                <p style="color:#A3A3A3;font-size:13px;">Ouvrez votre app pour accepter ou proposer un autre horaire.</p>
-            </div>
-            """
+                <p style="text-align:center;margin:0;color:#94A3B8;font-size:11px;">
+                  Cliquez pour ouvrir la demande dans l'app Gexia360
+                </p>
+                """
+
+            body = f"""
+<div style="text-align:center;margin-bottom:8px;">
+  <span style="display:inline-block;background:{type_color};color:#FFFFFF;padding:6px 14px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">{type_icon} {type_label}</span>
+</div>
+
+<h2 style="margin:8px 0 4px 0;color:#0F172A;text-align:center;font-size:20px;">Nouvelle demande reçue!</h2>
+<p style="margin:0 0 18px 0;color:#64748B;font-size:13px;text-align:center;">
+  Reçue le {datetime.now(ZoneInfo('America/Toronto')).strftime('%d/%m/%Y à %H:%M')}
+</p>
+
+<div style="background:#F8FAFC;border-radius:10px;padding:16px;margin:0 0 8px 0;">
+  <div style="font-size:11px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">👤 Client</div>
+  <div style="font-size:18px;font-weight:700;color:#0F172A;">{request_doc['customer_name']}</div>
+  <div style="font-size:13px;color:#475569;margin-top:4px;">✉ {email_block}</div>
+  <div style="font-size:13px;color:#475569;margin-top:4px;">📞 {request_doc.get('customer_phone') or '—'}</div>
+  {phone_block}
+</div>
+
+<div style="background:#F8FAFC;border-radius:10px;padding:16px;margin:10px 0 0 0;">
+  <div style="font-size:11px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">📍 Adresse</div>
+  <div style="font-size:14px;color:#0F172A;">{address or '—'}{map_link}</div>
+</div>
+
+<div style="background:{type_color}1A;border-left:4px solid {type_color};padding:14px 16px;border-radius:8px;margin:14px 0;">
+  <div style="font-size:11px;font-weight:700;color:{type_color};text-transform:uppercase;letter-spacing:0.5px;">🗓 Créneau souhaité</div>
+  <div style="font-size:17px;font-weight:700;color:#0F172A;margin-top:4px;">{long_date}</div>
+  <div style="font-size:14px;color:#475569;margin-top:2px;">⏰ {request_doc['preferred_time']}</div>
+</div>
+
+{message_block}
+
+{cta_button}
+
+<hr style="border:none;border-top:1px solid #E5E5E5;margin:24px 0 12px 0;">
+<p style="margin:0;color:#94A3B8;font-size:11px;text-align:center;">
+  Vous pouvez aussi accepter, proposer un autre horaire ou refuser depuis l'écran <strong>Demandes</strong> dans l'app.
+</p>
+""".strip()
+
             await asyncio.to_thread(resend.Emails.send, {
                 "from": os.environ.get("RESEND_FROM") or "onboarding@resend.dev",
                 "to": [NOTIFY_EMAIL],
-                "subject": f"Nouveau RDV — {request_doc['customer_name']}",
-                "html": inject_branding(html),
+                "subject": f"{type_icon} {type_label} — {request_doc['customer_name']} — {long_date} {request_doc['preferred_time']}",
+                "html": inject_branding(body),
             })
-            logger.info(f"Email notification sent to {NOTIFY_EMAIL}")
+            logger.info(f"Email notification sent to {NOTIFY_EMAIL} (request {request_doc['id'][:8]}, CTA: {bool(request_url)})")
         except Exception as e:
             logger.error(f"Failed to send email notification: {e}")
 
