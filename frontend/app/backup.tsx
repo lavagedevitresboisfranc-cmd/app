@@ -24,41 +24,62 @@ export default function BackupScreen() {
       const fileName = `gexia360-sauvegarde-${today}.json`;
 
       if (Platform.OS === 'web') {
-        // Web: trigger download (with iOS Safari fallback)
         const blob = new Blob([json], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
 
-        // Detect iOS Safari — it doesn't support the download attribute
-        // reliably; best UX is to open in a new tab and let the user use
-        // the Share sheet to save to Files / iCloud Drive.
         const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
         const isIOS = /iPad|iPhone|iPod/.test(ua);
 
+        // Strategy 1 (best UX on iOS PWA): Web Share API with File
+        // This opens the iOS Share Sheet — user can save to Files, iCloud Drive,
+        // AirDrop, send by email, etc.
+        try {
+          if (isIOS && typeof File !== 'undefined' && (navigator as any).canShare && (navigator as any).share) {
+            const file = new File([blob], fileName, { type: 'application/json' });
+            const canShareFile = (navigator as any).canShare({ files: [file] });
+            if (canShareFile) {
+              await (navigator as any).share({
+                files: [file],
+                title: 'Sauvegarde Gexia360',
+                text: `Sauvegarde du ${today}`,
+              });
+              if (Platform.OS === 'web') {
+                // eslint-disable-next-line no-alert
+                window.alert('✅ Sauvegarde partagée\n\nChoisissez où enregistrer le fichier (Fichiers, iCloud Drive, Mail, etc.)');
+              }
+              return;
+            }
+          }
+        } catch (shareErr: any) {
+          // User cancelled the share sheet → not an error
+          if (shareErr?.name === 'AbortError') {
+            return;
+          }
+          console.warn('navigator.share failed, falling back:', shareErr);
+        }
+
+        // Strategy 2: classic <a download> attribute (works on iOS 13+, all desktops, Android)
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        a.rel = 'noopener';
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+
         if (isIOS) {
-          // Open JSON in a new tab — user can then use iOS Share to save
-          window.open(url, '_blank');
-          setTimeout(() => URL.revokeObjectURL(url), 5000);
-          Alert.alert(
-            '📱 Sauvegarde prête',
-            'La sauvegarde s\'est ouverte dans un nouvel onglet.\n\n' +
-            '➡️ Appuyez sur l\'icône de partage (carré avec flèche ↑)\n' +
-            '➡️ Choisissez "Enregistrer dans Fichiers", "iCloud Drive" ou envoyez-la par courriel\n\n' +
-            '💡 Si rien ne s\'ouvre, vérifiez que les pop-ups ne sont pas bloqués dans Safari.'
+          // eslint-disable-next-line no-alert
+          window.alert(
+            '📱 Sauvegarde téléchargée\n\n' +
+            `Fichier: ${fileName}\n\n` +
+            '➡️ Allez dans l\'app Fichiers → Téléchargements\n' +
+            'Ou tapez sur l\'icône de téléchargement en haut à droite de Safari'
           );
         } else {
-          // Desktop / Android web: classic download with visible link
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = fileName;
-          a.style.display = 'none';
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          setTimeout(() => URL.revokeObjectURL(url), 2000);
-          Alert.alert(
-            '✅ Exporté !',
-            `Sauvegarde téléchargée :\n${fileName}\n\nRegardez dans votre dossier Téléchargements.`
-          );
+          // eslint-disable-next-line no-alert
+          window.alert(`✅ Sauvegarde téléchargée\n\n${fileName}\n\nRegardez dans votre dossier Téléchargements.`);
         }
       } else {
         // Native (Expo Go / TestFlight / build): write file and open share sheet
