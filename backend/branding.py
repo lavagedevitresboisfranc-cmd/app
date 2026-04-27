@@ -84,6 +84,9 @@ def build_email_footer_html(unsubscribe_url: str = "") -> str:
             &nbsp;•&nbsp; ✉️ <a href="mailto:{BUSINESS_EMAIL}" style="color:{BRAND_BLUE};text-decoration:none">{BUSINESS_EMAIL}</a></div>
         <div>🌐 <a href="https://{BUSINESS_WEBSITE}" style="color:{BRAND_BLUE};text-decoration:none">{BUSINESS_WEBSITE}</a></div>
         {unsubscribe_html}
+        <div style="margin-top:10px;padding-top:8px;border-top:1px dashed {BRAND_BORDER};font-size:10px;color:#9CA3AF;letter-spacing:0.3px">
+            Powered by <a href="https://gexia360.com" style="color:#9CA3AF;text-decoration:none;font-weight:600">Gexia360</a>
+        </div>
     </div>
     """.strip()
 

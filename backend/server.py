@@ -756,6 +756,47 @@ async def update_appointment(appointment_id: str, data: AppointmentUpdate):
         raise HTTPException(status_code=404, detail="Appointment not found")
     appointment = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
 
+    # Auto-create a Revenue entry when an appointment transitions to "completed"
+    # Idempotent: skip if appointment already has a revenue_id, or if no price.
+    auto_revenue_created = False
+    auto_revenue_id = None
+    auto_revenue_amount = 0.0
+    new_status = update_data.get("status")
+    old_status = current.get("status")
+    just_completed = (new_status == "completed" and old_status != "completed")
+    if just_completed and not current.get("revenue_id"):
+        price = float(appointment.get("price") or 0)
+        if price > 0:
+            try:
+                rev_id = str(uuid.uuid4())
+                now_iso = datetime.now(timezone.utc).isoformat()
+                rev_doc = {
+                    "id": rev_id,
+                    "amount": price,
+                    "category": "Lavage de vitres",
+                    "date": appointment.get("date") or datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                    "description": f"RDV complété — {appointment.get('title', 'Service')}",
+                    "client_name": appointment.get("client_name", "") or "",
+                    "payment_method": "cash",  # Default — user can edit later
+                    "appointment_id": appointment_id,
+                    "created_at": now_iso,
+                    "updated_at": now_iso,
+                    "auto_created": True,
+                }
+                await db.revenues.insert_one(rev_doc)
+                # Link revenue back to appointment so we never double-create
+                await db.appointments.update_one(
+                    {"id": appointment_id},
+                    {"$set": {"revenue_id": rev_id}},
+                )
+                appointment["revenue_id"] = rev_id
+                auto_revenue_created = True
+                auto_revenue_id = rev_id
+                auto_revenue_amount = price
+                logger.info(f"Auto-created revenue {rev_id[:8]} (${price}) for completed appointment {appointment_id[:8]}")
+            except Exception as e:
+                logger.error(f"Failed to auto-create revenue for appointment {appointment_id}: {e}")
+
     # If this update is a real date/time reschedule, send a branded email to the client
     if is_reschedule and notify_client:
         client_email = (appointment.get("client_email") or "").strip()
