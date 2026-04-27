@@ -126,7 +126,7 @@ export default function CalendarScreen() {
   useEffect(() => {
     setMenuOpen(true);
   }, []);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({ agenda: true });
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [langOpen, setLangOpen] = useState(false);
   const toggleSection = (key: string) => setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
   const currentLangName = SUPPORTED_LANGUAGES.find((l) => l.code === currentLang)?.name || 'Français';
