@@ -217,16 +217,49 @@ export default function CampaignsScreen() {
       Alert.alert(t('campaigns.noRecipients'), t('campaigns.selectAtLeastOne'));
       return;
     }
-    const bcc = emails.join(',');
-    const url = `mailto:?bcc=${encodeURIComponent(bcc)}&subject=${encodeURIComponent(preview.subject)}&body=${encodeURIComponent(preview.body)}`;
-    try {
-      const can = await Linking.canOpenURL(url);
-      if (can) {
-        await Linking.openURL(url);
+
+    const proceed = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/campaigns/send-now`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subject: preview.subject,
+            body: preview.body,
+            recipients: emails,
+          }),
+        });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(j?.detail || 'Échec d\'envoi');
+        const skippedLine = j.skipped > 0 ? `\n⏭️ ${j.skipped} désabonné(s) ignoré(s)` : '';
+        const msg = `📧 ${j.count} courriel(s) envoyé(s) avec logo + QR + promo${skippedLine}`;
+        if (Platform.OS === 'web') {
+          // eslint-disable-next-line no-alert
+          window.alert(`✅ Campagne envoyée\n\n${msg}`);
+        } else {
+          Alert.alert('✅ Campagne envoyée', msg);
+        }
         setPreview(null);
-      } else Alert.alert(t('campaigns.errorTitle'), t('campaigns.noMailApp'));
-    } catch {
-      Alert.alert(t('campaigns.errorTitle'), t('campaigns.cantOpenMail'));
+      } catch (e: any) {
+        const errMsg = e?.message || 'Envoi impossible';
+        if (Platform.OS === 'web') {
+          // eslint-disable-next-line no-alert
+          window.alert(`❌ Erreur\n\n${errMsg}`);
+        } else {
+          Alert.alert('❌ Erreur', errMsg);
+        }
+      }
+    };
+
+    const confirmMsg = `Envoyer cette campagne à ${emails.length} destinataire(s) ?\n\n✅ Logo + QR + lien promo seront inclus automatiquement.\n📧 BCC pour respecter la confidentialité.`;
+    if (Platform.OS === 'web') {
+      // eslint-disable-next-line no-alert
+      if (window.confirm(confirmMsg)) await proceed();
+    } else {
+      Alert.alert('Envoyer la campagne ?', confirmMsg, [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Envoyer', onPress: () => proceed() },
+      ]);
     }
   };
 

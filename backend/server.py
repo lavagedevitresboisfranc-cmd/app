@@ -4261,6 +4261,64 @@ async def preview_campaign_html(payload: dict):
     return HTMLResponse(content=html)
 
 
+@api_router.post("/campaigns/send-now")
+async def send_campaign_now(payload: dict = Body(...)):
+    """Send a marketing campaign IMMEDIATELY via Resend, with rich HTML rendering
+    (logo + QR code + clickable links + seasonal accents).
+
+    Body: { subject: str, body: str, recipients: [emails] }
+
+    Returns: { sent: bool, count: int, skipped: int, resend_id: str|None }
+    """
+    subject = (payload.get("subject") or "").strip()
+    body = (payload.get("body") or "").strip()
+    recipients_raw = payload.get("recipients") or []
+    if not subject or not body:
+        raise HTTPException(status_code=400, detail="Sujet et corps requis")
+    if not recipients_raw:
+        raise HTTPException(status_code=400, detail="Aucun destinataire")
+    if not resend.api_key:
+        raise HTTPException(status_code=503, detail="Service email non configuré")
+
+    # CASL: filter unsubscribed
+    unsubbed_set = set()
+    async for u in db.unsubscribes.find({}, {"email": 1, "_id": 0}):
+        unsubbed_set.add((u.get("email") or "").lower())
+    recipients = [r for r in recipients_raw if r and r.lower() not in unsubbed_set]
+    skipped = len(recipients_raw) - len(recipients)
+    if not recipients:
+        raise HTTPException(status_code=400, detail="Tous les destinataires sont désabonnés")
+
+    # Build the rich HTML (logo + QR + season-themed)
+    html_body = _build_seasonal_campaign_html(body, subject)
+    html_final = inject_branding(html_body)
+    from_addr = os.environ.get("RESEND_FROM") or "onboarding@resend.dev"
+
+    try:
+        result = await asyncio.to_thread(
+            resend.Emails.send,
+            {
+                "from": from_addr,
+                "to": ["onboarding@resend.dev"],  # placeholder (Resend requires 'to')
+                "bcc": recipients,
+                "subject": subject,
+                "html": html_final,
+            },
+        )
+        sent_id = (result or {}).get("id", "")
+        logger.info(f"Campaign sent NOW to {len(recipients)} recipients (skipped {skipped} unsubbed) — resend_id={sent_id}")
+        return {
+            "sent": True,
+            "count": len(recipients),
+            "skipped": skipped,
+            "resend_id": sent_id,
+        }
+    except Exception as e:
+        err_msg = str(e)
+        logger.error(f"Campaign send-now failed: {err_msg}")
+        raise HTTPException(status_code=502, detail=f"Échec d'envoi: {err_msg[:200]}")
+
+
 @api_router.post("/scheduled-campaigns", response_model=ScheduledCampaignResponse)
 async def create_scheduled_campaign(payload: ScheduledCampaignCreate):
     """Plan a campaign to be sent at a future date/time."""
