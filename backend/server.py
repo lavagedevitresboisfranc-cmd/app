@@ -952,7 +952,7 @@ class AcceptRequest(BaseModel):
     time: Optional[str] = None  # override preferred_time (HH:MM)
     duration_minutes: Optional[int] = None
 
-@api_router.put("/requests/{request_id}/accept", response_model=AppointmentResponse)
+@api_router.put("/requests/{request_id}/accept")
 async def accept_request(request_id: str, data: AcceptRequest = AcceptRequest()):
     """Accept a request: creates a confirmed appointment and marks request as accepted.
     Optionally override date/time/duration (used when the user picks a different slot from
@@ -992,7 +992,69 @@ async def accept_request(request_id: str, data: AcceptRequest = AcceptRequest())
         {"$set": {"status": "accepted"}}
     )
 
-    return AppointmentResponse(**{k: v for k, v in appointment.items() if k != "_id"})
+    # --- Send branded confirmation email to client (BCC owner) ---
+    confirmation_email_sent = False
+    confirmation_email_error = None
+    confirmation_email_bcc = ""
+    client_email = (req.get("customer_email") or "").strip()
+    if client_email and resend.api_key:
+        try:
+            client_name = req.get("customer_name", "")
+            address = req.get("customer_address", "") or ""
+            phone = req.get("customer_phone", "") or ""
+            long_date = _fmt_date_fr(final_date)
+            address_block = f'<div style="font-size:13px;color:#065F46;margin-top:6px;">📍 {address}</div>' if address else ''
+            body = f"""
+<h2 style="margin:0 0 8px 0;color:#0F172A;">✅ Rendez-vous confirmé</h2>
+<p style="margin:0 0 14px 0;color:#475569;font-size:14px;line-height:1.6;">
+  Bonjour <strong>{client_name}</strong>,
+</p>
+<p style="margin:0 0 14px 0;color:#334155;font-size:14px;line-height:1.6;">
+  Bonne nouvelle&nbsp;! Votre demande de rendez-vous a été <strong>acceptée</strong>.
+  Voici les détails confirmés&nbsp;:
+</p>
+<div style="background:#D1FAE5;border-left:4px solid #059669;padding:14px 16px;border-radius:8px;margin:16px 0;">
+  <div style="font-size:11px;font-weight:700;color:#065F46;text-transform:uppercase;letter-spacing:0.5px;">📅 Détails</div>
+  <div style="font-size:17px;font-weight:700;color:#064E3B;margin-top:6px;">{long_date}</div>
+  <div style="font-size:14px;color:#065F46;margin-top:2px;">⏰ {final_time} ({final_duration} min)</div>
+  {address_block}
+</div>
+<p style="margin:14px 0 0 0;color:#475569;font-size:13px;line-height:1.6;">
+  Vous recevrez un rappel automatique <strong>la veille</strong> de votre rendez-vous.
+</p>
+<p style="margin:8px 0 0 0;color:#475569;font-size:13px;line-height:1.6;">
+  Si vous devez modifier ou annuler, répondez à ce courriel ou appelez-nous au <strong>514-570-9802</strong>.
+</p>
+<p style="margin:8px 0 0 0;color:#475569;font-size:13px;line-height:1.6;">
+  Au plaisir de vous voir bientôt&nbsp;!
+</p>
+""".strip()
+            payload = {
+                "from": os.environ.get("RESEND_FROM") or "onboarding@resend.dev",
+                "to": [client_email],
+                "subject": f"✅ Rendez-vous confirmé — {long_date} à {final_time}",
+                "html": inject_branding(body, recipient_email=client_email),
+            }
+            owner_email = (NOTIFY_EMAIL or "").strip()
+            if owner_email and owner_email.lower() != client_email.lower():
+                payload["bcc"] = [owner_email]
+                confirmation_email_bcc = owner_email
+            await asyncio.to_thread(resend.Emails.send, payload)
+            confirmation_email_sent = True
+            logger.info(f"Acceptance email sent to {client_email} (BCC: {confirmation_email_bcc or 'none'})")
+        except Exception as e:
+            confirmation_email_error = str(e)[:200]
+            logger.error(f"Failed to send acceptance email: {e}")
+
+    # Build response dict (no Pydantic model — we want to include the _notification meta)
+    response_body = {k: v for k, v in appointment.items() if k != "_id"}
+    response_body["_notification"] = {
+        "email_sent": confirmation_email_sent,
+        "email_to": client_email,
+        "email_bcc": confirmation_email_bcc,
+        "email_error": confirmation_email_error,
+    }
+    return response_body
 
 @api_router.put("/requests/{request_id}/suggest", response_model=RequestResponse)
 async def suggest_alternative(request_id: str, data: RequestSuggest):

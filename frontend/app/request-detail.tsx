@@ -125,6 +125,46 @@ export default function RequestDetailScreen() {
     }
   }, [showSuggest, suggestedDate]);
 
+  // Cross-platform alert that actually works on web/PWA
+  const showAlert = (title: string, message: string, onOk?: () => void) => {
+    if (Platform.OS === 'web') {
+      // eslint-disable-next-line no-alert
+      window.alert(`${title}\n\n${message}`);
+      if (onOk) onOk();
+    } else {
+      Alert.alert(title, message, [{ text: 'OK', onPress: onOk }]);
+    }
+  };
+
+  // Open SMS to client with the confirmation details pre-filled
+  const sendClientSms = async (apt: any) => {
+    const phone = (apt?.client_phone || request?.customer_phone || '').replace(/\D/g, '');
+    if (!phone) {
+      showAlert('Téléphone manquant', 'Ce client n\'a pas de numéro pour SMS.');
+      return;
+    }
+    const name = apt?.client_name || request?.customer_name || '';
+    const date = apt?.date || request?.preferred_date || '';
+    const time = (apt?.time_slot || request?.preferred_time || '').slice(0, 5);
+    const addr = apt?.client_address || request?.customer_address || '';
+    const addrLine = addr ? `\n📍 ${addr}` : '';
+    const body = wrapSms(
+      `Bonjour ${name},\n\nVotre rendez-vous est CONFIRMÉ ✅\n\n📅 ${date}\n⏰ ${time}${addrLine}\n\nUn rappel automatique vous sera envoyé la veille.\n\nMerci!`
+    );
+    const sep = Platform.OS === 'ios' ? '&' : '?';
+    const url = `sms:${phone}${sep}body=${encodeURIComponent(body)}`;
+    try {
+      const can = await Linking.canOpenURL(url);
+      if (can) {
+        await Linking.openURL(url);
+      } else {
+        showAlert('SMS non disponible', body.slice(0, 200));
+      }
+    } catch {
+      showAlert('Erreur', 'Impossible d\'ouvrir l\'app SMS');
+    }
+  };
+
   const handleAccept = async () => {
     Keyboard.dismiss();
     setActing(true);
@@ -140,15 +180,52 @@ export default function RequestDetailScreen() {
         body: JSON.stringify(body),
       });
       if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const notif = data?._notification || {};
         const timeMsg = selectedSlot && selectedSlot !== request?.preferred_time
-          ? `\nRDV planifié à ${selectedSlot} (au lieu de ${request?.preferred_time})`
+          ? `\n📅 RDV planifié à ${selectedSlot} (au lieu de ${request?.preferred_time})`
           : '';
-        Alert.alert('Confirmé!', `Rendez-vous créé avec succès${timeMsg}`, [{ text: 'OK', onPress: () => router.back() }]);
+
+        // Build email confirmation status line
+        let emailLine = '';
+        if (notif.email_sent) {
+          const bccLine = notif.email_bcc ? `\n📬 BCC : ${notif.email_bcc}` : '';
+          emailLine = `\n\n✉️ Courriel de confirmation envoyé à : ${notif.email_to}${bccLine}`;
+        } else if (notif.email_to) {
+          emailLine = `\n\n⚠️ Courriel non envoyé : ${notif.email_error || 'erreur inconnue'}`;
+        } else {
+          emailLine = `\n\nℹ️ Pas de courriel client — aucun email envoyé`;
+        }
+
+        const fullMsg = `Rendez-vous créé avec succès${timeMsg}${emailLine}`;
+        const hasPhone = !!(request?.customer_phone || data?.client_phone || '').replace(/\D/g, '');
+
+        // After confirming, propose to send SMS too (if phone exists)
+        const navigateBack = () => router.back();
+        if (Platform.OS === 'web') {
+          // eslint-disable-next-line no-alert
+          window.alert(`✅ Confirmé!\n\n${fullMsg}`);
+          if (hasPhone) {
+            // eslint-disable-next-line no-alert
+            const wantsSms = window.confirm('📱 Voulez-vous aussi envoyer un SMS de confirmation au client ?');
+            if (wantsSms) {
+              await sendClientSms(data);
+            }
+          }
+          navigateBack();
+        } else {
+          const buttons: any[] = [];
+          if (hasPhone) {
+            buttons.push({ text: '📱 Envoyer SMS', onPress: async () => { await sendClientSms(data); router.back(); } });
+          }
+          buttons.push({ text: 'OK', onPress: navigateBack });
+          Alert.alert('✅ Confirmé!', fullMsg, buttons);
+        }
       } else {
-        Alert.alert('Erreur', 'Échec de l\'acceptation');
+        showAlert('Erreur', 'Échec de l\'acceptation');
       }
     } catch {
-      Alert.alert('Erreur', 'Erreur réseau');
+      showAlert('Erreur', 'Erreur réseau');
     } finally {
       setActing(false);
     }
