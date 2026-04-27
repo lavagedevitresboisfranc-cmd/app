@@ -122,6 +122,11 @@ export default function CalendarScreen() {
   const [allItems, setAllItems] = useState<CalendarItem[]>([]);
   const [isOffline, setIsOffline] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Ensure menu is ALWAYS closed when the home screen mounts (PWA launch, refresh, etc.)
+  useEffect(() => {
+    setMenuOpen(false);
+    setLangOpen(false);
+  }, []);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ agenda: true });
   const [langOpen, setLangOpen] = useState(false);
   const toggleSection = (key: string) => setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
