@@ -218,40 +218,79 @@ export default function DetailScreen() {
   };
 
   // --- Retard / Replanifier ---
-  const _formatTimeForClient = () => {
+  type Lang = 'fr' | 'en';
+
+  const _formatTimeForClient = (lang: Lang = 'fr') => {
     if (!appointment) return '';
     const { date, time_slot } = appointment;
     try {
       // Parse YYYY-MM-DD as LOCAL date (not UTC) to avoid timezone shift to previous day
       const [y, m, dd] = String(date).split('-').map((n) => parseInt(n, 10));
       const d = new Date(y, (m || 1) - 1, dd || 1);
-      const months = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+      const monthsFr = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin',
                       'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
-      return `${d.getDate()} ${months[d.getMonth()]} à ${time_slot}`;
+      const monthsEn = ['January', 'February', 'March', 'April', 'May', 'June',
+                      'July', 'August', 'September', 'October', 'November', 'December'];
+      const months = lang === 'en' ? monthsEn : monthsFr;
+      const at = lang === 'en' ? 'at' : 'à';
+      return `${d.getDate()} ${months[d.getMonth()]} ${at} ${time_slot}`;
     } catch {
       return `${date} à ${time_slot}`;
     }
   };
 
-  const _buildDelayMessage = (minutes: number): { subject: string; body: string } => {
+  const _buildDelayMessage = (minutes: number, lang: Lang = 'fr'): { subject: string; body: string } => {
     if (!appointment) return { subject: '', body: '' };
     const name = appointment.client_name || '';
-    const when = _formatTimeForClient();
+    const when = _formatTimeForClient(lang);
+    if (lang === 'en') {
+      const delayText = minutes >= 60
+        ? `about ${Math.round(minutes / 60)} hour${minutes >= 120 ? 's' : ''}`
+        : `about ${minutes} minutes`;
+      const subject = `Slight delay — ${when}`;
+      const body = `Hello ${name},\n\nI'm writing to let you know that I will be running ${delayText} late for our appointment scheduled on ${when}.\n\nI sincerely apologize for the inconvenience. I will let you know as soon as I'm on my way.\n\nThank you for your understanding!`;
+      return { subject, body };
+    }
     const delayText = minutes >= 60
       ? `d'environ ${Math.round(minutes / 60)} h${minutes >= 120 ? 'eures' : 'eure'}`
       : `d'environ ${minutes} minutes`;
-    const subject = `Léger retard — ${_formatTimeForClient()}`;
+    const subject = `Léger retard — ${when}`;
     const body = `Bonjour ${name},\n\nJe vous écris pour vous informer que je serai en retard ${delayText} pour notre rendez-vous prévu le ${when}.\n\nToutes mes excuses pour l'inconvénient. Je vous préviens dès que je suis en route.\n\nMerci de votre compréhension!`;
     return { subject, body };
   };
 
-  const _buildRescheduleMessage = (): { subject: string; body: string } => {
+  const _buildRescheduleMessage = (lang: Lang = 'fr'): { subject: string; body: string } => {
     if (!appointment) return { subject: '', body: '' };
     const name = appointment.client_name || '';
-    const when = _formatTimeForClient();
-    const subject = `Reporter votre rendez-vous — ${_formatTimeForClient()}`;
+    const when = _formatTimeForClient(lang);
+    if (lang === 'en') {
+      const subject = `Rescheduling your appointment — ${when}`;
+      const body = `Hello ${name},\n\nUnfortunately, I need to reschedule our appointment originally set for ${when}.\n\nWhat are your availabilities in the coming days? Let me know your preference and I will do my best to accommodate.\n\nThank you for your understanding!`;
+      return { subject, body };
+    }
+    const subject = `Reporter votre rendez-vous — ${when}`;
     const body = `Bonjour ${name},\n\nMalheureusement, je dois reporter notre rendez-vous prévu le ${when}.\n\nQuelles sont vos disponibilités dans les prochains jours? Dites-moi votre préférence et je fais de mon mieux pour m'adapter.\n\nMerci de votre compréhension!`;
     return { subject, body };
+  };
+
+  // Ask the user to pick a language (FR / EN). Web-safe (works in PWA Safari).
+  const _pickLanguage = (onPick: (lang: Lang) => void) => {
+    if (Platform.OS === 'web') {
+      // eslint-disable-next-line no-alert
+      const ans = window.confirm('Envoyer en français ?\n\n• OK = Français\n• Annuler = English');
+      onPick(ans ? 'fr' : 'en');
+    } else {
+      Alert.alert(
+        'Langue du message',
+        'Dans quelle langue voulez-vous envoyer ce message ?',
+        [
+          { text: '🇫🇷 Français', onPress: () => onPick('fr') },
+          { text: '🇬🇧 English', onPress: () => onPick('en') },
+          { text: 'Annuler', style: 'cancel' as const },
+        ],
+        { cancelable: true }
+      );
+    }
   };
 
   const _sendSms = async (message: string) => {
@@ -294,47 +333,65 @@ export default function DetailScreen() {
   };
 
   const handleDelay = (channel: 'sms' | 'email') => {
-    // Step 1: choose delay duration
-    const presets: { label: string; minutes: number }[] = [
-      { label: '⏱️ 15 minutes', minutes: 15 },
-      { label: '⏱️ 30 minutes', minutes: 30 },
-      { label: '⏱️ 1 heure', minutes: 60 },
-      { label: '⏱️ 2 heures', minutes: 120 },
-    ];
-    const send = (minutes: number) => {
-      const { subject, body } = _buildDelayMessage(minutes);
+    // Step 1: language pick, then duration pick
+    _pickLanguage((lang) => {
+      const presets: { label: string; minutes: number }[] = lang === 'en'
+        ? [
+            { label: '⏱️ 15 minutes', minutes: 15 },
+            { label: '⏱️ 30 minutes', minutes: 30 },
+            { label: '⏱️ 1 hour', minutes: 60 },
+            { label: '⏱️ 2 hours', minutes: 120 },
+          ]
+        : [
+            { label: '⏱️ 15 minutes', minutes: 15 },
+            { label: '⏱️ 30 minutes', minutes: 30 },
+            { label: '⏱️ 1 heure', minutes: 60 },
+            { label: '⏱️ 2 heures', minutes: 120 },
+          ];
+      const send = (minutes: number) => {
+        const { subject, body } = _buildDelayMessage(minutes, lang);
+        if (channel === 'sms') {
+          _sendSms(body);
+        } else {
+          _sendEmail(subject, body);
+        }
+      };
+      if (Platform.OS === 'web') {
+        const promptMsg = lang === 'en'
+          ? 'How many minutes late?\n(15, 30, 60, 120, or any number)'
+          : 'Retard de combien de minutes ?\n(15, 30, 60, 120, ou tout autre nombre)';
+        // eslint-disable-next-line no-alert
+        const input = window.prompt(promptMsg, '30');
+        if (!input) return;
+        const m = parseInt(input, 10);
+        if (!isNaN(m) && m > 0) send(m);
+      } else {
+        const title = lang === 'en' ? 'Delay — approximate duration' : 'Retard — durée approximative';
+        const subtitle = lang === 'en'
+          ? `How long do you think you'll be late for ${appointment?.client_name}?`
+          : `Quel retard prévoyez-vous pour ${appointment?.client_name} ?`;
+        Alert.alert(
+          title,
+          subtitle,
+          [
+            ...presets.map((p) => ({ text: p.label, onPress: () => send(p.minutes) })),
+            { text: lang === 'en' ? 'Cancel' : 'Annuler', style: 'cancel' as const },
+          ],
+          { cancelable: true }
+        );
+      }
+    });
+  };
+
+  const handleReschedule = (channel: 'sms' | 'email') => {
+    _pickLanguage((lang) => {
+      const { subject, body } = _buildRescheduleMessage(lang);
       if (channel === 'sms') {
         _sendSms(body);
       } else {
         _sendEmail(subject, body);
       }
-    };
-    if (Platform.OS === 'web') {
-      // eslint-disable-next-line no-alert
-      const input = window.prompt('Retard de combien de minutes ?\n(15, 30, 60, 120, ou tout autre nombre)', '30');
-      if (!input) return;
-      const m = parseInt(input, 10);
-      if (!isNaN(m) && m > 0) send(m);
-    } else {
-      Alert.alert(
-        'Retard — durée approximative',
-        `Quel retard prévoyez-vous pour ${appointment?.client_name} ?`,
-        [
-          ...presets.map((p) => ({ text: p.label, onPress: () => send(p.minutes) })),
-          { text: 'Annuler', style: 'cancel' as const },
-        ],
-        { cancelable: true }
-      );
-    }
-  };
-
-  const handleReschedule = (channel: 'sms' | 'email') => {
-    const { subject, body } = _buildRescheduleMessage();
-    if (channel === 'sms') {
-      _sendSms(body);
-    } else {
-      _sendEmail(subject, body);
-    }
+    });
   };
 
   const fetchAppointment = async () => {
