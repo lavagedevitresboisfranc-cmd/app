@@ -283,11 +283,13 @@ export default function DetailScreen() {
     const invoiceUrl = `${API_URL}/api/invoice/${shortId}`;
     if (lang === 'en') {
       const subject = `Friendly payment reminder — Invoice ${price} $`;
-      const body = `Hello ${name},\n\nI hope you are doing well. This is just a friendly reminder regarding the invoice for our service performed on ${when}.\n\n💰 Amount due: ${price} $\n📄 Invoice: ${invoiceUrl}\n\nIf the payment has already been sent, please disregard this message — and thank you!\n\nAccepted payment methods:\n• E-transfer\n• Cash\n\nThank you very much for your business!`;
+      // URL on its OWN line (no leading emoji/colon) so iMessage auto-linkifies it cleanly
+      const body = `Hello ${name},\n\nJust a friendly reminder regarding the invoice for our service performed on ${when}.\n\nAmount due: ${price} $\n\n${invoiceUrl}\n\nIf the payment has already been sent, please disregard this message — and thank you!\n\nAccepted payment methods:\n• E-transfer\n• Cash\n\nThank you very much for your business!`;
       return { subject, body };
     }
     const subject = `Rappel de paiement — Facture ${price} $`;
-    const body = `Bonjour ${name},\n\nJ'espère que vous allez bien. Ceci est un petit rappel concernant la facture pour le service effectué le ${when}.\n\n💰 Montant dû : ${price} $\n📄 Facture : ${invoiceUrl}\n\nSi le paiement a déjà été envoyé, veuillez ignorer ce message — et merci!\n\nMéthodes de paiement acceptées :\n• Virement Interac\n• Comptant\n\nMerci beaucoup pour votre confiance!`;
+    // URL on its OWN line (no leading emoji/colon) so iMessage auto-linkifies it cleanly
+    const body = `Bonjour ${name},\n\nPetit rappel concernant la facture pour le service effectué le ${when}.\n\nMontant dû : ${price} $\n\n${invoiceUrl}\n\nSi le paiement a déjà été envoyé, veuillez ignorer ce message — et merci!\n\nMéthodes de paiement acceptées :\n• Virement Interac\n• Comptant\n\nMerci beaucoup pour votre confiance!`;
     return { subject, body };
   };
 
