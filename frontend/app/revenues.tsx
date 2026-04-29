@@ -177,17 +177,31 @@ export default function RevenuesScreen() {
   };
 
   const confirmDelete = (r: Revenue) => {
-    Alert.alert('Supprimer ce revenu ?', `${r.amount.toFixed(2)} $ — ${r.client_name || r.category}`, [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Supprimer', style: 'destructive', onPress: async () => {
-          try {
-            await fetch(`${API_URL}/api/revenues/${r.id}`, { method: 'DELETE' });
-            await load();
-          } catch { Alert.alert('Erreur', 'Suppression impossible'); }
-        },
-      },
-    ]);
+    const title = 'Supprimer ce revenu ?';
+    const subtitle = `${r.amount.toFixed(2)} $ — ${r.client_name || r.category}`;
+    const doDelete = async () => {
+      try {
+        await fetch(`${API_URL}/api/revenues/${r.id}`, { method: 'DELETE' });
+        await load();
+      } catch {
+        if (Platform.OS === 'web') {
+          // eslint-disable-next-line no-alert
+          window.alert('Erreur : suppression impossible');
+        } else {
+          Alert.alert('Erreur', 'Suppression impossible');
+        }
+      }
+    };
+    if (Platform.OS === 'web') {
+      // eslint-disable-next-line no-alert
+      const ok = window.confirm(`${title}\n\n${subtitle}`);
+      if (ok) doDelete();
+    } else {
+      Alert.alert(title, subtitle, [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Supprimer', style: 'destructive', onPress: doDelete },
+      ]);
+    }
   };
 
   const catMeta = (id: string) => CATEGORIES.find(c => c.id === id) || CATEGORIES[0];

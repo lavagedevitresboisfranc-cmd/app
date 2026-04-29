@@ -1,16 +1,16 @@
 """Auto-sync bridge between production (emergent.host) and preview databases.
 
-Runs periodically (every 5 min) to pull any appointment_requests / appointments /
+Runs periodically (every 3 min) to pull any appointment_requests / appointments /
 clients that were submitted via the PUBLIC WEBSITE form (which currently points at
 the production deployment) into the preview database so the user's PWA sees them.
 
-This is a BAND-AID until the production deployment's MONGO_URL is updated to point
-at the same MongoDB Atlas cluster as preview.
+Tombstones: when the user archives/deletes/declines an item locally in preview,
+its id is recorded in the `tombstones` collection so we never re-import it from
+production again.
 """
 from __future__ import annotations
 import os
 import logging
-import asyncio
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,32 @@ async def _get_json(client: httpx.AsyncClient, path: str) -> list:
     return []
 
 
+async def add_tombstone(db, kind: str, item_id: str) -> None:
+    """Record that an item has been deleted/archived locally so prod_sync ignores it."""
+    if not item_id:
+        return
+    try:
+        await db.tombstones.update_one(
+            {"kind": kind, "id": item_id},
+            {"$setOnInsert": {"kind": kind, "id": item_id}},
+            upsert=True,
+        )
+    except Exception as e:
+        logger.warning(f"prod_sync add_tombstone({kind},{item_id[:8]}) failed: {e}")
+
+
+async def _load_tombstones(db, kind: str) -> set:
+    out = set()
+    try:
+        async for t in db.tombstones.find({"kind": kind}, {"id": 1, "_id": 0}):
+            tid = t.get("id")
+            if tid:
+                out.add(tid)
+    except Exception as e:
+        logger.warning(f"prod_sync load_tombstones({kind}) failed: {e}")
+    return out
+
+
 async def run_sync(db) -> dict:
     """Pull new requests / appointments / clients from production into preview.
 
@@ -40,6 +66,11 @@ async def run_sync(db) -> dict:
         prod_requests = await _get_json(client, "/api/requests")
         prod_appts = await _get_json(client, "/api/appointments")
         prod_clients = await _get_json(client, "/api/clients-db?limit=2000")
+
+    # Tombstones (local deletions/archives we should never re-import)
+    tomb_req = await _load_tombstones(db, "request")
+    tomb_appt = await _load_tombstones(db, "appointment")
+    tomb_cli = await _load_tombstones(db, "client")
 
     # Get existing ids in preview so we don't duplicate
     preview_req_ids = set()
@@ -57,37 +88,40 @@ async def run_sync(db) -> dict:
     new_reqs = 0
     for r in prod_requests:
         rid = r.get("id")
-        if rid and rid not in preview_req_ids:
-            r.setdefault("message", "")
-            r.setdefault("request_type", "rdv")
-            r.pop("_id", None)
-            try:
-                await db.appointment_requests.insert_one(r)
-                new_reqs += 1
-            except Exception as e:
-                logger.warning(f"prod_sync insert request {rid[:8]} failed: {e}")
+        if not rid or rid in preview_req_ids or rid in tomb_req:
+            continue
+        r.setdefault("message", "")
+        r.setdefault("request_type", "rdv")
+        r.pop("_id", None)
+        try:
+            await db.appointment_requests.insert_one(r)
+            new_reqs += 1
+        except Exception as e:
+            logger.warning(f"prod_sync insert request {rid[:8]} failed: {e}")
 
     new_appts = 0
     for a in prod_appts:
         aid = a.get("id")
-        if aid and aid not in preview_appt_ids:
-            a.pop("_id", None)
-            try:
-                await db.appointments.insert_one(a)
-                new_appts += 1
-            except Exception as e:
-                logger.warning(f"prod_sync insert appt {aid[:8]} failed: {e}")
+        if not aid or aid in preview_appt_ids or aid in tomb_appt:
+            continue
+        a.pop("_id", None)
+        try:
+            await db.appointments.insert_one(a)
+            new_appts += 1
+        except Exception as e:
+            logger.warning(f"prod_sync insert appt {aid[:8]} failed: {e}")
 
     new_clients = 0
     for c in prod_clients:
         cid = c.get("id")
-        if cid and cid not in preview_client_ids:
-            c.pop("_id", None)
-            try:
-                await db.clients.insert_one(c)
-                new_clients += 1
-            except Exception as e:
-                logger.warning(f"prod_sync insert client {cid[:8]} failed: {e}")
+        if not cid or cid in preview_client_ids or cid in tomb_cli:
+            continue
+        c.pop("_id", None)
+        try:
+            await db.clients.insert_one(c)
+            new_clients += 1
+        except Exception as e:
+            logger.warning(f"prod_sync insert client {cid[:8]} failed: {e}")
 
     result = {
         "requests_added": new_reqs,

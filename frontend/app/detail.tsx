@@ -222,7 +222,9 @@ export default function DetailScreen() {
     if (!appointment) return '';
     const { date, time_slot } = appointment;
     try {
-      const d = new Date(date);
+      // Parse YYYY-MM-DD as LOCAL date (not UTC) to avoid timezone shift to previous day
+      const [y, m, dd] = String(date).split('-').map((n) => parseInt(n, 10));
+      const d = new Date(y, (m || 1) - 1, dd || 1);
       const months = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin',
                       'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
       return `${d.getDate()} ${months[d.getMonth()]} à ${time_slot}`;

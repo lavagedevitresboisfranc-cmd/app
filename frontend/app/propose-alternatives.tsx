@@ -110,7 +110,9 @@ export default function ProposeAlternativesScreen() {
 
   const fmtLong = (iso: string) => {
     try {
-      const d = new Date(iso);
+      // Parse YYYY-MM-DD as LOCAL date (not UTC) to avoid timezone shift to previous day
+      const [y, m, dd] = iso.split('-').map((n) => parseInt(n, 10));
+      const d = new Date(y, (m || 1) - 1, dd || 1);
       const dn = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'][d.getDay()];
       return `${dn} ${d.getDate()} ${MONTHS_FR[d.getMonth()]}`;
     } catch { return iso; }

@@ -882,6 +882,8 @@ async def delete_appointment(appointment_id: str):
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Appointment not found")
+    # Tombstone so prod_sync never re-imports this archived item back
+    await prod_sync_module.add_tombstone(db, "appointment", appointment_id)
     return {"message": "Appointment archived", "archived": True}
 
 @api_router.post("/appointments/{appointment_id}/restore", response_model=AppointmentResponse)
@@ -905,6 +907,8 @@ async def permanent_delete_appointment(appointment_id: str):
     result = await db.appointments.delete_one({"id": appointment_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Appointment not found")
+    # Tombstone so prod_sync doesn't re-import this id from production
+    await prod_sync_module.add_tombstone(db, "appointment", appointment_id)
     return {"message": "Appointment permanently deleted"}
 
 # --- Request Routes (public + admin) ---
@@ -1457,6 +1461,8 @@ async def decline_request(request_id: str):
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Request not found")
+    # Tombstone (declined items are also kept out of prod_sync re-import)
+    await prod_sync_module.add_tombstone(db, "request", request_id)
     return {"message": "Request declined (soft delete — can be restored)"}
 
 
@@ -1469,6 +1475,11 @@ async def restore_request(request_id: str):
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Request not found")
+    # Remove tombstone (restored items can sync again if needed)
+    try:
+        await db.tombstones.delete_one({"kind": "request", "id": request_id})
+    except Exception:
+        pass
     return {"message": "Request restored to pending"}
 
 
@@ -1478,6 +1489,8 @@ async def delete_request_permanent(request_id: str):
     result = await db.appointment_requests.delete_one({"id": request_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Request not found")
+    # Tombstone so prod_sync doesn't re-import the deleted request
+    await prod_sync_module.add_tombstone(db, "request", request_id)
     return {"message": "Request permanently deleted"}
 
 @api_router.get("/requests/count/pending")
@@ -1758,6 +1771,9 @@ async def delete_clients_permanent_bulk(payload: ClientBulkIds):
     if not payload.ids:
         return {"deleted": 0}
     res = await db.clients.delete_many({"id": {"$in": payload.ids}})
+    # Tombstone all deleted client IDs so prod_sync doesn't re-import them
+    for cid in payload.ids:
+        await prod_sync_module.add_tombstone(db, "client", cid)
     return {"deleted": res.deleted_count}
 
 

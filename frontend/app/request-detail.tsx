@@ -1139,7 +1139,7 @@ export default function RequestDetailScreen() {
                 disabled={acting}
               >
                 <Feather name="check" size={20} color="#FFFFFF" />
-                <Text style={styles.acceptBtnText}>Accept Original Request</Text>
+                <Text style={styles.acceptBtnText}>Accepter la demande originale</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 testID="decline-request-button"
@@ -1149,6 +1149,25 @@ export default function RequestDetailScreen() {
               >
                 <Feather name="x" size={18} color="#FF3B30" />
                 <Text style={styles.declineBtnText}>🗂️ Archiver</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Fallback Archive button for any other status (accepted, etc.) */}
+          {request.status !== 'pending' &&
+            request.status !== 'alternative_offered' &&
+            request.status !== 'estimate_sent' &&
+            request.status !== 'declined' && (
+            <View style={styles.actionsSection}>
+              <Text style={styles.sectionLabel}>ACTIONS</Text>
+              <TouchableOpacity
+                testID="decline-request-button-fallback"
+                style={styles.declineBtn}
+                activeOpacity={0.7}
+                onPress={handleDecline}
+              >
+                <Feather name="x" size={18} color="#FF3B30" />
+                <Text style={styles.declineBtnText}>🗂️ Archiver cette demande</Text>
               </TouchableOpacity>
             </View>
           )}
