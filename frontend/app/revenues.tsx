@@ -20,7 +20,6 @@ const CATEGORIES: { id: string; label: string; icon: string; color: string; bg: 
 const PAYMENTS: { id: string; label: string; icon: string }[] = [
   { id: 'etransfert', label: 'E-transfert',     icon: '📱' },
   { id: 'cash',       label: 'Cash',            icon: '💵' },
-  { id: 'cheque',     label: 'Chèque',          icon: '📝' },
   { id: 'credit',     label: 'Carte de crédit', icon: '💳' },
 ];
 

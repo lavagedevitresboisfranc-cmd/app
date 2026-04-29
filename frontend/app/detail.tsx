@@ -278,14 +278,16 @@ export default function DetailScreen() {
     const name = appointment.client_name || '';
     const when = _formatTimeForClient(lang);
     const price = (appointment.price || 0).toFixed(2);
-    const invoiceUrl = `${API_URL}/api/invoice/${appointment.id}`;
+    // Use SHORT invoice URL (8-char prefix) so iMessage/SMS doesn't break the link
+    const shortId = (appointment.id || '').slice(0, 8);
+    const invoiceUrl = `${API_URL}/api/invoice/${shortId}`;
     if (lang === 'en') {
       const subject = `Friendly payment reminder — Invoice ${price} $`;
-      const body = `Hello ${name},\n\nI hope you are doing well. This is just a friendly reminder regarding the invoice for our service performed on ${when}.\n\n💰 Amount due: ${price} $\n📄 Invoice: ${invoiceUrl}\n\nIf the payment has already been sent, please disregard this message — and thank you!\n\nAccepted payment methods:\n• E-transfer\n• Cash\n• Cheque\n\nThank you very much for your business!`;
+      const body = `Hello ${name},\n\nI hope you are doing well. This is just a friendly reminder regarding the invoice for our service performed on ${when}.\n\n💰 Amount due: ${price} $\n📄 Invoice: ${invoiceUrl}\n\nIf the payment has already been sent, please disregard this message — and thank you!\n\nAccepted payment methods:\n• E-transfer\n• Cash\n\nThank you very much for your business!`;
       return { subject, body };
     }
     const subject = `Rappel de paiement — Facture ${price} $`;
-    const body = `Bonjour ${name},\n\nJ'espère que vous allez bien. Ceci est un petit rappel concernant la facture pour le service effectué le ${when}.\n\n💰 Montant dû : ${price} $\n📄 Facture : ${invoiceUrl}\n\nSi le paiement a déjà été envoyé, veuillez ignorer ce message — et merci!\n\nMéthodes de paiement acceptées :\n• Virement Interac\n• Comptant\n• Chèque\n\nMerci beaucoup pour votre confiance!`;
+    const body = `Bonjour ${name},\n\nJ'espère que vous allez bien. Ceci est un petit rappel concernant la facture pour le service effectué le ${when}.\n\n💰 Montant dû : ${price} $\n📄 Facture : ${invoiceUrl}\n\nSi le paiement a déjà été envoyé, veuillez ignorer ce message — et merci!\n\nMéthodes de paiement acceptées :\n• Virement Interac\n• Comptant\n\nMerci beaucoup pour votre confiance!`;
     return { subject, body };
   };
 
@@ -896,7 +898,9 @@ export default function DetailScreen() {
                   Alert.alert('Téléphone manquant', 'Ce client n\'a pas de numéro.');
                   return;
                 }
-                const invoiceUrl = `${API_URL}/api/invoice/${appointment.id}`;
+                // Use SHORT invoice URL (8-char prefix) so the link doesn't break in iMessage
+                const shortId = (appointment.id || '').slice(0, 8);
+                const invoiceUrl = `${API_URL}/api/invoice/${shortId}`;
                 const msg = `Bonjour ${appointment.client_name || ''},\n\nVoici votre facture: ${invoiceUrl}\n\nMerci pour votre confiance!`;
                 _sendSms(msg);
               }}

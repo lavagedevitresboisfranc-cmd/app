@@ -2419,7 +2419,12 @@ async def generate_invoice(appointment_id: str):
     from fastapi.responses import HTMLResponse
     appt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
     if not appt:
+        # Fallback: allow lookup by id prefix (so short URLs like /api/invoice/a44f7a6e work)
+        if len(appointment_id) >= 6:
+            appt = await db.appointments.find_one({"id": {"$regex": f"^{appointment_id}"}}, {"_id": 0})
+    if not appt:
         raise HTTPException(status_code=404, detail="Appointment not found")
+    appointment_id = appt.get("id", appointment_id)
 
     invoice_num = appointment_id[:8].upper()
     price = appt.get('price', 0)
