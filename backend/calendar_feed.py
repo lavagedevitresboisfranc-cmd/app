@@ -94,7 +94,7 @@ def _vtimezone_block() -> str:
     )
 
 
-def build_ics_feed(appointments: Iterable[dict], *, calendar_name: str = "Gexia360 — Rendez-vous") -> str:
+def build_ics_feed(appointments: Iterable[dict], *, calendar_name: str = "Gexia360 — Rendez-vous", geocode_map: dict | None = None) -> str:
     """Render a full .ics feed from a list of appointment dicts.
 
     Each appointment is expected to provide:
@@ -104,7 +104,11 @@ def build_ics_feed(appointments: Iterable[dict], *, calendar_name: str = "Gexia3
       - duration_minutes (int)
       - client_name, client_address, client_phone, price
       - status
+
+    geocode_map: optional {address: (lat, lon)} dict so addresses become tappable
+    Apple Maps links in Apple Calendar.
     """
+    geocode_map = geocode_map or {}
     now_utc = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
     lines: list[str] = []
@@ -140,7 +144,7 @@ def build_ics_feed(appointments: Iterable[dict], *, calendar_name: str = "Gexia3
 
         uid = f"{appt.get('id') or 'apt'}@gexia360"
         name = appt.get("client_name") or "Rendez-vous"
-        address = appt.get("client_address") or ""
+        address = (appt.get("client_address") or "").strip()
         phone = appt.get("client_phone") or ""
         price = appt.get("price")
         notes_lines = []
@@ -165,6 +169,35 @@ def build_ics_feed(appointments: Iterable[dict], *, calendar_name: str = "Gexia3
         lines.append(_fold_line(f"SUMMARY:{_ics_escape(name)}"))
         if address:
             lines.append(_fold_line(f"LOCATION:{_ics_escape(address)}"))
+            # Apple Calendar requires X-APPLE-STRUCTURED-LOCATION to make the
+            # address tappable as a Maps link with one-tap GPS navigation.
+            coords = geocode_map.get(address)
+            if coords:
+                lat, lon = coords
+                # GEO field — used by Outlook, Google, Apple
+                lines.append(f"GEO:{lat:.6f};{lon:.6f}")
+                # X-APPLE-STRUCTURED-LOCATION enables "Get Directions" in iOS Calendar
+                apple_addr = address.replace('"', '')
+                apple_title = (name or "Rendez-vous").replace('"', '')
+                xapple = (
+                    f'X-APPLE-STRUCTURED-LOCATION;VALUE=URI;'
+                    f'X-ADDRESS="{apple_addr}";'
+                    f'X-APPLE-RADIUS=70.0;'
+                    f'X-TITLE="{apple_title}":'
+                    f'geo:{lat:.6f},{lon:.6f}'
+                )
+                lines.append(_fold_line(xapple))
+            else:
+                # No coords — still emit X-APPLE-STRUCTURED-LOCATION so iOS at
+                # least recognizes the field as a location and provides search.
+                apple_addr = address.replace('"', '')
+                apple_title = (name or "Rendez-vous").replace('"', '')
+                xapple = (
+                    f'X-APPLE-STRUCTURED-LOCATION;VALUE=URI;'
+                    f'X-ADDRESS="{apple_addr}";'
+                    f'X-TITLE="{apple_title}":'
+                )
+                lines.append(_fold_line(xapple))
         lines.append(_fold_line(f"DESCRIPTION:{_ics_escape(description)}"))
         lines.append("CATEGORIES:Lavage de vitres")
         # Status mapping

@@ -22,6 +22,7 @@ import invoice_logo
 import reminders as reminders_module
 import prod_sync as prod_sync_module
 import calendar_feed as calendar_feed_module
+import geocoder as geocoder_module
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env', override=False)
@@ -2607,7 +2608,25 @@ async def calendar_ics_feed(token: str):
     appts: list[dict] = []
     async for a in db.appointments.find({"status": {"$ne": "archived"}}, {"_id": 0}):
         appts.append(a)
-    body = calendar_feed_module.build_ics_feed(appts)
+
+    # Geocode all unique addresses (cached) so Apple Calendar gets tappable Maps links
+    geocode_map: dict[str, tuple[float, float]] = {}
+    unique_addrs = set()
+    for a in appts:
+        addr = (a.get("client_address") or "").strip()
+        if addr:
+            unique_addrs.add(addr)
+    # Only geocode up to 30 addresses per request to avoid blocking too long;
+    # the cache fills up over multiple refreshes (Apple polls every 15 min)
+    for addr in list(unique_addrs)[:30]:
+        try:
+            coords = await geocoder_module.geocode(db, addr)
+            if coords:
+                geocode_map[addr] = coords
+        except Exception:
+            pass
+
+    body = calendar_feed_module.build_ics_feed(appts, geocode_map=geocode_map)
     return Response(
         content=body,
         media_type="text/calendar; charset=utf-8",
