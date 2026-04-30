@@ -177,8 +177,10 @@ def build_ics_feed(appointments: Iterable[dict], *, calendar_name: str = "Gexia3
                 # GEO field — used by Outlook, Google, Apple
                 lines.append(f"GEO:{lat:.6f};{lon:.6f}")
                 # X-APPLE-STRUCTURED-LOCATION enables "Get Directions" in iOS Calendar
-                apple_addr = address.replace('"', '')
-                apple_title = (name or "Rendez-vous").replace('"', '')
+                # IMPORTANT: do NOT fold this line — iOS Calendar parser is picky
+                # and will fail to recognize the location if the URI is split.
+                apple_addr = address.replace('"', '').replace("\\", "")
+                apple_title = (name or "Rendez-vous").replace('"', '').replace("\\", "")
                 xapple = (
                     f'X-APPLE-STRUCTURED-LOCATION;VALUE=URI;'
                     f'X-ADDRESS="{apple_addr}";'
@@ -186,18 +188,12 @@ def build_ics_feed(appointments: Iterable[dict], *, calendar_name: str = "Gexia3
                     f'X-TITLE="{apple_title}":'
                     f'geo:{lat:.6f},{lon:.6f}'
                 )
-                lines.append(_fold_line(xapple))
+                # Emit unfolded — Apple Calendar bug with folded structured locations
+                lines.append(xapple)
+                # Add Apple Maps URL in description so user can also tap from there
             else:
-                # No coords — still emit X-APPLE-STRUCTURED-LOCATION so iOS at
-                # least recognizes the field as a location and provides search.
-                apple_addr = address.replace('"', '')
-                apple_title = (name or "Rendez-vous").replace('"', '')
-                xapple = (
-                    f'X-APPLE-STRUCTURED-LOCATION;VALUE=URI;'
-                    f'X-ADDRESS="{apple_addr}";'
-                    f'X-TITLE="{apple_title}":'
-                )
-                lines.append(_fold_line(xapple))
+                # No coords — emit only LOCATION (Apple at least shows it as text)
+                pass
         lines.append(_fold_line(f"DESCRIPTION:{_ics_escape(description)}"))
         lines.append("CATEGORIES:Lavage de vitres")
         # Status mapping

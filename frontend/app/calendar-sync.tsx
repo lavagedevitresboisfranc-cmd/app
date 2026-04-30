@@ -242,6 +242,44 @@ export default function CalendarSyncScreen() {
           </View>
         </View>
 
+        {/* Forcer le rafraîchissement / désabonner */}
+        <View style={styles.instructions}>
+          <Text style={styles.instructionsTitle}>🔄 Forcer une mise à jour ou se désabonner</Text>
+          <Text style={[styles.stepText, { marginBottom: 10, fontStyle: 'italic' }]}>
+            Si l'adresse n'est pas cliquable ou si vous voulez recommencer:
+          </Text>
+          <View style={styles.step}>
+            <Text style={styles.stepNum}>1</Text>
+            <Text style={styles.stepText}>Ouvrez l'app <Text style={styles.bold}>Calendrier</Text> sur votre iPhone</Text>
+          </View>
+          <View style={styles.step}>
+            <Text style={styles.stepNum}>2</Text>
+            <Text style={styles.stepText}>Touchez <Text style={styles.bold}>Calendriers</Text> en bas au centre</Text>
+          </View>
+          <View style={styles.step}>
+            <Text style={styles.stepNum}>3</Text>
+            <Text style={styles.stepText}>
+              Cherchez la section <Text style={styles.bold}>"ABONNEMENTS"</Text> tout en bas de la liste
+            </Text>
+          </View>
+          <View style={styles.step}>
+            <Text style={styles.stepNum}>4</Text>
+            <Text style={styles.stepText}>
+              Touchez le <Text style={styles.bold}>(i)</Text> à côté de <Text style={styles.bold}>"Gexia360 — Rendez-vous"</Text>
+            </Text>
+          </View>
+          <View style={styles.step}>
+            <Text style={styles.stepNum}>5</Text>
+            <Text style={styles.stepText}>
+              Pour rafraîchir: touchez <Text style={styles.bold}>"Actualiser le calendrier"</Text>{'\n'}
+              Pour supprimer: touchez <Text style={[styles.bold, { color: '#DC2626' }]}>"Supprimer le calendrier"</Text>
+            </Text>
+          </View>
+          <Text style={[styles.stepText, { marginTop: 10, color: '#64748B', fontSize: 12 }]}>
+            💡 Après avoir supprimé, retournez en haut de cette page et cliquez à nouveau "S'abonner sur cet iPhone" pour ré-importer la version la plus récente avec les cartes GPS.
+          </Text>
+        </View>
+
         {/* Info card */}
         <View style={styles.infoCard}>
           <Feather name="info" size={18} color="#0B5394" />
