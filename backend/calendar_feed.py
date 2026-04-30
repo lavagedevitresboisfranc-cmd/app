@@ -156,6 +156,15 @@ def build_ics_feed(appointments: Iterable[dict], *, calendar_name: str = "Gexia3
             except Exception:
                 pass
         notes_lines.append(f"Statut: {status or 'upcoming'}")
+        # ALWAYS include a tappable Apple Maps URL in description so the user
+        # can launch GPS navigation in 1 tap (works 100% even on subscribed,
+        # read-only calendars where X-APPLE-STRUCTURED-LOCATION is not rendered)
+        if address:
+            from urllib.parse import quote
+            maps_url = f"https://maps.apple.com/?daddr={quote(address)}"
+            notes_lines.append("")
+            notes_lines.append("🗺️ Itinéraire GPS (Apple Maps):")
+            notes_lines.append(maps_url)
         if appt.get("notes"):
             notes_lines.append("---")
             notes_lines.append(str(appt.get("notes")))
