@@ -21,6 +21,7 @@ import branding
 import invoice_logo
 import reminders as reminders_module
 import prod_sync as prod_sync_module
+import calendar_feed as calendar_feed_module
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env', override=False)
@@ -2584,6 +2585,64 @@ body{{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;max-width:780px;mar
 <script>window.onload=function(){{window.print();}}</script>
 </body></html>"""
     return HTMLResponse(content=html)
+
+
+# --- iCalendar (.ics) feed for Apple/Google/Outlook calendar subscription ---
+
+@api_router.get("/calendar/{token}.ics")
+async def calendar_ics_feed(token: str):
+    """Public iCalendar (.ics) feed of all upcoming/recent appointments.
+
+    The user adds this URL to Apple Calendar (Settings > Calendar > Accounts >
+    Add Account > Other > Add Subscribed Calendar) and Apple Calendar will
+    auto-refresh every ~15 min, showing all RDV on iPhone / Mac / Apple Watch.
+
+    Token must match CALENDAR_TOKEN env var to prevent random scraping.
+    """
+    from fastapi.responses import Response
+    expected = os.environ.get("CALENDAR_TOKEN", "").strip()
+    if not expected or token != expected:
+        raise HTTPException(status_code=404, detail="Not found")
+    # Pull all non-archived appointments
+    appts: list[dict] = []
+    async for a in db.appointments.find({"status": {"$ne": "archived"}}, {"_id": 0}):
+        appts.append(a)
+    body = calendar_feed_module.build_ics_feed(appts)
+    return Response(
+        content=body,
+        media_type="text/calendar; charset=utf-8",
+        headers={
+            "Content-Disposition": 'inline; filename="gexia360.ics"',
+            "Cache-Control": "no-cache, must-revalidate",
+        },
+    )
+
+
+@api_router.get("/calendar/info")
+async def calendar_info(request: Request):
+    """Return the calendar subscription URL (with token) for the frontend page."""
+    token = os.environ.get("CALENDAR_TOKEN", "").strip()
+    if not token:
+        return {"enabled": False, "message": "CALENDAR_TOKEN non configuré"}
+    # Build URL from incoming request host so it always matches what the user
+    # is actually using (preview, production, custom domain, etc.)
+    try:
+        host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.hostname or "localhost"
+        proto = request.headers.get("x-forwarded-proto") or ("https" if request.url.scheme == "https" else "https")
+        # Strip port for clean URL
+        host = host.split(",")[0].strip()
+        base = f"{proto}://{host}"
+    except Exception:
+        base = (os.environ.get("APP_URL") or "").strip().rstrip("/")
+    url = f"{base}/api/calendar/{token}.ics"
+    # Webcal (one-tap subscribe in Apple Calendar) version
+    webcal = url.replace("https://", "webcal://").replace("http://", "webcal://")
+    return {
+        "enabled": True,
+        "url": url,
+        "webcal_url": webcal,
+        "refresh_minutes": 15,
+    }
 
 
 @api_router.post("/invoice/{appointment_id}/send")

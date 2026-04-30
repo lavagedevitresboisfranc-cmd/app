@@ -82,6 +82,7 @@ const menuSections: MenuSection[] = [
     color: '#64748B',
     items: [
       { icon: 'cloud' as const, labelKey: 'menu.items.backup', route: '/backup' },
+      { icon: 'calendar' as const, labelKey: 'menu.items.calendarSync', route: '/calendar-sync' },
       { icon: 'mail' as const, labelKey: 'menu.items.dnsGuide', route: '/dns-guide' },
       { icon: 'settings' as const, labelKey: 'menu.items.settings', route: '/settings' },
     ],
