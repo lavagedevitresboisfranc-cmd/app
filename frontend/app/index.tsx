@@ -462,8 +462,10 @@ export default function CalendarScreen() {
 
       const apptRes = await fetch(`${API_URL}/api/appointments`);
       const appts: Appointment[] = await apptRes.json();
+      // Season view INCLUDES completed appointments (other views hide them)
+      // Excludes only archived/cancelled
       const filtered = (Array.isArray(appts) ? appts : [])
-        .filter((a) => a.status !== 'completed' && a.status !== 'archived' && a.status !== 'cancelled')
+        .filter((a) => a.status !== 'archived' && a.status !== 'cancelled')
         .filter((a) => a.date >= range.startISO && a.date <= range.endISO);
 
       const grouped: Record<string, CalendarItem[]> = {};
@@ -918,7 +920,6 @@ export default function CalendarScreen() {
               </View>
             )
           }
-          ListFooterComponent={AllAppointmentsFooter}
           contentContainerStyle={styles.listContent}
         />
       )}
@@ -960,7 +961,6 @@ export default function CalendarScreen() {
           }
           contentContainerStyle={styles.listContent}
           stickySectionHeadersEnabled={false}
-          ListFooterComponent={AllAppointmentsFooter}
         />
       )}
 
@@ -1021,7 +1021,6 @@ export default function CalendarScreen() {
               </View>
             )
           }
-          ListFooterComponent={AllAppointmentsFooter}
           contentContainerStyle={styles.listContent}
         />
       )}
@@ -1057,7 +1056,6 @@ export default function CalendarScreen() {
           }
           contentContainerStyle={styles.listContent}
           stickySectionHeadersEnabled={false}
-          ListFooterComponent={AllAppointmentsFooter}
         />
       )}
     </SafeAreaView>
