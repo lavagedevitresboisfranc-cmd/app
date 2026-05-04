@@ -125,7 +125,7 @@ const formatDateShort = (dateStr: string) => {
 
 const formatWeekRange = (days: string[]) => {
   const start = new Date(days[0] + 'T00:00:00');
-  const end = new Date(days[6] + 'T00:00:00');
+  const end = new Date(days[days.length - 1] + 'T00:00:00');
   const s = start.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
   const e = end.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
   return `${s} — ${e}`;
