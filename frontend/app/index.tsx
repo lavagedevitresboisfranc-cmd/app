@@ -449,6 +449,51 @@ export default function CalendarScreen() {
   const [seasonLabel, setSeasonLabel] = useState<string>('Saison');
   const [seasonRangeText, setSeasonRangeText] = useState<string>('');
 
+  // Fetch all appointments for the current visible month, grouped by day.
+  // Excludes completed/archived/cancelled (those are in Saison view only).
+  const [monthItems, setMonthItems] = useState<Record<string, CalendarItem[]>>({});
+
+  const fetchMonthItems = useCallback(async (refDate: string) => {
+    setLoading(true);
+    try {
+      const d = new Date(refDate + 'T00:00:00');
+      const start = new Date(d.getFullYear(), d.getMonth(), 1);
+      const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      const fmt = (dt: Date) => dt.toISOString().split('T')[0];
+      const startISO = fmt(start);
+      const endISO = fmt(end);
+
+      const apptRes = await fetch(`${API_URL}/api/appointments`);
+      const appts: Appointment[] = await apptRes.json();
+      const filtered = (Array.isArray(appts) ? appts : [])
+        .filter((a) => a.status !== 'completed' && a.status !== 'archived' && a.status !== 'cancelled')
+        .filter((a) => a.date >= startISO && a.date <= endISO);
+
+      const grouped: Record<string, CalendarItem[]> = {};
+      filtered.forEach((a) => {
+        const item: CalendarItem = {
+          id: a.id,
+          type: 'appointment' as const,
+          name: a.client_name,
+          date: a.date,
+          time: a.time_slot,
+          duration: a.duration_minutes,
+          status: a.status,
+        };
+        if (!grouped[a.date]) grouped[a.date] = [];
+        grouped[a.date].push(item);
+      });
+      Object.keys(grouped).forEach((d) => {
+        grouped[d].sort((x, y) => x.time.localeCompare(y.time));
+      });
+      setMonthItems(grouped);
+    } catch (e) {
+      console.error('Failed to fetch month items', e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const fetchSeasonItems = useCallback(async () => {
     setLoading(true);
     try {
@@ -462,10 +507,9 @@ export default function CalendarScreen() {
 
       const apptRes = await fetch(`${API_URL}/api/appointments`);
       const appts: Appointment[] = await apptRes.json();
-      // Season view INCLUDES completed appointments (other views hide them)
-      // Excludes only archived/cancelled
+      // SEASON view: ONLY completed appointments — for archive/history reference
       const filtered = (Array.isArray(appts) ? appts : [])
-        .filter((a) => a.status !== 'archived' && a.status !== 'cancelled')
+        .filter((a) => a.status === 'completed')
         .filter((a) => a.date >= range.startISO && a.date <= range.endISO);
 
       const grouped: Record<string, CalendarItem[]> = {};
@@ -549,7 +593,7 @@ export default function CalendarScreen() {
       } else if (viewMode === 'season') {
         fetchSeasonItems();
       } else {
-        fetchDayItems(selectedDate);
+        fetchMonthItems(selectedDate);
         fetchMarkedDates(selectedDate);
       }
       // Poll for new requests every 30 seconds
@@ -570,7 +614,7 @@ export default function CalendarScreen() {
     } else if (viewMode === 'season') {
       await fetchSeasonItems();
     } else {
-      await fetchDayItems(selectedDate);
+      await fetchMonthItems(selectedDate);
       await fetchMarkedDates(selectedDate);
     }
     setRefreshing(false);
@@ -966,11 +1010,19 @@ export default function CalendarScreen() {
 
       {/* MONTH VIEW */}
       {viewMode === 'month' && (
-        <FlatList
+        <SectionList
           testID="month-list"
-          data={dayItems}
+          sections={Object.keys(monthItems)
+            .sort()
+            .map((day) => ({ title: formatDayLabel(day), data: monthItems[day] }))}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
+          renderSectionHeader={({ section }) => (
+            <View style={styles.weekDayHeader}>
+              <Text style={styles.weekDayTitle}>{section.title}</Text>
+              <Text style={styles.weekDayCount}>{section.data.length}</Text>
+            </View>
+          )}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#000" />}
           ListHeaderComponent={
             <View>
@@ -979,8 +1031,11 @@ export default function CalendarScreen() {
                 current={selectedDate}
                 onDayPress={(day: { dateString: string }) => {
                   setSelectedDate(day.dateString);
-                  fetchDayItems(day.dateString);
+                  fetchMonthItems(day.dateString);
                   fetchMarkedDates(day.dateString);
+                }}
+                onMonthChange={(month: { dateString: string }) => {
+                  fetchMonthItems(month.dateString);
                 }}
                 markedDates={markedDates}
                 markingType="multi-dot"
@@ -1005,10 +1060,6 @@ export default function CalendarScreen() {
                 }}
                 style={styles.calendar}
               />
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>{formatDateShort(selectedDate)}</Text>
-                <Text style={styles.countText}>{dayItems.length}</Text>
-              </View>
             </View>
           }
           ListEmptyComponent={
@@ -1017,11 +1068,12 @@ export default function CalendarScreen() {
             ) : (
               <View style={styles.emptyState}>
                 <Feather name="calendar" size={48} color="#E5E5E5" />
-                <Text style={styles.emptyTitle}>Aucun rendez-vous</Text>
+                <Text style={styles.emptyTitle}>Aucun rendez-vous ce mois-ci</Text>
               </View>
             )
           }
           contentContainerStyle={styles.listContent}
+          stickySectionHeadersEnabled={false}
         />
       )}
 
