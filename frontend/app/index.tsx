@@ -66,20 +66,46 @@ interface CalendarItem {
 
 const LOGO_URL = process.env.EXPO_PUBLIC_LOGO_URL || '';
 
-type ViewMode = 'today' | 'week' | 'month';
+type ViewMode = 'today' | 'week' | 'month' | 'season';
 
 const getDaysOfWeek = (baseDate: string) => {
+  // Returns Monday → Saturday (6 days, no Sunday)
   const d = new Date(baseDate + 'T00:00:00');
   const day = d.getDay();
   const monday = new Date(d);
   monday.setDate(d.getDate() - ((day + 6) % 7));
   const days: string[] = [];
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 6; i++) {
     const dd = new Date(monday);
     dd.setDate(monday.getDate() + i);
     days.push(dd.toISOString().split('T')[0]);
   }
   return days;
+};
+
+// Return [startISO, endISO] for the current meteorological season (Quebec):
+//   Printemps: 1 mars  – 31 mai
+//   Été:       1 juin  – 31 août
+//   Automne:   1 sept  – 30 nov
+//   Hiver:     1 dec   – 28/29 fév
+const getSeasonRange = (baseDate: string): { startISO: string; endISO: string; label: string } => {
+  const d = new Date(baseDate + 'T00:00:00');
+  const m = d.getMonth();
+  const y = d.getFullYear();
+  let startY = y, startM = 0, endY = y, endM = 0, label = 'Saison';
+  if (m >= 2 && m <= 4) { startM = 2; endM = 4; label = 'Printemps'; }
+  else if (m >= 5 && m <= 7) { startM = 5; endM = 7; label = 'Été'; }
+  else if (m >= 8 && m <= 10) { startM = 8; endM = 10; label = 'Automne'; }
+  else {
+    label = 'Hiver';
+    if (m === 11) { startM = 11; endY = y + 1; endM = 1; }
+    else { startY = y - 1; startM = 11; endM = 1; }
+  }
+  const start = new Date(startY, startM, 1);
+  // Last day of endM
+  const end = new Date(endY, endM + 1, 0);
+  const fmt = (dt: Date) => dt.toISOString().split('T')[0];
+  return { startISO: fmt(start), endISO: fmt(end), label };
 };
 
 const formatDayLabel = (dateStr: string) => {
@@ -287,7 +313,10 @@ export default function CalendarScreen() {
       }
 
       const items: CalendarItem[] = [
-        ...appts.map((a) => ({
+        ...appts
+          // Hide completed appointments from the calendar timeline views
+          .filter((a) => a.status !== 'completed' && a.status !== 'archived' && a.status !== 'cancelled')
+          .map((a) => ({
           id: a.id,
           type: 'appointment' as const,
           name: a.client_name,
@@ -381,7 +410,10 @@ export default function CalendarScreen() {
           const dayReqs = reqs.filter((r) => r.preferred_date === day);
 
           const items: CalendarItem[] = [
-            ...appts.map((a) => ({
+            ...appts
+              // Hide completed/archived/cancelled appointments
+              .filter((a) => a.status !== 'completed' && a.status !== 'archived' && a.status !== 'cancelled')
+              .map((a) => ({
               id: a.id,
               type: 'appointment' as const,
               name: a.client_name,
@@ -410,6 +442,54 @@ export default function CalendarScreen() {
       setLoading(false);
     }
   }, []);
+
+  // Fetch all appointments for the current season (Mar-May / Jun-Aug / Sep-Nov / Dec-Feb)
+  // Excludes completed/archived/cancelled status.
+  const [seasonItems, setSeasonItems] = useState<Record<string, CalendarItem[]>>({});
+  const [seasonLabel, setSeasonLabel] = useState<string>('Saison');
+  const [seasonRangeText, setSeasonRangeText] = useState<string>('');
+
+  const fetchSeasonItems = useCallback(async () => {
+    setLoading(true);
+    try {
+      const range = getSeasonRange(today);
+      setSeasonLabel(range.label);
+      const fmt = (iso: string) => {
+        const d = new Date(iso + 'T00:00:00');
+        return d.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
+      };
+      setSeasonRangeText(`${fmt(range.startISO)} — ${fmt(range.endISO)}`);
+
+      const apptRes = await fetch(`${API_URL}/api/appointments`);
+      const appts: Appointment[] = await apptRes.json();
+      const filtered = (Array.isArray(appts) ? appts : [])
+        .filter((a) => a.status !== 'completed' && a.status !== 'archived' && a.status !== 'cancelled')
+        .filter((a) => a.date >= range.startISO && a.date <= range.endISO);
+
+      const grouped: Record<string, CalendarItem[]> = {};
+      filtered.forEach((a) => {
+        const item: CalendarItem = {
+          id: a.id,
+          type: 'appointment' as const,
+          name: a.client_name,
+          date: a.date,
+          time: a.time_slot,
+          duration: a.duration_minutes,
+          status: a.status,
+        };
+        if (!grouped[a.date]) grouped[a.date] = [];
+        grouped[a.date].push(item);
+      });
+      Object.keys(grouped).forEach((d) => {
+        grouped[d].sort((x, y) => x.time.localeCompare(y.time));
+      });
+      setSeasonItems(grouped);
+    } catch (e) {
+      console.error('Failed to fetch season items', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [today]);
 
   // Fetch pending requests count for badge (split by type)
   const fetchPendingCount = useCallback(async () => {
@@ -464,6 +544,8 @@ export default function CalendarScreen() {
         fetchDayItems(today);
       } else if (viewMode === 'week') {
         fetchWeekItems(weekBase);
+      } else if (viewMode === 'season') {
+        fetchSeasonItems();
       } else {
         fetchDayItems(selectedDate);
         fetchMarkedDates(selectedDate);
@@ -483,6 +565,8 @@ export default function CalendarScreen() {
       await fetchDayItems(today);
     } else if (viewMode === 'week') {
       await fetchWeekItems(weekBase);
+    } else if (viewMode === 'season') {
+      await fetchSeasonItems();
     } else {
       await fetchDayItems(selectedDate);
       await fetchMarkedDates(selectedDate);
@@ -592,6 +676,7 @@ export default function CalendarScreen() {
     { key: 'today', label: "Aujourd'hui" },
     { key: 'week', label: 'Semaine' },
     { key: 'month', label: 'Mois' },
+    { key: 'season', label: 'Saison' },
   ];
 
   const weekDays = getDaysOfWeek(weekBase);
@@ -600,6 +685,14 @@ export default function CalendarScreen() {
     .map((day) => ({
       title: formatDayLabel(day),
       data: weekItems[day],
+    }));
+
+  // Build sections for the season view (one section per day)
+  const seasonSections = Object.keys(seasonItems)
+    .sort()
+    .map((day) => ({
+      title: formatDayLabel(day),
+      data: seasonItems[day],
     }));
 
   return (
@@ -930,6 +1023,41 @@ export default function CalendarScreen() {
           }
           ListFooterComponent={AllAppointmentsFooter}
           contentContainerStyle={styles.listContent}
+        />
+      )}
+
+      {/* SEASON VIEW */}
+      {viewMode === 'season' && (
+        <SectionList
+          testID="season-list"
+          sections={seasonSections}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          renderSectionHeader={({ section }) => (
+            <View style={styles.weekDayHeader}>
+              <Text style={styles.weekDayTitle}>{section.title}</Text>
+              <Text style={styles.weekDayCount}>{section.data.length}</Text>
+            </View>
+          )}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#000" />}
+          ListHeaderComponent={
+            <View style={styles.weekNav}>
+              <Text style={styles.weekRangeText}>{seasonLabel} — {seasonRangeText}</Text>
+            </View>
+          }
+          ListEmptyComponent={
+            loading ? (
+              <ActivityIndicator size="small" color="#000" style={{ marginTop: 32 }} />
+            ) : (
+              <View style={styles.emptyState}>
+                <Feather name="sun" size={48} color="#E5E5E5" />
+                <Text style={styles.emptyTitle}>Aucun rendez-vous cette saison</Text>
+              </View>
+            )
+          }
+          contentContainerStyle={styles.listContent}
+          stickySectionHeadersEnabled={false}
+          ListFooterComponent={AllAppointmentsFooter}
         />
       )}
     </SafeAreaView>
