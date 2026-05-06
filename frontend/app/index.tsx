@@ -292,25 +292,9 @@ export default function CalendarScreen() {
       const reqs: PendingRequest[] = await reqRes.json();
 
       // Tentative items: any appointment whose proposed_alternatives include this date
-      const tentatives: CalendarItem[] = [];
-      for (const a of allAppts || []) {
-        const alts = (a as any).proposed_alternatives || [];
-        for (const alt of alts) {
-          if (alt && alt.date === date) {
-            tentatives.push({
-              id: `${a.id}_alt_${alt.date}_${alt.time_slot}`,
-              type: 'tentative',
-              name: a.client_name || '',
-              date: alt.date,
-              time: alt.time_slot,
-              duration: alt.duration_minutes,
-              status: 'tentative',
-              parentId: a.id,
-              parentTime: a.time_slot,
-            });
-          }
-        }
-      }
+      // NOTE: tentatives are NO LONGER displayed in calendar views (today/week/month)
+      // because they polluted the timeline. They remain accessible via the
+      // request-detail and appointment-detail pages.
 
       const items: CalendarItem[] = [
         ...appts
@@ -325,7 +309,6 @@ export default function CalendarScreen() {
           duration: a.duration_minutes,
           status: a.status,
         })),
-        ...tentatives,
         ...reqs
           .filter((r) => r.preferred_date === date)
           .map((r) => ({

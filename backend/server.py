@@ -4096,7 +4096,7 @@ async def export_expenses_excel(start_date: Optional[str] = None, end_date: Opti
         if end_date: d["$lte"] = end_date
         query["date"] = d
 
-    cursor = db.expenses.find(query, {"_id": 0}).sort("date", -1)
+    cursor = db.expenses.find(query, {"_id": 0}).sort("date", -1).allow_disk_use(True)
     items = await cursor.to_list(10000)
 
     CATEGORY_LABELS = {

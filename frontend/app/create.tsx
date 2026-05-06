@@ -185,6 +185,31 @@ export default function CreateScreen() {
   const [transcribing, setTranscribing] = useState(false);
   const voiceRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
+  // Fetch already-booked slots for the selected date so we can grey them out
+  const [busySlots, setBusySlots] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadBusy = async () => {
+      if (!date) return;
+      try {
+        const r = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/api/appointments?date=${date}`);
+        const items = await r.json();
+        if (!Array.isArray(items)) return;
+        const taken = new Set<string>();
+        for (const a of items) {
+          if (a.status === 'archived' || a.status === 'cancelled') continue;
+          // Skip the current item being edited (if any)
+          if (params.editId && a.id === params.editId) continue;
+          if (a.time_slot) taken.add(a.time_slot.slice(0, 5));
+        }
+        if (!cancelled) setBusySlots(taken);
+      } catch { /* ignore */ }
+    };
+    loadBusy();
+    return () => { cancelled = true; };
+  }, [date, params.editId]);
+
   const startVoice = async () => {
     try {
       const { granted } = await requestRecordingPermissionsAsync();
@@ -562,22 +587,44 @@ export default function CreateScreen() {
 
           {/* Time Slots */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.label}>TIME SLOT</Text>
+            <Text style={styles.label}>HEURE — créneau disponible</Text>
             <View style={styles.slotsGrid}>
-              {TIME_SLOTS.map((slot) => (
-                <TouchableOpacity
-                  key={slot}
-                  testID={`time-slot-${slot}`}
-                  style={[styles.slotBtn, timeSlot === slot && styles.slotBtnActive]}
-                  activeOpacity={0.7}
-                  onPress={() => setTimeSlot(slot)}
-                >
-                  <Text style={[styles.slotText, timeSlot === slot && styles.slotTextActive]}>
-                    {slot}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {TIME_SLOTS.map((slot) => {
+                const isBusy = busySlots.has(slot);
+                const isSelected = timeSlot === slot;
+                return (
+                  <TouchableOpacity
+                    key={slot}
+                    testID={`time-slot-${slot}`}
+                    style={[
+                      styles.slotBtn,
+                      isSelected && styles.slotBtnActive,
+                      isBusy && !isSelected && {
+                        backgroundColor: '#FEE2E2',
+                        borderColor: '#FCA5A5',
+                        opacity: 0.6,
+                      },
+                    ]}
+                    activeOpacity={0.7}
+                    onPress={() => setTimeSlot(slot)}
+                    disabled={isBusy && !isSelected}
+                  >
+                    <Text style={[
+                      styles.slotText,
+                      isSelected && styles.slotTextActive,
+                      isBusy && !isSelected && { color: '#DC2626', textDecorationLine: 'line-through' },
+                    ]}>
+                      {slot}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
+            {busySlots.size > 0 && (
+              <Text style={{ fontSize: 12, color: '#64748B', marginTop: 6 }}>
+                ⚠️ Les créneaux en rouge barré sont déjà pris ce jour-là.
+              </Text>
+            )}
           </View>
 
           {/* Duration */}
