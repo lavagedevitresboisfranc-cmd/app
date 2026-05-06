@@ -2637,6 +2637,52 @@ async def calendar_ics_feed(token: str):
     )
 
 
+# === URL Shortener (for clean SMS/email links) ===
+
+import secrets as _secrets
+import string as _string
+
+_SHORT_ALPHABET = _string.ascii_letters + _string.digits
+
+
+def _gen_short_code(length: int = 6) -> str:
+    return ''.join(_secrets.choice(_SHORT_ALPHABET) for _ in range(length))
+
+
+async def _make_short_url(target_path: str, base_url: str | None = None) -> str:
+    """Create or reuse a short URL like https://host/api/s/abc123 -> target_path."""
+    if not base_url:
+        base_url = (os.environ.get("APP_URL") or "").rstrip("/")
+    # Try up to 5 times to avoid collisions
+    for _ in range(5):
+        code = _gen_short_code(6)
+        existing = await db.short_links.find_one({"code": code})
+        if existing:
+            continue
+        await db.short_links.insert_one({
+            "code": code,
+            "target": target_path,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        return f"{base_url}/api/s/{code}"
+    # Fallback: long URL
+    return f"{base_url}{target_path}"
+
+
+@app.get("/api/s/{code}")
+async def short_link_resolver(code: str):
+    """Redirect a 6-char short code to its target URL."""
+    from fastapi.responses import RedirectResponse, HTMLResponse
+    row = await db.short_links.find_one({"code": code})
+    if not row or not row.get("target"):
+        return HTMLResponse("<h1>Lien expiré ou invalide</h1>", status_code=404)
+    base_url = (os.environ.get("APP_URL") or "").rstrip("/")
+    target = row["target"]
+    if target.startswith("http"):
+        return RedirectResponse(url=target, status_code=302)
+    return RedirectResponse(url=f"{base_url}{target}", status_code=302)
+
+
 # === Client appointment confirmation flow ===
 
 @api_router.post("/appointments/{appointment_id}/send-client-confirmation")
@@ -2666,18 +2712,19 @@ async def send_client_confirmation(appointment_id: str):
     except Exception:
         date_pretty = date
 
-    # Build the confirmation page URLs (preview backend)
-    base_url = (os.environ.get("APP_URL") or "").rstrip("/")
-    confirm_url = f"{base_url}/api/appointments/{appointment_id}/client-confirm?action=confirm"
-    alternative_url = f"{base_url}/api/appointments/{appointment_id}/client-confirm?action=alternative"
+    # Build SHORT URLs for the SMS/email so they fit on a single line
+    confirm_target = f"/api/appointments/{appointment_id}/client-confirm?action=confirm"
+    alternative_target = f"/api/appointments/{appointment_id}/client-confirm?action=alternative"
+    confirm_url = await _make_short_url(confirm_target)
+    alternative_url = await _make_short_url(alternative_target)
 
     sms_body = (
         f"Bonjour {name},\n\n"
         f"Votre rendez-vous Lavage de Vitres Bois-Franc est planifié:\n"
         f"📅 {date_pretty} à {time_slot}\n"
         f"📍 {addr}\n\n"
-        f"Confirmer ✅: {confirm_url}\n\n"
-        f"Suggérer un autre moment 🔄: {alternative_url}\n\n"
+        f"✅ Accepter: {confirm_url}\n\n"
+        f"🔄 Modifier: {alternative_url}\n\n"
         f"Merci!"
     )
 
