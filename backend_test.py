@@ -1,321 +1,341 @@
 """
-Backend test for: PUT /api/appointments/{id} — Reschedule with email notification.
-Scope strictly limited to PUT /api/appointments/{id} with the new `notify_client` flag,
-the email-on-reschedule logic, and the helper _fmt_date_fr.
+Backend tests for POST /api/appointments/{appointment_id}/encaisser
+Target: Encaisser (Collect payment) endpoint — see /app/backend/server.py ~line 4609.
 """
+
+from __future__ import annotations
+
+import json
 import os
 import sys
-import time
+from datetime import datetime, timezone
+from pathlib import Path
+
 import requests
 
-BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL") or "https://booking-hub-406.preview.emergentagent.com"
-API = f"{BASE_URL.rstrip('/')}/api"
 
-NOTIFY_EMAIL = "lavagedevitreboisfranc@live.com"
-
-passed = 0
-failed = 0
-errors = []
-
-
-def assert_eq(label, actual, expected):
-    global passed, failed
-    if actual == expected:
-        passed += 1
-        print(f"PASS [{label}] {actual!r} == {expected!r}")
-    else:
-        failed += 1
-        msg = f"FAIL [{label}] expected {expected!r} got {actual!r}"
-        errors.append(msg)
-        print(msg)
+def _load_backend_url() -> str:
+    env_path = Path("/app/frontend/.env")
+    url = None
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            s = line.strip()
+            if s.startswith("EXPO_PUBLIC_BACKEND_URL="):
+                url = s.split("=", 1)[1].strip().strip('"').strip("'")
+                break
+    if not url:
+        url = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "").strip()
+    if not url:
+        raise RuntimeError("EXPO_PUBLIC_BACKEND_URL not found in /app/frontend/.env")
+    return url.rstrip("/")
 
 
-def assert_true(label, cond, info=""):
-    global passed, failed
+BASE = _load_backend_url()
+API = f"{BASE}/api"
+TIMEOUT = 30
+
+_passed = 0
+_failed = 0
+_failures: list[str] = []
+
+
+def _check(cond: bool, label: str, extra: str = "") -> None:
+    global _passed, _failed
     if cond:
-        passed += 1
-        print(f"PASS [{label}] {info}")
+        _passed += 1
+        print(f"  ✅ {label}")
     else:
-        failed += 1
-        msg = f"FAIL [{label}] {info}"
-        errors.append(msg)
-        print(msg)
+        _failed += 1
+        msg = f"{label}" + (f" — {extra}" if extra else "")
+        _failures.append(msg)
+        print(f"  ❌ {label}" + (f" — {extra}" if extra else ""))
 
 
-def get_log_tail(n=400):
-    """Return the last n lines of supervisor backend stderr+stdout combined."""
-    out = ""
-    for path in ("/var/log/supervisor/backend.err.log", "/var/log/supervisor/backend.out.log"):
-        try:
-            with open(path) as f:
-                lines = f.readlines()
-                out += "".join(lines[-n:]) + "\n"
-        except Exception:
-            pass
-    return out
+def _fmt(resp: requests.Response) -> str:
+    try:
+        return f"HTTP {resp.status_code} body={resp.text[:400]}"
+    except Exception:
+        return f"HTTP {resp.status_code}"
 
 
-def main():
-    global passed, failed
-    print(f"Using API base: {API}")
-
-    created_ids = []
-
-    # ---------- SETUP: Create appointment 1 with client_email ----------
-    setup_payload = {
-        "title": "Test reprog",
-        "client_name": "Test Client",
-        "client_email": NOTIFY_EMAIL,
-        "client_phone": "5141234567",
-        "client_address": "123 Test St",
-        "date": "2026-12-01",
-        "time_slot": "09:00",
+def _create_test_appointment(title: str, phone: str, address: str) -> str:
+    body = {
+        "title": title,
+        "client_name": "Encaisser Test",
+        "client_email": "",
+        "client_phone": phone,
+        "client_address": address,
+        "date": "2026-12-20",
+        "time_slot": "14:00",
         "duration_minutes": 60,
+        "price": 200.00,
         "status": "upcoming",
+        "notes": "",
     }
-    r = requests.post(f"{API}/appointments", json=setup_payload, timeout=30)
-    assert_eq("setup1.status", r.status_code, 200)
-    appt1 = r.json()
-    appt1_id = appt1.get("id")
-    created_ids.append(appt1_id)
-    assert_true("setup1.id_present", bool(appt1_id), f"id={appt1_id}")
-    assert_eq("setup1.client_email", appt1.get("client_email"), NOTIFY_EMAIL)
-    assert_eq("setup1.date", appt1.get("date"), "2026-12-01")
-    assert_eq("setup1.time_slot", appt1.get("time_slot"), "09:00")
+    r = requests.post(f"{API}/appointments", json=body, timeout=TIMEOUT)
+    assert r.status_code == 200, f"Setup POST /appointments failed: {_fmt(r)}"
+    return r.json()["id"]
 
-    # ---------- CASE 1: PUT date+time change with notify_client=True ----------
-    log_before_t1 = get_log_tail(150)
-    sent_before_t1 = log_before_t1.count("Reschedule email sent")
-    failed_before_t1 = log_before_t1.count("Failed to send reschedule email")
 
-    body1 = {"date": "2026-12-15", "time_slot": "10:30", "notify_client": True}
-    r = requests.put(f"{API}/appointments/{appt1_id}", json=body1, timeout=30)
-    assert_eq("case1.status", r.status_code, 200)
-    j1 = r.json()
-    assert_eq("case1.date", j1.get("date"), "2026-12-15")
-    assert_eq("case1.time_slot", j1.get("time_slot"), "10:30")
-    assert_true("case1.no_notify_client_in_resp", "notify_client" not in j1,
-                f"keys={list(j1.keys())}")
+def main() -> int:
+    print(f"Testing against: {API}\n")
 
-    time.sleep(3)
-    log_after_t1 = get_log_tail(200)
-    sent_after_t1 = log_after_t1.count("Reschedule email sent")
-    failed_after_t1 = log_after_t1.count("Failed to send reschedule email")
-    has_new_send_log = (sent_after_t1 > sent_before_t1) or (failed_after_t1 > failed_before_t1)
-    assert_true("case1.log_email_attempt", has_new_send_log,
-                f"sent before={sent_before_t1} after={sent_after_t1}; "
-                f"failed before={failed_before_t1} after={failed_after_t1}")
+    # Baseline revenue count
+    r = requests.get(f"{API}/revenues", timeout=TIMEOUT)
+    _check(r.status_code == 200, "Baseline GET /api/revenues returns 200", _fmt(r))
+    baseline_revenues = r.json() if r.status_code == 200 else []
+    baseline_count = len(baseline_revenues) if isinstance(baseline_revenues, list) else 0
+    print(f"  ℹ️  Baseline revenues count: {baseline_count}")
 
-    # ---------- CASE 2: PUT status=completed with notify_client=True (no date/time change) ----------
-    log_before_t2 = get_log_tail(200)
-    sent_before_t2 = log_before_t2.count("Reschedule email sent")
-    failed_before_t2 = log_before_t2.count("Failed to send reschedule email")
+    created_appt_ids: list[str] = []
+    created_revenue_ids: list[str] = []
+    created_client_ids: set[str] = set()
 
-    body2 = {"status": "completed", "notify_client": True}
-    r = requests.put(f"{API}/appointments/{appt1_id}", json=body2, timeout=30)
-    assert_eq("case2.status", r.status_code, 200)
-    j2 = r.json()
-    assert_eq("case2.status_field", j2.get("status"), "completed")
-    assert_true("case2.no_notify_client_in_resp", "notify_client" not in j2,
-                f"keys={list(j2.keys())}")
-    assert_eq("case2.date_unchanged", j2.get("date"), "2026-12-15")
-    assert_eq("case2.time_slot_unchanged", j2.get("time_slot"), "10:30")
-    time.sleep(2)
-    log_after_t2 = get_log_tail(250)
-    sent_after_t2 = log_after_t2.count("Reschedule email sent")
-    failed_after_t2 = log_after_t2.count("Failed to send reschedule email")
-    assert_true("case2.no_new_send_log", sent_after_t2 == sent_before_t2,
-                f"before={sent_before_t2} after={sent_after_t2}")
-    assert_true("case2.no_new_failed_log", failed_after_t2 == failed_before_t2,
-                f"before={failed_before_t2} after={failed_after_t2}")
+    print("\n=== SETUP: Create test appointment #1 ===")
+    appt_id_1 = _create_test_appointment(
+        "Test Encaisser", "5141234567", "456 Rue Test"
+    )
+    created_appt_ids.append(appt_id_1)
+    print(f"  ✅ Appointment #1 created id={appt_id_1}")
 
-    # ---------- CASE 3: PUT date change with notify_client=False ----------
-    log_before_t3 = get_log_tail(250)
-    sent_before_t3 = log_before_t3.count("Reschedule email sent")
-    failed_before_t3 = log_before_t3.count("Failed to send reschedule email")
+    r = requests.get(f"{API}/appointments/{appt_id_1}", timeout=TIMEOUT)
+    if r.status_code == 200:
+        cid = r.json().get("client_id")
+        if cid:
+            created_client_ids.add(cid)
+            print(f"  ℹ️  Auto-linked client_id={cid}")
 
-    body3 = {"date": "2026-12-20", "notify_client": False}
-    r = requests.put(f"{API}/appointments/{appt1_id}", json=body3, timeout=30)
-    assert_eq("case3.status", r.status_code, 200)
-    j3 = r.json()
-    assert_eq("case3.date", j3.get("date"), "2026-12-20")
-    assert_true("case3.no_notify_client_in_resp", "notify_client" not in j3,
-                f"keys={list(j3.keys())}")
-    time.sleep(2)
-    log_after_t3 = get_log_tail(300)
-    sent_after_t3 = log_after_t3.count("Reschedule email sent")
-    failed_after_t3 = log_after_t3.count("Failed to send reschedule email")
-    assert_true("case3.no_new_send_log", sent_after_t3 == sent_before_t3,
-                f"before={sent_before_t3} after={sent_after_t3}")
-    assert_true("case3.no_new_failed_log", failed_after_t3 == failed_before_t3,
-                f"before={failed_before_t3} after={failed_after_t3}")
-
-    # ---------- CASE 4: PUT time_slot change with no notify_client ----------
-    log_before_t4 = get_log_tail(300)
-    sent_before_t4 = log_before_t4.count("Reschedule email sent")
-    failed_before_t4 = log_before_t4.count("Failed to send reschedule email")
-
-    body4 = {"time_slot": "11:00"}
-    r = requests.put(f"{API}/appointments/{appt1_id}", json=body4, timeout=30)
-    assert_eq("case4.status", r.status_code, 200)
-    j4 = r.json()
-    assert_eq("case4.time_slot", j4.get("time_slot"), "11:00")
-    assert_true("case4.no_notify_client_in_resp", "notify_client" not in j4,
-                f"keys={list(j4.keys())}")
-    time.sleep(2)
-    log_after_t4 = get_log_tail(350)
-    sent_after_t4 = log_after_t4.count("Reschedule email sent")
-    failed_after_t4 = log_after_t4.count("Failed to send reschedule email")
-    assert_true("case4.no_new_send_log", sent_after_t4 == sent_before_t4,
-                f"before={sent_before_t4} after={sent_after_t4}")
-    assert_true("case4.no_new_failed_log", failed_after_t4 == failed_before_t4,
-                f"before={failed_before_t4} after={failed_after_t4}")
-
-    # ---------- CASE 5: SECOND appointment with empty client_email ----------
-    setup2_payload = dict(setup_payload)
-    setup2_payload["client_email"] = ""
-    setup2_payload["title"] = "Test reprog 2 (no email)"
-    r = requests.post(f"{API}/appointments", json=setup2_payload, timeout=30)
-    assert_eq("setup2.status", r.status_code, 200)
-    appt2 = r.json()
-    appt2_id = appt2.get("id")
-    created_ids.append(appt2_id)
-    assert_eq("setup2.client_email_empty", appt2.get("client_email", ""), "")
-
-    log_before_t5 = get_log_tail(350)
-    sent_before_t5 = log_before_t5.count("Reschedule email sent")
-    failed_before_t5 = log_before_t5.count("Failed to send reschedule email")
-
-    body5 = {"date": "2026-12-25", "time_slot": "14:00", "notify_client": True}
-    r = requests.put(f"{API}/appointments/{appt2_id}", json=body5, timeout=30)
-    assert_eq("case5.status", r.status_code, 200)
-    j5 = r.json()
-    assert_eq("case5.date", j5.get("date"), "2026-12-25")
-    assert_eq("case5.time_slot", j5.get("time_slot"), "14:00")
-    assert_true("case5.no_notify_client_in_resp", "notify_client" not in j5,
-                f"keys={list(j5.keys())}")
-    time.sleep(2)
-    log_after_t5 = get_log_tail(400)
-    sent_after_t5 = log_after_t5.count("Reschedule email sent")
-    failed_after_t5 = log_after_t5.count("Failed to send reschedule email")
-    assert_true("case5.no_new_send_log", sent_after_t5 == sent_before_t5,
-                f"before={sent_before_t5} after={sent_after_t5}")
-    assert_true("case5.no_new_failed_log", failed_after_t5 == failed_before_t5,
-                f"before={failed_before_t5} after={failed_after_t5}")
-
-    # ---------- CASE 6: GET /{id} confirm response has no notify_client field ----------
-    r = requests.get(f"{API}/appointments/{appt1_id}", timeout=30)
-    assert_eq("case6.status", r.status_code, 200)
-    j6 = r.json()
-    assert_true("case6.no_notify_client_field", "notify_client" not in j6,
-                f"keys={list(j6.keys())}")
-
-    # ---------- CASE 7: PUT empty body → 400 ----------
-    r = requests.put(f"{API}/appointments/{appt1_id}", json={}, timeout=30)
-    assert_eq("case7.status", r.status_code, 400)
-    detail = ""
-    try:
-        detail = r.json().get("detail", "")
-    except Exception:
-        detail = r.text
-    assert_true("case7.detail", "No fields to update" in str(detail),
-                f"detail={detail!r}")
-
-    # ---------- CASE 8: PUT nonexistent → 404 ----------
-    r = requests.put(f"{API}/appointments/nonexistent-uuid",
-                     json={"date": "2026-12-30", "notify_client": True}, timeout=30)
-    assert_eq("case8.status", r.status_code, 404)
-    detail8 = ""
-    try:
-        detail8 = r.json().get("detail", "")
-    except Exception:
-        detail8 = r.text
-    assert_true("case8.detail", "Appointment not found" in str(detail8),
-                f"detail={detail8!r}")
-
-    # ---------- CASE 9: _fmt_date_fr ----------
-    sys.path.insert(0, "/app/backend")
-    try:
-        import importlib
-        m = importlib.import_module("server")
-        assert_eq("case9.fmt_2026-12-15", m._fmt_date_fr("2026-12-15"), "15 décembre 2026")
-        assert_eq("case9.fmt_empty", m._fmt_date_fr(""), "")
-        assert_eq("case9.fmt_invalid", m._fmt_date_fr("not-a-date"), "not-a-date")
-    except Exception as e:
-        failed += 1
-        errors.append(f"case9.import_or_call exception: {e}")
-        print(f"FAIL [case9.import_or_call] {e}")
-
-    # ---------- CLEANUP ----------
-    print("\n--- Cleanup ---")
-    client_to_delete = None
-    try:
-        rc = requests.post(f"{API}/clients-db/match",
-                           json={"name": "Test Client", "email": NOTIFY_EMAIL,
-                                 "phone": "5141234567"}, timeout=30)
-        if rc.status_code == 200:
-            jj = rc.json()
-            if jj.get("matched") and jj.get("client"):
-                client_to_delete = jj["client"].get("id")
-                print(f"Found auto-linked client: {client_to_delete}")
-    except Exception as e:
-        print(f"clients-db/match error: {e}")
-
-    for aid in created_ids:
+    # TEST 1: Happy path — full body
+    print("\n=== TEST 1: Happy path — full body ===")
+    body1 = {
+        "amount": 200.00,
+        "payment_method": "etransfert",
+        "category": "printemps",
+        "date": "2026-12-20",
+        "description": "Lavage de vitres - 456 Rue Test",
+    }
+    r = requests.post(f"{API}/appointments/{appt_id_1}/encaisser", json=body1, timeout=TIMEOUT)
+    _check(r.status_code == 200, "POST /encaisser (full body) → 200", _fmt(r))
+    revenue_id_1 = None
+    if r.status_code == 200:
+        j = r.json()
+        _check(j.get("ok") is True, "response.ok == True", str(j.get("ok")))
+        _check(j.get("status") == "paid", "response.status == 'paid'", str(j.get("status")))
+        _check(j.get("paid_amount") == 200.0, "response.paid_amount == 200.0", str(j.get("paid_amount")))
+        _check(j.get("paid_method") == "etransfert", "response.paid_method == 'etransfert'", str(j.get("paid_method")))
+        paid_at = j.get("paid_at")
+        _check(isinstance(paid_at, str) and len(paid_at) > 0, "response.paid_at is ISO string", str(paid_at))
         try:
-            rd = requests.delete(f"{API}/appointments/{aid}/permanent", timeout=30)
-            print(f"DELETE permanent {aid} -> {rd.status_code}")
-        except Exception as e:
-            print(f"delete error {aid}: {e}")
+            datetime.fromisoformat(paid_at.replace("Z", "+00:00"))
+            iso_ok = True
+        except Exception:
+            iso_ok = False
+        _check(iso_ok, "response.paid_at parses as ISO timestamp", str(paid_at))
 
-    # Try to find a separate client for the second (empty-email) appointment
-    try:
-        rc2 = requests.post(f"{API}/clients-db/match",
-                            json={"name": "Test Client", "email": "",
-                                  "phone": "5141234567"}, timeout=30)
-        if rc2.status_code == 200:
-            jj2 = rc2.json()
-            if jj2.get("matched") and jj2.get("client"):
-                cid2 = jj2["client"].get("id")
-                if cid2 and cid2 != client_to_delete:
-                    try:
-                        rcd2 = requests.delete(f"{API}/clients-db/{cid2}", timeout=30)
-                        print(f"DELETE client (2) {cid2} -> {rcd2.status_code}")
-                    except Exception as e:
-                        print(f"client2 delete error: {e}")
-    except Exception:
-        pass
+        rev = j.get("revenue") or {}
+        _check(isinstance(rev, dict) and "id" in rev, "response.revenue has 'id'", json.dumps(rev)[:200])
+        _check(rev.get("amount") == 200.0, "revenue.amount == 200.0", str(rev.get("amount")))
+        _check(rev.get("category") == "printemps", "revenue.category == 'printemps'", str(rev.get("category")))
+        _check(rev.get("payment_method") == "etransfert", "revenue.payment_method == 'etransfert'", str(rev.get("payment_method")))
+        _check(rev.get("appointment_id") == appt_id_1, "revenue.appointment_id == appt_id_1", str(rev.get("appointment_id")))
+        _check(rev.get("date") == "2026-12-20", "revenue.date == '2026-12-20'", str(rev.get("date")))
+        _check(rev.get("description") == "Lavage de vitres - 456 Rue Test", "revenue.description matches body", str(rev.get("description")))
 
-    if client_to_delete:
-        try:
-            rcd = requests.delete(f"{API}/clients-db/{client_to_delete}", timeout=30)
-            print(f"DELETE client {client_to_delete} -> {rcd.status_code}")
-        except Exception as e:
-            print(f"client delete error: {e}")
+        revenue_id_1 = rev.get("id")
+        if revenue_id_1:
+            created_revenue_ids.append(revenue_id_1)
 
-    # Final confirmation
-    try:
-        rl = requests.get(f"{API}/appointments?include_archived=true", timeout=30)
-        if rl.status_code == 200:
-            ids_present = {a.get("id") for a in rl.json()}
-            for aid in created_ids:
-                assert_true(f"cleanup.absent[{aid}]", aid not in ids_present,
-                            "appt id absent from list")
-    except Exception as e:
-        print(f"final list error: {e}")
+    # TEST 2: GET appointment after encaisser
+    print("\n=== TEST 2: GET /appointments/{id} after encaisser ===")
+    r = requests.get(f"{API}/appointments/{appt_id_1}", timeout=TIMEOUT)
+    _check(r.status_code == 200, "GET /appointments/{id} → 200", _fmt(r))
+    if r.status_code == 200:
+        a = r.json()
+        _check(a.get("status") == "paid", "appt.status == 'paid'", str(a.get("status")))
+        _check(isinstance(a.get("paid_at"), str) and len(a.get("paid_at") or "") > 0, "appt.paid_at present", str(a.get("paid_at")))
+        _check(a.get("paid_amount") == 200.0, "appt.paid_amount == 200.0", str(a.get("paid_amount")))
+        _check(a.get("paid_method") == "etransfert", "appt.paid_method == 'etransfert'", str(a.get("paid_method")))
+        _check(
+            revenue_id_1 is not None and a.get("revenue_id") == revenue_id_1,
+            "appt.revenue_id matches revenue from step 1",
+            f"appt.revenue_id={a.get('revenue_id')}, expected={revenue_id_1}",
+        )
 
-    # ---------- SUMMARY ----------
-    print(f"\n=========================")
-    print(f"PASSED: {passed}")
-    print(f"FAILED: {failed}")
-    print(f"=========================")
-    if errors:
-        print("\nFailures:")
-        for e in errors:
-            print(f"  - {e}")
-    return failed == 0
+    # TEST 3: GET /revenues
+    print("\n=== TEST 3: GET /api/revenues — verify revenue is listed ===")
+    r = requests.get(f"{API}/revenues", timeout=TIMEOUT)
+    _check(r.status_code == 200, "GET /api/revenues → 200", _fmt(r))
+    if r.status_code == 200 and revenue_id_1:
+        revs = r.json()
+        found = next((x for x in revs if x.get("id") == revenue_id_1), None)
+        _check(found is not None, "revenue from step 1 found in /api/revenues list")
+        if found:
+            _check(found.get("appointment_id") == appt_id_1, "listed revenue.appointment_id == appt_id_1", str(found.get("appointment_id")))
+            _check(found.get("amount") == 200.0, "listed revenue.amount == 200.0", str(found.get("amount")))
+
+    # TEST 4: Defaults — minimal body
+    print("\n=== TEST 4: Defaults — minimal body (no date, no description) ===")
+    appt_id_2 = _create_test_appointment(
+        "Test Encaisser 2", "5149876543", "789 Avenue Default"
+    )
+    created_appt_ids.append(appt_id_2)
+    r = requests.get(f"{API}/appointments/{appt_id_2}", timeout=TIMEOUT)
+    if r.status_code == 200:
+        cid = r.json().get("client_id")
+        if cid:
+            created_client_ids.add(cid)
+
+    body4 = {"amount": 50.00, "payment_method": "cash", "category": "automne"}
+    r = requests.post(f"{API}/appointments/{appt_id_2}/encaisser", json=body4, timeout=TIMEOUT)
+    _check(r.status_code == 200, "POST /encaisser (minimal body) → 200", _fmt(r))
+    today_utc = datetime.now(timezone.utc).date().isoformat()
+    if r.status_code == 200:
+        j = r.json()
+        rev = j.get("revenue") or {}
+        _check(rev.get("date") == today_utc, f"revenue.date defaults to today UTC ({today_utc})", str(rev.get("date")))
+        expected_desc = "Lavage de vitres - 789 Avenue Default"
+        _check(rev.get("description") == expected_desc, f"revenue.description defaults to '{expected_desc}'", str(rev.get("description")))
+        _check(rev.get("amount") == 50.0, "revenue.amount == 50.0", str(rev.get("amount")))
+        _check(rev.get("category") == "automne", "revenue.category == 'automne'", str(rev.get("category")))
+        _check(rev.get("payment_method") == "cash", "revenue.payment_method == 'cash'", str(rev.get("payment_method")))
+        rid2 = rev.get("id")
+        if rid2:
+            created_revenue_ids.append(rid2)
+
+    # TEST 5: amount=0
+    print("\n=== TEST 5: Negative — amount=0 ===")
+    appt_id_3 = _create_test_appointment(
+        "Test Encaisser 3", "5142220000", "111 Negative"
+    )
+    created_appt_ids.append(appt_id_3)
+    r3 = requests.get(f"{API}/appointments/{appt_id_3}", timeout=TIMEOUT)
+    if r3.status_code == 200:
+        cid = r3.json().get("client_id")
+        if cid:
+            created_client_ids.add(cid)
+
+    r = requests.post(
+        f"{API}/appointments/{appt_id_3}/encaisser",
+        json={"amount": 0, "payment_method": "cash", "category": "printemps"},
+        timeout=TIMEOUT,
+    )
+    _check(r.status_code == 400, "amount=0 → HTTP 400", _fmt(r))
+    if r.status_code == 400:
+        det = (r.json().get("detail") or "").lower()
+        _check("montant" in det and "positif" in det, "detail mentions 'montant' and 'positif'", det)
+
+    # TEST 6: amount=-50
+    print("\n=== TEST 6: Negative — amount=-50 ===")
+    r = requests.post(
+        f"{API}/appointments/{appt_id_3}/encaisser",
+        json={"amount": -50, "payment_method": "cash", "category": "printemps"},
+        timeout=TIMEOUT,
+    )
+    _check(r.status_code == 400, "amount=-50 → HTTP 400", _fmt(r))
+    if r.status_code == 400:
+        det = (r.json().get("detail") or "").lower()
+        _check("montant" in det and "positif" in det, "detail mentions 'montant' and 'positif'", det)
+
+    # TEST 7: invalid payment_method
+    print("\n=== TEST 7: Negative — invalid payment_method 'bitcoin' ===")
+    r = requests.post(
+        f"{API}/appointments/{appt_id_3}/encaisser",
+        json={"amount": 100, "payment_method": "bitcoin", "category": "printemps"},
+        timeout=TIMEOUT,
+    )
+    _check(r.status_code == 400, "invalid payment_method → HTTP 400", _fmt(r))
+    if r.status_code == 400:
+        det = r.json().get("detail") or ""
+        low = det.lower()
+        _check(
+            ("cash" in low and "etransfert" in low) or ("mode de paiement" in low),
+            "detail mentions 'Mode de paiement: cash ou etransfert'",
+            det,
+        )
+
+    # TEST 8: invalid category
+    print("\n=== TEST 8: Negative — invalid category 'hiver' ===")
+    r = requests.post(
+        f"{API}/appointments/{appt_id_3}/encaisser",
+        json={"amount": 100, "payment_method": "cash", "category": "hiver"},
+        timeout=TIMEOUT,
+    )
+    _check(r.status_code == 400, "invalid category → HTTP 400", _fmt(r))
+    if r.status_code == 400:
+        det = r.json().get("detail") or ""
+        low = det.lower()
+        _check("catégorie" in low or "categorie" in low, "detail mentions 'Catégorie invalide'", det)
+        _check("invalide" in low or "invalid" in low, "detail mentions 'invalide'", det)
+
+    # TEST 9: nonexistent appointment
+    print("\n=== TEST 9: Negative — nonexistent appointment id ===")
+    r = requests.post(
+        f"{API}/appointments/nonexistent-xyz-uuid/encaisser",
+        json={"amount": 100, "payment_method": "cash", "category": "printemps"},
+        timeout=TIMEOUT,
+    )
+    _check(r.status_code == 404, "nonexistent appt → HTTP 404", _fmt(r))
+    if r.status_code == 404:
+        det = r.json().get("detail") or ""
+        _check(det == "Appointment not found", "detail == 'Appointment not found'", det)
+
+    # TEST 10: AppointmentResponse regression
+    print("\n=== TEST 10: AppointmentResponse regression (list includes paid_* fields) ===")
+    r = requests.get(f"{API}/appointments?include_archived=true", timeout=TIMEOUT)
+    _check(r.status_code == 200, "GET /api/appointments → 200", _fmt(r))
+    if r.status_code == 200:
+        items = r.json()
+        _check(isinstance(items, list) and len(items) > 0, "list is non-empty")
+        sample = next((x for x in items if x.get("id") == appt_id_1), None)
+        _check(sample is not None, f"paid appt {appt_id_1} present in list")
+        if sample:
+            for f in ("paid_at", "paid_amount", "paid_method", "revenue_id"):
+                _check(f in sample, f"list item has '{f}' key (paid appt)", f"keys={list(sample.keys())}")
+            _check(sample.get("paid_amount") == 200.0, "paid appt list item.paid_amount == 200.0", str(sample.get("paid_amount")))
+            _check(sample.get("paid_method") == "etransfert", "paid appt list item.paid_method == 'etransfert'", str(sample.get("paid_method")))
+            _check(sample.get("revenue_id") == revenue_id_1, "paid appt list item.revenue_id matches", str(sample.get("revenue_id")))
+
+        unpaid = next((x for x in items if x.get("id") == appt_id_3), None)
+        _check(unpaid is not None, f"unpaid appt {appt_id_3} present in list")
+        if unpaid:
+            for f in ("paid_at", "paid_amount", "paid_method", "revenue_id"):
+                _check(f in unpaid, f"list item has '{f}' key (unpaid appt)", f"keys={list(unpaid.keys())}")
+                _check(unpaid.get(f) is None, f"unpaid appt list item.{f} is null", f"value={unpaid.get(f)}")
+
+    # CLEANUP
+    print("\n=== CLEANUP ===")
+    for rid in created_revenue_ids:
+        r = requests.delete(f"{API}/revenues/{rid}", timeout=TIMEOUT)
+        _check(r.status_code == 200, f"DELETE /api/revenues/{rid} → 200", _fmt(r))
+
+    for aid in created_appt_ids:
+        r = requests.delete(f"{API}/appointments/{aid}/permanent", timeout=TIMEOUT)
+        _check(r.status_code == 200, f"DELETE /api/appointments/{aid}/permanent → 200", _fmt(r))
+
+    for cid in created_client_ids:
+        r = requests.delete(f"{API}/clients-db/{cid}", timeout=TIMEOUT)
+        ok = r.status_code in (200, 404)
+        _check(ok, f"DELETE /api/clients-db/{cid} → 200/404", _fmt(r))
+
+    r = requests.get(f"{API}/revenues", timeout=TIMEOUT)
+    if r.status_code == 200:
+        final_revs = r.json()
+        final_count = len(final_revs) if isinstance(final_revs, list) else 0
+        _check(
+            final_count == baseline_count,
+            f"final /api/revenues count matches baseline ({baseline_count})",
+            f"got {final_count}",
+        )
+
+    print(f"\n========== RESULTS ==========")
+    print(f"PASSED: {_passed}")
+    print(f"FAILED: {_failed}")
+    if _failures:
+        print("\nFAILURES:")
+        for f in _failures:
+            print(f"  - {f}")
+    return 0 if _failed == 0 else 1
 
 
 if __name__ == "__main__":
-    ok = main()
-    sys.exit(0 if ok else 1)
+    sys.exit(main())

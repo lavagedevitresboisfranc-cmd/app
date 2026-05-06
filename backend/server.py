@@ -217,6 +217,11 @@ class AppointmentResponse(BaseModel):
     client_photo: Optional[str] = None
     client_id: Optional[str] = None
     archived_at: Optional[str] = None
+    # Payment tracking (set by /encaisser endpoint)
+    paid_at: Optional[str] = None
+    paid_amount: Optional[float] = None
+    paid_method: Optional[str] = None
+    revenue_id: Optional[str] = None
     # Up to 3 tentatively-proposed alternative slots while waiting for the client's reply.
     # Each entry: {"date": "YYYY-MM-DD", "time_slot": "HH:MM", "duration_minutes": int}
     proposed_alternatives: Optional[List[Dict[str, Any]]] = None
@@ -4598,6 +4603,85 @@ async def delete_revenue(revenue_id: str):
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Revenu introuvable")
     return {"deleted": 1}
+
+
+# --- Encaisser (Collect payment for an appointment) ---
+@api_router.post("/appointments/{appointment_id}/encaisser")
+async def encaisser_appointment(appointment_id: str, payload: dict = Body(...)):
+    """
+    Collect payment for an appointment.
+    Atomically:
+      1. Creates a Revenue document linked to this appointment
+      2. Marks the appointment as status='paid' with paid_at, paid_amount, paid_method
+    Body:
+      amount (float, required >0), payment_method ('cash'|'etransfert'),
+      category ('printemps'|'automne'), date ('YYYY-MM-DD'),
+      description (str, optional)
+    """
+    appt = await db.appointments.find_one({"id": appointment_id})
+    if not appt:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+
+    try:
+        amount = float(payload.get("amount", 0) or 0)
+    except Exception:
+        amount = 0.0
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Le montant doit être positif")
+
+    pm = (payload.get("payment_method") or "cash").lower()
+    if pm not in ("cash", "etransfert"):
+        raise HTTPException(status_code=400, detail="Mode de paiement: cash ou etransfert")
+
+    category = (payload.get("category") or "printemps").lower()
+    if category not in VALID_REVENUE_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Catégorie invalide. Valides: {VALID_REVENUE_CATEGORIES}")
+
+    date_str = payload.get("date") or datetime.now(timezone.utc).date().isoformat()
+    address = appt.get("client_address", "") or ""
+    default_desc = f"Lavage de vitres - {address}".strip(" -")
+    description = (payload.get("description") or default_desc).strip()
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Create revenue document
+    rev_doc = {
+        "id": str(uuid.uuid4()),
+        "amount": amount,
+        "category": category,
+        "date": date_str,
+        "description": description,
+        "client_name": appt.get("client_name", "") or "",
+        "payment_method": pm,
+        "appointment_id": appointment_id,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.revenues.insert_one(rev_doc)
+
+    # Mark appointment as paid
+    await db.appointments.update_one(
+        {"id": appointment_id},
+        {"$set": {
+            "status": "paid",
+            "paid_at": now,
+            "paid_amount": amount,
+            "paid_method": pm,
+            "revenue_id": rev_doc["id"],
+        }}
+    )
+
+    return {
+        "ok": True,
+        "revenue": _revenue_doc_to_response(rev_doc),
+        "appointment_id": appointment_id,
+        "status": "paid",
+        "paid_at": now,
+        "paid_amount": amount,
+        "paid_method": pm,
+    }
+
+
 
 
 @api_router.get("/revenues/export/excel")

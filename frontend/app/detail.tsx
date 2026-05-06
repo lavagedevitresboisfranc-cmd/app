@@ -11,6 +11,9 @@ import {
   Share,
   Platform,
   Image,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -40,6 +43,10 @@ interface Appointment {
   assigned_id?: string;
   assigned_color?: string;
   client_photo?: string;
+  paid_at?: string;
+  paid_amount?: number;
+  paid_method?: string;
+  revenue_id?: string;
 }
 
 interface Employee { id: string; name: string; color: string; }
@@ -54,6 +61,79 @@ export default function DetailScreen() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const audioPlayer = useAudioPlayer(recordingUri);
+
+  // === Encaisser (Collect payment) modal state ===
+  const [showEncaisserModal, setShowEncaisserModal] = useState(false);
+  const [encAmount, setEncAmount] = useState('');
+  const [encDate, setEncDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [encDescription, setEncDescription] = useState('');
+  const [encCategory, setEncCategory] = useState<'printemps' | 'automne'>('printemps');
+  const [encMethod, setEncMethod] = useState<'cash' | 'etransfert'>('cash');
+  const [encSaving, setEncSaving] = useState(false);
+
+  const openEncaisserModal = () => {
+    if (!appointment) return;
+    // Pre-fill amount from price
+    setEncAmount(appointment.price > 0 ? String(appointment.price) : '');
+    // Pre-fill date as today
+    setEncDate(new Date().toISOString().slice(0, 10));
+    // Auto-detect season: Quebec window cleaning — Jan-Jul = printemps, Aug-Dec = automne
+    const month = new Date().getMonth() + 1; // 1-12
+    setEncCategory(month <= 7 ? 'printemps' : 'automne');
+    // Pre-fill description
+    const addr = (appointment.client_address || '').trim();
+    setEncDescription(addr ? `Lavage de vitres - ${addr}` : 'Lavage de vitres');
+    // Default method = cash
+    setEncMethod('cash');
+    setShowEncaisserModal(true);
+  };
+
+  const submitEncaisser = async () => {
+    if (!appointment) return;
+    const amountNum = parseFloat((encAmount || '').replace(',', '.'));
+    if (!isFinite(amountNum) || amountNum <= 0) {
+      Alert.alert('Montant invalide', 'Veuillez entrer un montant supérieur à 0.');
+      return;
+    }
+    if (!encDate || !/^\d{4}-\d{2}-\d{2}$/.test(encDate)) {
+      Alert.alert('Date invalide', 'Format requis: AAAA-MM-JJ.');
+      return;
+    }
+    setEncSaving(true);
+    try {
+      const res = await fetch(`${API_URL}/api/appointments/${appointment.id}/encaisser`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: amountNum,
+          payment_method: encMethod,
+          category: encCategory,
+          date: encDate,
+          description: encDescription,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        Alert.alert('Erreur', data?.detail || 'Échec de l\'encaissement.');
+        setEncSaving(false);
+        return;
+      }
+      setShowEncaisserModal(false);
+      setEncSaving(false);
+      const methodLabel = encMethod === 'cash' ? 'Comptant' : 'E-transfert';
+      const okMsg = `✅ ${amountNum.toFixed(2)} $ encaissé (${methodLabel}).\n\nLe rendez-vous est marqué Payé et le revenu est enregistré.`;
+      if (Platform.OS === 'web') {
+        // eslint-disable-next-line no-alert
+        try { (window as any).alert(okMsg); } catch {}
+      } else {
+        Alert.alert('Encaissé!', okMsg);
+      }
+      fetchAppointment();
+    } catch (e) {
+      setEncSaving(false);
+      Alert.alert('Erreur', 'Erreur réseau.');
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -659,9 +739,18 @@ export default function DetailScreen() {
   };
 
   const getStatusColor = (status: string) => {
+    if (status === 'paid') return '#0891B2';
     if (status === 'completed') return '#34C759';
     if (status === 'cancelled') return '#FF3B30';
     return '#000000';
+  };
+
+  const getStatusLabel = (status: string) => {
+    if (status === 'paid') return '💰 Payé';
+    if (status === 'completed') return '✓ Complété';
+    if (status === 'cancelled') return '✗ Annulé';
+    if (status === 'upcoming') return '📅 À venir';
+    return status;
   };
 
   if (loading) {
@@ -701,10 +790,39 @@ export default function DetailScreen() {
           <View style={[styles.statusBadge, { borderColor: getStatusColor(appointment.status) }]}>
             <View style={[styles.statusDot, { backgroundColor: getStatusColor(appointment.status) }]} />
             <Text style={[styles.statusBadgeText, { color: getStatusColor(appointment.status) }]}>
-              {appointment.status}
+              {getStatusLabel(appointment.status)}
             </Text>
           </View>
         </View>
+
+        {/* PAYÉ banner — appears when status === 'paid' */}
+        {appointment.status === 'paid' && appointment.paid_at ? (
+          <View style={styles.paidBanner} testID="paid-banner">
+            <Feather name="check-circle" size={20} color="#FFFFFF" />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={styles.paidBannerTitle}>💰 PAYÉ</Text>
+              <Text style={styles.paidBannerText}>
+                {(appointment.paid_amount ?? 0).toFixed(2)} $ — {appointment.paid_method === 'etransfert' ? 'E-transfert' : 'Comptant'}
+              </Text>
+              <Text style={styles.paidBannerDate}>
+                Encaissé le {(appointment.paid_at || '').slice(0, 10)}
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
+        {/* ENCAISSER button — always visible (creates a Revenue + marks as paid) */}
+        <TouchableOpacity
+          testID="encaisser-button"
+          style={[styles.encaisserBtn, appointment.status === 'paid' ? styles.encaisserBtnPaid : null]}
+          activeOpacity={0.85}
+          onPress={openEncaisserModal}
+        >
+          <Feather name="dollar-sign" size={20} color="#FFFFFF" />
+          <Text style={styles.encaisserBtnText}>
+            {appointment.status === 'paid' ? 'Modifier l\'encaissement' : '💰 Encaisser ce rendez-vous'}
+          </Text>
+        </TouchableOpacity>
 
         {/* Client Avatar */}
         <View style={styles.avatarSection}>
@@ -1114,6 +1232,159 @@ export default function DetailScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* === ENCAISSER MODAL === */}
+      <Modal
+        visible={showEncaisserModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => !encSaving && setShowEncaisserModal(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>💰 Encaisser</Text>
+              <TouchableOpacity
+                testID="encaisser-close"
+                onPress={() => !encSaving && setShowEncaisserModal(false)}
+                style={styles.modalCloseBtn}
+              >
+                <Feather name="x" size={22} color="#737373" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 520 }} keyboardShouldPersistTaps="handled">
+              {/* Client (read-only) */}
+              <View style={styles.modalReadOnly}>
+                <Text style={styles.modalFieldLabel}>CLIENT</Text>
+                <Text style={styles.modalReadOnlyText}>{appointment?.client_name || '—'}</Text>
+              </View>
+
+              {/* Montant */}
+              <Text style={styles.modalFieldLabel}>MONTANT ($)</Text>
+              <TextInput
+                testID="enc-amount"
+                style={styles.modalInput}
+                value={encAmount}
+                onChangeText={setEncAmount}
+                keyboardType="decimal-pad"
+                placeholder="0.00"
+                placeholderTextColor="#A3A3A3"
+              />
+
+              {/* Date */}
+              <Text style={styles.modalFieldLabel}>DATE</Text>
+              {Platform.OS === 'web' ? (
+                // @ts-ignore — web-only HTML input for cleaner date picking
+                <input
+                  type="date"
+                  value={encDate}
+                  onChange={(e: any) => setEncDate(e.target.value)}
+                  style={{
+                    fontSize: 16,
+                    padding: 12,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: '#D4D4D4',
+                    borderStyle: 'solid',
+                    marginBottom: 14,
+                    width: '100%',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              ) : (
+                <TextInput
+                  testID="enc-date"
+                  style={styles.modalInput}
+                  value={encDate}
+                  onChangeText={setEncDate}
+                  placeholder="AAAA-MM-JJ"
+                  placeholderTextColor="#A3A3A3"
+                />
+              )}
+
+              {/* Catégorie */}
+              <Text style={styles.modalFieldLabel}>CATÉGORIE</Text>
+              <View style={styles.modalChipRow}>
+                <TouchableOpacity
+                  testID="enc-cat-printemps"
+                  style={[styles.modalChip, encCategory === 'printemps' && styles.modalChipActive, encCategory === 'printemps' && { borderColor: '#EC4899', backgroundColor: '#FCE7F3' }]}
+                  onPress={() => setEncCategory('printemps')}
+                >
+                  <Text style={[styles.modalChipText, encCategory === 'printemps' && { color: '#9D174D' }]}>🌸 Printemps</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  testID="enc-cat-automne"
+                  style={[styles.modalChip, encCategory === 'automne' && styles.modalChipActive, encCategory === 'automne' && { borderColor: '#F59E0B', backgroundColor: '#FEF3C7' }]}
+                  onPress={() => setEncCategory('automne')}
+                >
+                  <Text style={[styles.modalChipText, encCategory === 'automne' && { color: '#92400E' }]}>🍂 Automne</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Mode de paiement */}
+              <Text style={styles.modalFieldLabel}>MODE DE PAIEMENT</Text>
+              <View style={styles.modalChipRow}>
+                <TouchableOpacity
+                  testID="enc-method-cash"
+                  style={[styles.modalChip, encMethod === 'cash' && styles.modalChipActive, encMethod === 'cash' && { borderColor: '#10B981', backgroundColor: '#D1FAE5' }]}
+                  onPress={() => setEncMethod('cash')}
+                >
+                  <Text style={[styles.modalChipText, encMethod === 'cash' && { color: '#065F46' }]}>💵 Comptant</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  testID="enc-method-etransfert"
+                  style={[styles.modalChip, encMethod === 'etransfert' && styles.modalChipActive, encMethod === 'etransfert' && { borderColor: '#0891B2', backgroundColor: '#CFFAFE' }]}
+                  onPress={() => setEncMethod('etransfert')}
+                >
+                  <Text style={[styles.modalChipText, encMethod === 'etransfert' && { color: '#155E75' }]}>📱 E-transfert</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Description */}
+              <Text style={styles.modalFieldLabel}>DESCRIPTION</Text>
+              <TextInput
+                testID="enc-description"
+                style={[styles.modalInput, { minHeight: 64 }]}
+                value={encDescription}
+                onChangeText={setEncDescription}
+                multiline
+                placeholder="Lavage de vitres - ..."
+                placeholderTextColor="#A3A3A3"
+              />
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                testID="enc-cancel"
+                style={styles.modalBtnSecondary}
+                onPress={() => !encSaving && setShowEncaisserModal(false)}
+                disabled={encSaving}
+              >
+                <Text style={styles.modalBtnSecondaryText}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="enc-confirm"
+                style={[styles.modalBtnPrimary, encSaving && { opacity: 0.6 }]}
+                onPress={submitEncaisser}
+                disabled={encSaving}
+              >
+                {encSaving ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Feather name="check" size={18} color="#FFFFFF" />
+                    <Text style={styles.modalBtnPrimaryText}>Encaisser</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1378,5 +1649,160 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#0891B2',
+  },
+  // === ENCAISSER button + PAID banner ===
+  encaisserBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#10B981',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    marginBottom: 18,
+    boxShadow: '0px 2px 6px rgba(16,185,129,0.30)',
+  },
+  encaisserBtnPaid: {
+    backgroundColor: '#0891B2',
+    boxShadow: '0px 2px 6px rgba(8,145,178,0.30)',
+  },
+  encaisserBtnText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  paidBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0891B2',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 14,
+  },
+  paidBannerTitle: { color: '#FFFFFF', fontSize: 14, fontWeight: '800', letterSpacing: 0.5 },
+  paidBannerText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700', marginTop: 2 },
+  paidBannerDate: { color: '#CFFAFE', fontSize: 12, fontWeight: '500', marginTop: 2 },
+  // === Modal ===
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 480,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 18,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0A0A0A',
+  },
+  modalCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalReadOnly: {
+    backgroundColor: '#F5F5F7',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  modalReadOnlyText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0A0A0A',
+    marginTop: 2,
+  },
+  modalFieldLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#737373',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  modalInput: {
+    fontSize: 16,
+    color: '#0A0A0A',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D4D4D4',
+    marginBottom: 14,
+    backgroundColor: '#FFFFFF',
+  },
+  modalChipRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  modalChip: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#E5E5E5',
+    backgroundColor: '#FAFAFA',
+    alignItems: 'center',
+  },
+  modalChipActive: {
+    borderColor: '#0A0A0A',
+  },
+  modalChipText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#525252',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+  },
+  modalBtnSecondary: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D4D4D4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  modalBtnSecondaryText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#525252',
+  },
+  modalBtnPrimary: {
+    flex: 1.6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: '#10B981',
+  },
+  modalBtnPrimaryText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 });
