@@ -103,23 +103,31 @@ export default function ClientDbDetailScreen() {
   };
 
   const deleteClient = () => {
-    Alert.alert('Supprimer ce client?', 'Action irréversible', [
-      { text: 'Annuler', style: 'cancel' },
-      {
-        text: 'Supprimer',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            const res = await fetch(`${API_URL}/api/clients-db/${id}`, { method: 'DELETE' });
-            if (!res.ok) throw new Error('Erreur');
-            Alert.alert('✅ Supprimé');
-            router.back();
-          } catch (e: any) {
-            Alert.alert('Erreur', e?.message || 'Suppression impossible');
-          }
-        },
-      },
-    ]);
+    const doDelete = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/clients-db/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Erreur');
+        if (Platform.OS === 'web') {
+          window.alert('✅ Client supprimé');
+        } else {
+          Alert.alert('✅ Supprimé');
+        }
+        router.back();
+      } catch (e: any) {
+        const msg = e?.message || 'Suppression impossible';
+        if (Platform.OS === 'web') window.alert('Erreur: ' + msg);
+        else Alert.alert('Erreur', msg);
+      }
+    };
+    if (Platform.OS === 'web') {
+      const ok = window.confirm('Supprimer ce client?\n\nAction irréversible.');
+      if (ok) doDelete();
+    } else {
+      Alert.alert('Supprimer ce client?', 'Action irréversible', [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Supprimer', style: 'destructive', onPress: doDelete },
+      ]);
+    }
   };
 
   const call = () => phone && Linking.openURL(`tel:${phone.replace(/\D/g, '')}`);

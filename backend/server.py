@@ -2637,6 +2637,157 @@ async def calendar_ics_feed(token: str):
     )
 
 
+# === Client appointment confirmation flow ===
+
+@api_router.post("/appointments/{appointment_id}/send-client-confirmation")
+async def send_client_confirmation(appointment_id: str):
+    """Send a confirmation email to the CLIENT with Confirm / Suggest-other buttons.
+
+    Returns a ready-made SMS body the owner can use to send via iMessage too.
+    """
+    appt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if not appt:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+
+    name = appt.get("client_name") or "Client"
+    email = (appt.get("client_email") or "").strip()
+    date = appt.get("date") or ""
+    time_slot = appt.get("time_slot") or ""
+    duration = appt.get("duration_minutes") or 60
+    addr = appt.get("client_address") or ""
+    price = appt.get("price")
+
+    # Format the date nicely in French
+    try:
+        y, m, d = [int(x) for x in date.split('-')]
+        months = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+                  'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
+        date_pretty = f"{d} {months[m-1]} {y}"
+    except Exception:
+        date_pretty = date
+
+    # Build the confirmation page URLs (preview backend)
+    base_url = (os.environ.get("APP_URL") or "").rstrip("/")
+    confirm_url = f"{base_url}/api/appointments/{appointment_id}/client-confirm?action=confirm"
+    alternative_url = f"{base_url}/api/appointments/{appointment_id}/client-confirm?action=alternative"
+
+    sms_body = (
+        f"Bonjour {name},\n\n"
+        f"Votre rendez-vous Lavage de Vitres Bois-Franc est planifié:\n"
+        f"📅 {date_pretty} à {time_slot}\n"
+        f"📍 {addr}\n\n"
+        f"Confirmer ✅: {confirm_url}\n\n"
+        f"Suggérer un autre moment 🔄: {alternative_url}\n\n"
+        f"Merci!"
+    )
+
+    sent_email = False
+    if email and resend.api_key:
+        html = f"""
+<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;color:#111;">
+  <div style="background:#0B5394;color:#FFFFFF;padding:18px;border-radius:8px 8px 0 0;text-align:center;">
+    <h2 style="margin:0;font-size:18px;">📅 Confirmation de rendez-vous</h2>
+  </div>
+  <div style="background:#FFFFFF;border:1px solid #E5E7EB;border-top:none;padding:22px;border-radius:0 0 8px 8px;">
+    <p>Bonjour <strong>{name}</strong>,</p>
+    <p>Nous avons planifié votre rendez-vous pour le service de lavage de vitres :</p>
+    <div style="background:#F1F5F9;border-left:4px solid #0B5394;padding:12px 14px;border-radius:6px;margin:12px 0;">
+      <p style="margin:0 0 4px;"><strong>📅 Date :</strong> {date_pretty}</p>
+      <p style="margin:0 0 4px;"><strong>🕐 Heure :</strong> {time_slot} ({duration} min)</p>
+      <p style="margin:0 0 4px;"><strong>📍 Adresse :</strong> {addr}</p>
+      {f'<p style="margin:0;"><strong>💰 Prix estimé :</strong> {float(price):.2f} $</p>' if price else ''}
+    </div>
+    <p>Merci de confirmer ou suggérer un autre moment :</p>
+    <table role="presentation" cellspacing="0" cellpadding="0" style="margin:18px auto;">
+      <tr>
+        <td style="padding:0 6px;">
+          <a href="{confirm_url}" style="display:inline-block;padding:13px 24px;background:#10B981;color:#FFFFFF;text-decoration:none;border-radius:8px;font-weight:700;">✅ Confirmer</a>
+        </td>
+        <td style="padding:0 6px;">
+          <a href="{alternative_url}" style="display:inline-block;padding:13px 24px;background:#F59E0B;color:#FFFFFF;text-decoration:none;border-radius:8px;font-weight:700;">🔄 Autre créneau</a>
+        </td>
+      </tr>
+    </table>
+    <p style="font-size:12px;color:#94A3B8;text-align:center;margin-top:16px;">
+      Si les boutons ne fonctionnent pas, copiez ce lien :<br>
+      <span style="word-break:break-all;">{confirm_url}</span>
+    </p>
+  </div>
+  <p style="text-align:center;color:#9CA3AF;font-size:11px;margin-top:8px;">Lavage de Vitres Bois-Franc &mdash; Gexia360</p>
+</div>
+"""
+        try:
+            resend.Emails.send({
+                "from": os.environ.get("RESEND_FROM") or "onboarding@resend.dev",
+                "to": [email],
+                "subject": f"Confirmation de rendez-vous — {date_pretty}",
+                "html": html,
+            })
+            sent_email = True
+        except Exception as e:
+            logger.warning(f"send_client_confirmation email failed: {e}")
+
+    return {
+        "email_sent": sent_email,
+        "client_email": email,
+        "client_phone": appt.get("client_phone") or "",
+        "sms_body": sms_body,
+        "confirm_url": confirm_url,
+        "alternative_url": alternative_url,
+    }
+
+
+@app.get("/api/appointments/{appointment_id}/client-confirm")
+async def client_confirm_page(appointment_id: str, action: str = "confirm"):
+    """Public landing page where the client confirms or asks for another slot."""
+    from fastapi.responses import HTMLResponse
+    appt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if not appt:
+        return HTMLResponse(
+            "<h1>Rendez-vous introuvable</h1><p>Veuillez contacter Lavage de Vitres Bois-Franc.</p>",
+            status_code=404,
+        )
+    name = appt.get("client_name") or "Client"
+    date = appt.get("date") or ""
+    time_slot = appt.get("time_slot") or ""
+
+    if action == "confirm":
+        # Mark as confirmed
+        await db.appointments.update_one(
+            {"id": appointment_id},
+            {"$set": {"client_confirmed": True, "client_confirmed_at": datetime.now(timezone.utc).isoformat()}},
+        )
+        title = "✅ Confirmé!"
+        msg = f"Merci {name}! Votre rendez-vous du <strong>{date} à {time_slot}</strong> est confirmé."
+        color = "#10B981"
+    else:
+        # Mark as alternative requested
+        await db.appointments.update_one(
+            {"id": appointment_id},
+            {"$set": {"client_requested_alternative": True, "client_alt_requested_at": datetime.now(timezone.utc).isoformat()}},
+        )
+        title = "🔄 Demande reçue"
+        msg = f"Merci {name}! Nous allons vous contacter rapidement pour proposer un autre créneau."
+        color = "#F59E0B"
+
+    html = f"""<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title}</title>
+<style>
+body{{font-family:-apple-system,Arial,sans-serif;background:#F8FAFC;margin:0;padding:0;min-height:100vh;display:flex;align-items:center;justify-content:center;}}
+.card{{background:#FFFFFF;border-radius:14px;padding:28px;max-width:420px;width:90%;box-shadow:0 6px 20px rgba(0,0,0,0.08);text-align:center;}}
+h1{{color:{color};font-size:28px;margin:8px 0 14px;}}
+p{{color:#374151;font-size:15px;line-height:1.6;}}
+.brand{{color:#94A3B8;font-size:12px;margin-top:18px;}}
+</style></head>
+<body><div class="card">
+<h1>{title}</h1>
+<p>{msg}</p>
+<p class="brand">Lavage de Vitres Bois-Franc &mdash; Gexia360</p>
+</div></body></html>"""
+    return HTMLResponse(content=html)
+
+
 @api_router.get("/calendar/info")
 async def calendar_info(request: Request):
     """Return the calendar subscription URL (with token) for the frontend page."""

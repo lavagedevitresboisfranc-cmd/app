@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Platform,
   Keyboard,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -380,6 +381,57 @@ export default function CreateScreen() {
       if (res.ok) {
         // If editing and contact info changed, ask to sync the Client DB
         await maybeSyncClientDb();
+
+        // For NEW appointments: ask if owner wants to send a confirmation
+        // email + SMS to the client (with Confirm / Suggest-other buttons).
+        if (!isEditing) {
+          const created = await res.json().catch(() => null);
+          const newId = created?.id;
+          if (newId) {
+            const askConfirm = (msg: string) =>
+              Platform.OS === 'web'
+                ? Promise.resolve(window.confirm(msg))
+                : new Promise<boolean>((resolve) => {
+                    Alert.alert(
+                      'Envoyer confirmation au client?',
+                      msg,
+                      [
+                        { text: 'Non', style: 'cancel', onPress: () => resolve(false) },
+                        { text: 'Oui', style: 'default', onPress: () => resolve(true) },
+                      ],
+                      { cancelable: true }
+                    );
+                  });
+            const ok = await askConfirm(
+              `Envoyer un courriel + SMS à ${clientName.trim()} avec les boutons:\n\n✅ Confirmer\n🔄 Proposer un autre créneau\n\n(Vous serez notifié de sa réponse)`
+            );
+            if (ok) {
+              try {
+                const cr = await fetch(`${API_URL}/api/appointments/${newId}/send-client-confirmation`, { method: 'POST' });
+                const data = await cr.json();
+                // If we have a phone number, open SMS with pre-filled body
+                const phone = (clientPhone || '').replace(/\D/g, '');
+                if (phone && data?.sms_body) {
+                  const url = `sms:${phone}${Platform.OS === 'ios' ? '&' : '?'}body=${encodeURIComponent(data.sms_body)}`;
+                  if (Platform.OS === 'web') {
+                    window.open(url, '_blank');
+                  } else {
+                    Linking.openURL(url).catch(() => {});
+                  }
+                }
+                if (Platform.OS === 'web') {
+                  const sentEmail = data?.email_sent ? '✅ Courriel envoyé' : '⚠️ Pas de courriel envoyé (client_email manquant)';
+                  window.alert(`${sentEmail}\n${phone ? '📱 Préparation du SMS dans Messages...' : ''}`);
+                } else if (data?.email_sent) {
+                  Alert.alert('✅ Confirmation envoyée', `Courriel envoyé à ${data.client_email}`);
+                }
+              } catch (e) {
+                console.error('send-client-confirmation failed', e);
+              }
+            }
+          }
+        }
+
         // Robust navigation (works even with empty history stack)
         try { router.replace('/' as any); } catch { router.push('/' as any); }
       } else {
