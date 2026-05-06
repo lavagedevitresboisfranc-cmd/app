@@ -71,6 +71,23 @@ export default function DetailScreen() {
     } catch {}
   };
 
+  // Helper: ask the backend to convert any long URL/path into a 6-char short URL
+  // so SMS messages stay clean and readable. Falls back to the original URL on error.
+  const shortenUrl = async (target: string): Promise<string> => {
+    try {
+      const r = await fetch(`${API_URL}/api/shorten`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target }),
+      });
+      if (!r.ok) return target;
+      const data = await r.json();
+      return data?.short_url || target;
+    } catch {
+      return target;
+    }
+  };
+
   const handleAssignEmployee = () => {
     if (!appointment) return;
     if (employees.length === 0) {
@@ -273,23 +290,21 @@ export default function DetailScreen() {
     return { subject, body };
   };
 
-  const _buildPaymentReminderMessage = (lang: Lang = 'fr'): { subject: string; body: string } => {
+  const _buildPaymentReminderMessage = async (lang: Lang = 'fr'): Promise<{ subject: string; body: string }> => {
     if (!appointment) return { subject: '', body: '' };
     const name = appointment.client_name || '';
     const when = _formatTimeForClient(lang);
     const price = (appointment.price || 0).toFixed(2);
-    // Use SHORT invoice URL (8-char prefix) so iMessage/SMS doesn't break the link
+    // Use 6-char short URL system for clean SMS rendering
     const shortId = (appointment.id || '').slice(0, 8);
-    const invoiceUrl = `${API_URL}/api/invoice/${shortId}`;
+    const invoiceUrl = await shortenUrl(`/api/invoice/${shortId}`);
     if (lang === 'en') {
       const subject = `Friendly payment reminder — Invoice ${price} $`;
-      // URL on its OWN line (no leading emoji/colon) so iMessage auto-linkifies it cleanly
-      const body = `Hello ${name},\n\nJust a friendly reminder regarding the invoice for our service performed on ${when}.\n\nAmount due: ${price} $\n\n${invoiceUrl}\n\nIf the payment has already been sent, please disregard this message — and thank you!\n\nAccepted payment methods:\n• E-transfer\n• Cash\n\nThank you very much for your business!`;
+      const body = `Hello ${name},\n\nJust a friendly reminder regarding the invoice for our service performed on ${when}.\n\nAmount due: ${price} $\n\n📄 Facture: ${invoiceUrl}\n\nIf the payment has already been sent, please disregard this message — and thank you!\n\nAccepted payment methods:\n• E-transfer\n• Cash\n\nThank you very much for your business!`;
       return { subject, body };
     }
     const subject = `Rappel de paiement — Facture ${price} $`;
-    // URL on its OWN line (no leading emoji/colon) so iMessage auto-linkifies it cleanly
-    const body = `Bonjour ${name},\n\nPetit rappel concernant la facture pour le service effectué le ${when}.\n\nMontant dû : ${price} $\n\n${invoiceUrl}\n\nSi le paiement a déjà été envoyé, veuillez ignorer ce message — et merci!\n\nMéthodes de paiement acceptées :\n• Virement Interac\n• Comptant\n\nMerci beaucoup pour votre confiance!`;
+    const body = `Bonjour ${name},\n\nPetit rappel concernant la facture pour le service effectué le ${when}.\n\nMontant dû : ${price} $\n\n📄 Facture: ${invoiceUrl}\n\nSi le paiement a déjà été envoyé, veuillez ignorer ce message — et merci!\n\nMéthodes de paiement acceptées :\n• Virement Interac\n• Comptant\n\nMerci beaucoup pour votre confiance!`;
     return { subject, body };
   };
 
@@ -415,8 +430,8 @@ export default function DetailScreen() {
   };
 
   const handlePaymentReminder = (channel: 'sms' | 'email') => {
-    _pickLanguage((lang) => {
-      const { subject, body } = _buildPaymentReminderMessage(lang);
+    _pickLanguage(async (lang) => {
+      const { subject, body } = await _buildPaymentReminderMessage(lang);
       if (channel === 'sms') {
         _sendSms(body);
       } else {
@@ -893,17 +908,17 @@ export default function DetailScreen() {
               testID="sms-invoice-button"
               style={[styles.toolBtn, { borderColor: '#10B981' }]}
               activeOpacity={0.7}
-              onPress={() => {
+              onPress={async () => {
                 if (!appointment) return;
                 const phone = (appointment.client_phone || '').replace(/\D/g, '');
                 if (!phone) {
                   Alert.alert('Téléphone manquant', 'Ce client n\'a pas de numéro.');
                   return;
                 }
-                // Use SHORT invoice URL (8-char prefix) so the link doesn't break in iMessage
+                // Use 6-char short URL for clean iMessage rendering
                 const shortId = (appointment.id || '').slice(0, 8);
-                const invoiceUrl = `${API_URL}/api/invoice/${shortId}`;
-                const msg = `Bonjour ${appointment.client_name || ''},\n\nVoici votre facture: ${invoiceUrl}\n\nMerci pour votre confiance!`;
+                const invoiceUrl = await shortenUrl(`/api/invoice/${shortId}`);
+                const msg = `Bonjour ${appointment.client_name || ''},\n\n📄 Facture: ${invoiceUrl}\n\nMerci pour votre confiance!`;
                 _sendSms(msg);
               }}
             >

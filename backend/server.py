@@ -2683,6 +2683,22 @@ async def short_link_resolver(code: str):
     return RedirectResponse(url=f"{base_url}{target}", status_code=302)
 
 
+class ShortenReq(BaseModel):
+    target: str
+
+
+@api_router.post("/shorten")
+async def shorten_url(payload: ShortenReq):
+    """Create a 6-char short URL for any internal /api/... path or full URL.
+    Used by the frontend to make SMS/email links compact and clickable.
+    """
+    target = (payload.target or "").strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="target is required")
+    short_url = await _make_short_url(target)
+    return {"short_url": short_url}
+
+
 # === Client appointment confirmation flow ===
 
 @api_router.post("/appointments/{appointment_id}/send-client-confirmation")
