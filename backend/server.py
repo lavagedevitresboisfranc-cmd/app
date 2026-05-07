@@ -2954,7 +2954,6 @@ h1{{font-size:22px;margin:0 0 6px;color:#0F172A;}}
     <div class="btns">
       <a href="{confirm_action_url}" class="btn btn-primary">✅ Réservé (je confirme)</a>
       <a href="{alternative_action_url}" class="btn btn-warn">🔄 Modifier (autre moment)</a>
-      <a href="{invoice_url}" class="btn btn-info">📄 Voir ma facture</a>
     </div>
   </div>
 

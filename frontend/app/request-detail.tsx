@@ -143,17 +143,38 @@ export default function RequestDetailScreen() {
       showAlert('Téléphone manquant', 'Ce client n\'a pas de numéro pour SMS.');
       return;
     }
-    const name = apt?.client_name || request?.customer_name || '';
-    const date = apt?.date || request?.preferred_date || '';
-    const time = (apt?.time_slot || request?.preferred_time || '').slice(0, 5);
-    const addr = apt?.client_address || request?.customer_address || '';
-    const addrLine = addr ? `\n📍 ${addr}` : '';
-    const body = wrapSms(
-      `Bonjour ${name},\n\nVotre rendez-vous est CONFIRMÉ ✅\n\n📅 ${date}\n⏰ ${time}${addrLine}\n\nUn rappel automatique vous sera envoyé la veille.\n\nMerci!`
-    );
+    const apptId = apt?.id || apt?.appointment_id || '';
+    let body = '';
+    // Preferred path: ask the backend for the SMS body containing the short portal URL
+    // (1 short link → page with Réservé / Modifier / Facture buttons).
+    if (apptId) {
+      try {
+        const r = await fetch(`${API_URL}/api/appointments/${apptId}/send-client-confirmation`, { method: 'POST' });
+        if (r.ok) {
+          const d = await r.json().catch(() => ({}));
+          if (d?.sms_body) body = String(d.sms_body);
+        }
+      } catch {}
+    }
+    // Fallback to a simple confirmation message if the backend call failed
+    if (!body) {
+      const name = apt?.client_name || request?.customer_name || '';
+      const date = apt?.date || request?.preferred_date || '';
+      const time = (apt?.time_slot || request?.preferred_time || '').slice(0, 5);
+      const addr = apt?.client_address || request?.customer_address || '';
+      const addrLine = addr ? `\n📍 ${addr}` : '';
+      body = wrapSms(
+        `Bonjour ${name},\n\nVotre rendez-vous est CONFIRMÉ ✅\n\n📅 ${date}\n⏰ ${time}${addrLine}\n\nMerci!`
+      );
+    }
     const sep = Platform.OS === 'ios' ? '&' : '?';
     const url = `sms:${phone}${sep}body=${encodeURIComponent(body)}`;
     try {
+      if (Platform.OS === 'web') {
+        // PWA on iOS Safari: window.open keeps user gesture so iMessage opens.
+        try { (window as any).open(url, '_blank'); } catch { (window as any).location.href = url; }
+        return;
+      }
       const can = await Linking.canOpenURL(url);
       if (can) {
         await Linking.openURL(url);
@@ -1131,6 +1152,63 @@ export default function RequestDetailScreen() {
           {request.status === 'alternative_offered' && (
             <View style={styles.actionsSection}>
               <Text style={styles.sectionLabel}>ACTIONS</Text>
+
+              {/* PRIMARY: Confirm the user's suggested time + SMS portal to client */}
+              {request.suggested_date && request.suggested_time && (
+                <TouchableOpacity
+                  testID="confirm-my-suggestion-button"
+                  style={[styles.acceptBtn, { backgroundColor: '#0891B2', marginBottom: 8 }]}
+                  activeOpacity={0.7}
+                  onPress={async () => {
+                    if (!request) return;
+                    Keyboard.dismiss();
+                    setActing(true);
+                    try {
+                      // Create appointment at the SUGGESTED date/time
+                      const body: any = {
+                        date: request.suggested_date,
+                        time: request.suggested_time,
+                        price: acceptPrice ? parseFloat(acceptPrice) : 0,
+                      };
+                      const res = await fetch(`${API_URL}/api/requests/${id}/accept`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body),
+                      });
+                      if (!res.ok) {
+                        showAlert('Erreur', 'Échec de la création du RDV');
+                        setActing(false);
+                        return;
+                      }
+                      const data = await res.json().catch(() => ({}));
+                      // sendClientSms uses the portal link (Réservé / Modifier / Facture)
+                      const hasPhone = !!(data?.client_phone || request?.customer_phone || '').replace(/\D/g, '');
+                      if (hasPhone) {
+                        await sendClientSms(data);
+                      } else {
+                        if (Platform.OS === 'web') {
+                          // eslint-disable-next-line no-alert
+                          window.alert('✅ RDV créé. Pas de téléphone — aucun SMS envoyé.');
+                        } else {
+                          Alert.alert('✅ RDV créé', 'Pas de téléphone — aucun SMS envoyé.');
+                        }
+                      }
+                      router.back();
+                    } catch {
+                      showAlert('Erreur', 'Erreur réseau');
+                    } finally {
+                      setActing(false);
+                    }
+                  }}
+                  disabled={acting}
+                >
+                  <Feather name="message-circle" size={20} color="#FFFFFF" />
+                  <Text style={styles.acceptBtnText}>
+                    📱 Confirmer ma proposition + SMS client
+                  </Text>
+                </TouchableOpacity>
+              )}
+
               <TouchableOpacity
                 testID="accept-request-button"
                 style={styles.acceptBtn}
