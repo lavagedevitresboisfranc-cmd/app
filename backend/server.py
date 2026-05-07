@@ -2654,10 +2654,25 @@ def _gen_short_code(length: int = 6) -> str:
     return ''.join(_secrets.choice(_SHORT_ALPHABET) for _ in range(length))
 
 
-async def _make_short_url(target_path: str, base_url: str | None = None) -> str:
-    """Create or reuse a short URL like https://host/api/s/abc123 -> target_path."""
+async def _make_short_url(target_path: str, base_url: str | None = None, request: "Request | None" = None) -> str:
+    """Create or reuse a short URL like https://host/api/s/abc123 -> target_path.
+
+    If a Request is provided, use its host headers (x-forwarded-host / host)
+    instead of APP_URL — this guarantees the URL always matches the host the
+    user is currently on (preview vs production vs custom domain).
+    """
     if not base_url:
-        base_url = (os.environ.get("APP_URL") or "").rstrip("/")
+        if request is not None:
+            try:
+                host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+                proto = request.headers.get("x-forwarded-proto") or "https"
+                host = (host or "").split(",")[0].strip()
+                if host:
+                    base_url = f"{proto}://{host}".rstrip("/")
+            except Exception:
+                base_url = None
+        if not base_url:
+            base_url = (os.environ.get("APP_URL") or "").rstrip("/")
     # Try up to 5 times to avoid collisions
     for _ in range(5):
         code = _gen_short_code(6)
@@ -2675,16 +2690,26 @@ async def _make_short_url(target_path: str, base_url: str | None = None) -> str:
 
 
 @app.get("/api/s/{code}")
-async def short_link_resolver(code: str):
-    """Redirect a 6-char short code to its target URL."""
+async def short_link_resolver(code: str, request: Request):
+    """Redirect a 6-char short code to its target URL.
+
+    Builds redirect using the request host (so works on any preview/production URL).
+    """
     from fastapi.responses import RedirectResponse, HTMLResponse
     row = await db.short_links.find_one({"code": code})
     if not row or not row.get("target"):
         return HTMLResponse("<h1>Lien expiré ou invalide</h1>", status_code=404)
-    base_url = (os.environ.get("APP_URL") or "").rstrip("/")
     target = row["target"]
     if target.startswith("http"):
         return RedirectResponse(url=target, status_code=302)
+    # Build base from request headers (matches caller's host)
+    try:
+        host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+        proto = request.headers.get("x-forwarded-proto") or "https"
+        host = (host or "").split(",")[0].strip()
+        base_url = f"{proto}://{host}".rstrip("/") if host else (os.environ.get("APP_URL") or "").rstrip("/")
+    except Exception:
+        base_url = (os.environ.get("APP_URL") or "").rstrip("/")
     return RedirectResponse(url=f"{base_url}{target}", status_code=302)
 
 
@@ -2693,22 +2718,24 @@ class ShortenReq(BaseModel):
 
 
 @api_router.post("/shorten")
-async def shorten_url(payload: ShortenReq):
+async def shorten_url(payload: ShortenReq, request: Request):
     """Create a 6-char short URL for any internal /api/... path or full URL.
     Used by the frontend to make SMS/email links compact and clickable.
+    Uses the actual request host so URLs always match what the user sees.
     """
     target = (payload.target or "").strip()
     if not target:
         raise HTTPException(status_code=400, detail="target is required")
-    short_url = await _make_short_url(target)
+    short_url = await _make_short_url(target, request=request)
     return {"short_url": short_url}
 
 
 # === Client appointment confirmation flow ===
 
 @api_router.post("/appointments/{appointment_id}/send-client-confirmation")
-async def send_client_confirmation(appointment_id: str):
-    """Send a confirmation email to the CLIENT with Confirm / Suggest-other buttons.
+async def send_client_confirmation(appointment_id: str, request: Request):
+    """Send a confirmation email to the CLIENT with a single short link to a
+    customer portal showing 3 buttons: Réservé / Modifier / Facture.
 
     Returns a ready-made SMS body the owner can use to send via iMessage too.
     """
@@ -2733,19 +2760,16 @@ async def send_client_confirmation(appointment_id: str):
     except Exception:
         date_pretty = date
 
-    # Build SHORT URLs for the SMS/email so they fit on a single line
-    confirm_target = f"/api/appointments/{appointment_id}/client-confirm?action=confirm"
-    alternative_target = f"/api/appointments/{appointment_id}/client-confirm?action=alternative"
-    confirm_url = await _make_short_url(confirm_target)
-    alternative_url = await _make_short_url(alternative_target)
+    # ONE short URL → portal page with 3 action buttons (Réservé / Modifier / Facture)
+    portal_target = f"/api/appointments/{appointment_id}/client-confirm"
+    portal_url = await _make_short_url(portal_target, request=request)
 
     sms_body = (
         f"Bonjour {name},\n\n"
-        f"Votre rendez-vous Lavage de Vitres Bois-Franc est planifié:\n"
+        f"Votre rendez-vous Lavage de Vitres Bois-Franc:\n"
         f"📅 {date_pretty} à {time_slot}\n"
         f"📍 {addr}\n\n"
-        f"✅ Accepter: {confirm_url}\n\n"
-        f"🔄 Modifier: {alternative_url}\n\n"
+        f"👉 Voir / Confirmer / Modifier / Facture:\n{portal_url}\n\n"
         f"Merci!"
     )
 
@@ -2765,20 +2789,13 @@ async def send_client_confirmation(appointment_id: str):
       <p style="margin:0 0 4px;"><strong>📍 Adresse :</strong> {addr}</p>
       {f'<p style="margin:0;"><strong>💰 Prix estimé :</strong> {float(price):.2f} $</p>' if price else ''}
     </div>
-    <p>Merci de confirmer ou suggérer un autre moment :</p>
-    <table role="presentation" cellspacing="0" cellpadding="0" style="margin:18px auto;">
-      <tr>
-        <td style="padding:0 6px;">
-          <a href="{confirm_url}" style="display:inline-block;padding:13px 24px;background:#10B981;color:#FFFFFF;text-decoration:none;border-radius:8px;font-weight:700;">✅ Confirmer</a>
-        </td>
-        <td style="padding:0 6px;">
-          <a href="{alternative_url}" style="display:inline-block;padding:13px 24px;background:#F59E0B;color:#FFFFFF;text-decoration:none;border-radius:8px;font-weight:700;">🔄 Autre créneau</a>
-        </td>
-      </tr>
-    </table>
+    <p style="text-align:center;margin:18px 0;">
+      <a href="{portal_url}" style="display:inline-block;padding:14px 28px;background:#0B5394;color:#FFFFFF;text-decoration:none;border-radius:8px;font-weight:700;font-size:16px;">📋 Voir mon rendez-vous</a>
+    </p>
+    <p style="font-size:13px;color:#64748B;text-align:center;">Confirmez, modifiez ou consultez votre facture en un seul clic.</p>
     <p style="font-size:12px;color:#94A3B8;text-align:center;margin-top:16px;">
-      Si les boutons ne fonctionnent pas, copiez ce lien :<br>
-      <span style="word-break:break-all;">{confirm_url}</span>
+      Si le bouton ne fonctionne pas, copiez ce lien :<br>
+      <span style="word-break:break-all;">{portal_url}</span>
     </p>
   </div>
   <p style="text-align:center;color:#9CA3AF;font-size:11px;margin-top:8px;">Lavage de Vitres Bois-Franc &mdash; Gexia360</p>
@@ -2800,60 +2817,175 @@ async def send_client_confirmation(appointment_id: str):
         "client_email": email,
         "client_phone": appt.get("client_phone") or "",
         "sms_body": sms_body,
-        "confirm_url": confirm_url,
-        "alternative_url": alternative_url,
+        "portal_url": portal_url,
+        # Backward-compat aliases (old frontends may still read these)
+        "confirm_url": portal_url,
+        "alternative_url": portal_url,
     }
 
 
 @app.get("/api/appointments/{appointment_id}/client-confirm")
-async def client_confirm_page(appointment_id: str, action: str = "confirm"):
-    """Public landing page where the client confirms or asks for another slot."""
-    from fastapi.responses import HTMLResponse
+async def client_confirm_page(appointment_id: str, request: Request, action: str = ""):
+    """Public landing page where the client sees their appointment with 3 buttons:
+    Réservé (confirm) / Modifier (alternative) / Facture (invoice).
+
+    If `?action=confirm` or `?action=alternative` is set, performs the action and
+    shows a success page. Without action → shows the portal with 3 buttons.
+    """
+    from fastapi.responses import HTMLResponse, RedirectResponse
     appt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
     if not appt:
         return HTMLResponse(
-            "<h1>Rendez-vous introuvable</h1><p>Veuillez contacter Lavage de Vitres Bois-Franc.</p>",
+            "<h1 style='font-family:sans-serif;text-align:center;margin-top:80px;'>Rendez-vous introuvable</h1>"
+            "<p style='text-align:center;'>Veuillez contacter Lavage de Vitres Bois-Franc.</p>",
             status_code=404,
         )
+
     name = appt.get("client_name") or "Client"
     date = appt.get("date") or ""
     time_slot = appt.get("time_slot") or ""
+    duration = appt.get("duration_minutes") or 60
+    addr = appt.get("client_address") or ""
+    price = appt.get("price") or 0
+    status = appt.get("status") or "upcoming"
+    is_paid = (status == "paid")
+    confirmed = bool(appt.get("client_confirmed"))
 
+    # Pretty French date
+    try:
+        y, m, d = [int(x) for x in date.split('-')]
+        months = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+                  'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
+        date_pretty = f"{d} {months[m-1]} {y}"
+    except Exception:
+        date_pretty = date
+
+    # Build URLs based on the actual host the client is on (NEVER from APP_URL env var)
+    try:
+        host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+        proto = request.headers.get("x-forwarded-proto") or "https"
+        host = (host or "").split(",")[0].strip()
+        host_base = f"{proto}://{host}".rstrip("/") if host else (os.environ.get("APP_URL") or "").rstrip("/")
+    except Exception:
+        host_base = (os.environ.get("APP_URL") or "").rstrip("/")
+
+    confirm_action_url = f"{host_base}/api/appointments/{appointment_id}/client-confirm?action=confirm"
+    alternative_action_url = f"{host_base}/api/appointments/{appointment_id}/client-confirm?action=alternative"
+    invoice_url = f"{host_base}/api/invoice/{appointment_id}"
+
+    # === ACTION = CONFIRM ===
     if action == "confirm":
-        # Mark as confirmed
         await db.appointments.update_one(
             {"id": appointment_id},
             {"$set": {"client_confirmed": True, "client_confirmed_at": datetime.now(timezone.utc).isoformat()}},
         )
-        title = "✅ Confirmé!"
-        msg = f"Merci {name}! Votre rendez-vous du <strong>{date} à {time_slot}</strong> est confirmé."
-        color = "#10B981"
-    else:
-        # Mark as alternative requested
+        return HTMLResponse(_render_status_page(
+            title="✅ Rendez-vous confirmé!",
+            color="#10B981",
+            message=f"Merci {name}! Votre rendez-vous du <strong>{date_pretty} à {time_slot}</strong> est confirmé.",
+            back_url=f"{host_base}/api/appointments/{appointment_id}/client-confirm",
+        ))
+
+    # === ACTION = ALTERNATIVE ===
+    if action == "alternative":
         await db.appointments.update_one(
             {"id": appointment_id},
             {"$set": {"client_requested_alternative": True, "client_alt_requested_at": datetime.now(timezone.utc).isoformat()}},
         )
-        title = "🔄 Demande reçue"
-        msg = f"Merci {name}! Nous allons vous contacter rapidement pour proposer un autre créneau."
-        color = "#F59E0B"
+        return HTMLResponse(_render_status_page(
+            title="🔄 Demande de modification reçue",
+            color="#F59E0B",
+            message=f"Merci {name}! Nous vous contacterons rapidement pour proposer un autre créneau.",
+            back_url=f"{host_base}/api/appointments/{appointment_id}/client-confirm",
+        ))
+
+    # === DEFAULT — Portal page with 3 buttons (Réservé / Modifier / Facture) ===
+    confirmed_badge = (
+        '<div style="display:inline-block;padding:6px 12px;background:#D1FAE5;color:#065F46;border-radius:99px;font-size:13px;font-weight:700;margin-bottom:14px;">✓ Déjà confirmé</div>'
+        if confirmed else ""
+    )
+    paid_badge = (
+        '<div style="display:inline-block;padding:6px 12px;background:#CFFAFE;color:#155E75;border-radius:99px;font-size:13px;font-weight:700;margin-bottom:14px;">💰 Payé</div>'
+        if is_paid else ""
+    )
+    price_row = (
+        f'<div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid #E5E7EB;"><span style="color:#64748B;">Prix</span><strong>{float(price):.2f} $</strong></div>'
+        if price and float(price) > 0 else ""
+    )
 
     html = f"""<!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mon rendez-vous — Lavage de Vitres Bois-Franc</title>
+<style>
+*{{box-sizing:border-box;}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#F1F5F9;margin:0;padding:0;min-height:100vh;color:#0F172A;}}
+.wrap{{max-width:480px;margin:0 auto;padding:18px;}}
+.brand{{text-align:center;padding:14px 0 18px;color:#475569;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;}}
+.card{{background:#FFFFFF;border-radius:16px;padding:22px;box-shadow:0 4px 14px rgba(15,23,42,0.06);margin-bottom:14px;}}
+h1{{font-size:22px;margin:0 0 6px;color:#0F172A;}}
+.sub{{color:#64748B;font-size:14px;margin:0 0 16px;}}
+.detail-row{{display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid #E5E7EB;}}
+.detail-row:first-of-type{{border-top:none;}}
+.detail-row .label{{color:#64748B;}}
+.detail-row strong{{color:#0F172A;}}
+.btns{{display:flex;flex-direction:column;gap:10px;margin-top:6px;}}
+.btn{{display:block;padding:16px;border-radius:12px;text-decoration:none;font-weight:700;font-size:16px;text-align:center;transition:transform .08s ease;}}
+.btn:active{{transform:scale(0.98);}}
+.btn-primary{{background:#10B981;color:#FFFFFF;}}
+.btn-warn{{background:#F59E0B;color:#FFFFFF;}}
+.btn-info{{background:#0B5394;color:#FFFFFF;}}
+.brand-foot{{text-align:center;color:#94A3B8;font-size:11px;margin-top:14px;}}
+</style></head>
+<body>
+<div class="wrap">
+  <div class="brand">Lavage de Vitres Bois-Franc</div>
+  <div class="card">
+    {confirmed_badge}{paid_badge}
+    <h1>Bonjour {name}!</h1>
+    <p class="sub">Voici les détails de votre rendez-vous.</p>
+    <div class="detail-row"><span class="label">Date</span><strong>{date_pretty}</strong></div>
+    <div class="detail-row"><span class="label">Heure</span><strong>{time_slot}</strong></div>
+    <div class="detail-row"><span class="label">Durée</span><strong>{duration} min</strong></div>
+    <div class="detail-row"><span class="label">Adresse</span><strong style="text-align:right;">{addr}</strong></div>
+    {price_row}
+  </div>
+
+  <div class="card">
+    <div class="btns">
+      <a href="{confirm_action_url}" class="btn btn-primary">✅ Réservé (je confirme)</a>
+      <a href="{alternative_action_url}" class="btn btn-warn">🔄 Modifier (autre moment)</a>
+      <a href="{invoice_url}" class="btn btn-info">📄 Voir ma facture</a>
+    </div>
+  </div>
+
+  <div class="brand-foot">Lavage de Vitres Bois-Franc &mdash; Gexia360</div>
+</div>
+</body></html>"""
+    return HTMLResponse(content=html)
+
+
+def _render_status_page(title: str, color: str, message: str, back_url: str = "") -> str:
+    """Small helper to render a centered status confirmation page."""
+    back_btn = (
+        f'<p style="text-align:center;margin-top:18px;"><a href="{back_url}" style="color:#0B5394;text-decoration:none;font-weight:600;">← Retour à mon rendez-vous</a></p>'
+        if back_url else ""
+    )
+    return f"""<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title}</title>
 <style>
 body{{font-family:-apple-system,Arial,sans-serif;background:#F8FAFC;margin:0;padding:0;min-height:100vh;display:flex;align-items:center;justify-content:center;}}
 .card{{background:#FFFFFF;border-radius:14px;padding:28px;max-width:420px;width:90%;box-shadow:0 6px 20px rgba(0,0,0,0.08);text-align:center;}}
-h1{{color:{color};font-size:28px;margin:8px 0 14px;}}
+h1{{color:{color};font-size:26px;margin:8px 0 14px;}}
 p{{color:#374151;font-size:15px;line-height:1.6;}}
 .brand{{color:#94A3B8;font-size:12px;margin-top:18px;}}
 </style></head>
 <body><div class="card">
 <h1>{title}</h1>
-<p>{msg}</p>
+<p>{message}</p>
+{back_btn}
 <p class="brand">Lavage de Vitres Bois-Franc &mdash; Gexia360</p>
 </div></body></html>"""
-    return HTMLResponse(content=html)
 
 
 @api_router.get("/calendar/info")
