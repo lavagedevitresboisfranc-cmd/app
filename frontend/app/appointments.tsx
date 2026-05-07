@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import AppHeader from '../components/AppHeader';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -24,12 +24,22 @@ interface Appointment {
   duration_minutes: number;
   notes: string;
   status: string;
+  client_confirmed?: boolean;
+  client_requested_alternative?: boolean;
+  client_suggested_date?: string | null;
+  client_suggested_time?: string | null;
+  client_suggested_note?: string | null;
 }
 
 type FilterType = 'all' | 'upcoming' | 'completed' | 'cancelled';
 
 export default function AppointmentsScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ filter?: string }>();
+  // When the user opens this screen via the "Réponse" chip on the home calendar,
+  // we restrict the list to appointments where the CLIENT has responded
+  // (Réservé OR Modifier) — and hide the regular All/Upcoming/Done filters.
+  const isClientResponseMode = params.filter === 'client_response';
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -38,23 +48,44 @@ export default function AppointmentsScreen() {
   const fetchAppointments = useCallback(async () => {
     setLoading(true);
     try {
-      const url = filter === 'all'
+      // In client-response mode, always fetch the full list and filter client-side
+      const url = isClientResponseMode
         ? `${API_URL}/api/appointments`
-        : `${API_URL}/api/appointments?status=${filter}`;
+        : filter === 'all'
+          ? `${API_URL}/api/appointments`
+          : `${API_URL}/api/appointments?status=${filter}`;
       const res = await fetch(url);
       const data = await res.json();
-      setAppointments(data);
+      let list: Appointment[] = Array.isArray(data) ? data : [];
+      if (isClientResponseMode) {
+        list = list
+          .filter(
+            (a) =>
+              (a.client_requested_alternative === true || a.client_confirmed === true) &&
+              a.status !== 'archived' &&
+              a.status !== 'cancelled'
+          )
+          // Most recent / actionable first
+          .sort((a, b) => {
+            // alternatives first, then confirmed
+            const ra = a.client_requested_alternative ? 0 : 1;
+            const rb = b.client_requested_alternative ? 0 : 1;
+            if (ra !== rb) return ra - rb;
+            return (b.date || '').localeCompare(a.date || '');
+          });
+      }
+      setAppointments(list);
     } catch (e) {
       console.error('Failed to fetch appointments', e);
     } finally {
       setLoading(false);
     }
-  }, [filter]);
+  }, [filter, isClientResponseMode]);
 
   useFocusEffect(
     useCallback(() => {
       fetchAppointments();
-    }, [filter])
+    }, [filter, isClientResponseMode])
   );
 
   const onRefresh = async () => {
@@ -66,12 +97,13 @@ export default function AppointmentsScreen() {
   const getStatusColor = (status: string) => {
     if (status === 'completed') return '#34C759';
     if (status === 'cancelled') return '#FF3B30';
+    if (status === 'paid') return '#0891B2';
     return '#000000';
   };
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr + 'T00:00:00');
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return d.toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' });
   };
 
   const filters: { key: FilterType; label: string }[] = [
@@ -81,53 +113,87 @@ export default function AppointmentsScreen() {
     { key: 'cancelled', label: 'Cancelled' },
   ];
 
-  const renderAppointment = ({ item }: { item: Appointment }) => (
-    <TouchableOpacity
-      testID={`appointment-item-${item.id}`}
-      style={styles.card}
-      activeOpacity={0.7}
-      onPress={() => router.push({ pathname: '/detail', params: { id: item.id } })}
-    >
-      <View style={styles.cardRow}>
-        <View style={styles.dateBox}>
-          <Text style={styles.dateBoxDay}>{formatDate(item.date)}</Text>
-          <Text style={styles.dateBoxTime}>{item.time_slot}</Text>
-        </View>
-        <View style={styles.cardContent}>
-          <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
-          <Text style={styles.cardClient} numberOfLines={1}>{item.client_name}</Text>
-        </View>
-        <View style={styles.cardEnd}>
-          <View style={[styles.statusBadge, { borderColor: getStatusColor(item.status) }]}>
-            <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />
-            <Text style={[styles.statusBadgeText, { color: getStatusColor(item.status) }]}>
-              {item.status}
+  const renderAppointment = ({ item }: { item: Appointment }) => {
+    const isClientAlt = !!item.client_requested_alternative;
+    const isClientConfirmed = !!item.client_confirmed && !isClientAlt;
+
+    // Build "client suggestion" subtitle when applicable
+    let clientSuggestion = '';
+    if (isClientAlt && item.client_suggested_date) {
+      try {
+        const d = new Date(item.client_suggested_date + 'T00:00:00');
+        clientSuggestion = `Propose: ${d.toLocaleDateString('fr-CA', { weekday: 'short', day: 'numeric', month: 'short' })}${item.client_suggested_time ? ' ' + item.client_suggested_time : ''}`;
+      } catch {
+        clientSuggestion = `Propose: ${item.client_suggested_date} ${item.client_suggested_time || ''}`;
+      }
+    }
+
+    const accent = isClientAlt ? '#F59E0B' : isClientConfirmed ? '#10B981' : getStatusColor(item.status);
+    const bg = isClientAlt ? '#FFFBEB' : isClientConfirmed ? '#ECFDF5' : '#FFFFFF';
+
+    return (
+      <TouchableOpacity
+        testID={`appointment-item-${item.id}`}
+        style={[styles.card, isClientResponseMode && { borderLeftWidth: 4, borderLeftColor: accent, backgroundColor: bg }]}
+        activeOpacity={0.7}
+        onPress={() => router.push({ pathname: '/detail', params: { id: item.id } })}
+      >
+        <View style={styles.cardRow}>
+          <View style={styles.dateBox}>
+            <Text style={styles.dateBoxDay}>{formatDate(item.date)}</Text>
+            <Text style={styles.dateBoxTime}>{item.time_slot}</Text>
+          </View>
+          <View style={styles.cardContent}>
+            <Text style={styles.cardTitle} numberOfLines={1}>
+              {isClientAlt ? '🔄 ' : isClientConfirmed ? '✅ ' : ''}{item.client_name || item.title}
             </Text>
+            {isClientResponseMode ? (
+              <Text style={[styles.cardClient, { color: accent, fontWeight: '700' }]} numberOfLines={1}>
+                {isClientAlt ? clientSuggestion || 'Client demande modification' : 'Confirmé par le client'}
+              </Text>
+            ) : (
+              <Text style={styles.cardClient} numberOfLines={1}>{item.client_name}</Text>
+            )}
+            {isClientResponseMode && isClientAlt && item.client_suggested_note ? (
+              <Text style={[styles.cardClient, { fontSize: 12, fontStyle: 'italic', marginTop: 2 }]} numberOfLines={2}>
+                « {item.client_suggested_note} »
+              </Text>
+            ) : null}
+          </View>
+          <View style={styles.cardEnd}>
+            <View style={[styles.statusBadge, { borderColor: accent }]}>
+              <View style={[styles.statusDot, { backgroundColor: accent }]} />
+              <Text style={[styles.statusBadgeText, { color: accent }]}>
+                {isClientAlt ? 'MODIFIER' : isClientConfirmed ? 'RÉSERVÉ' : item.status}
+              </Text>
+            </View>
           </View>
         </View>
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} testID="appointments-screen">
-      <AppHeader title="Tous les RDV" />
+      <AppHeader title={isClientResponseMode ? 'Réponses des clients' : 'Tous les RDV'} />
 
-      <View style={styles.filterRow}>
-        {filters.map((f) => (
-          <TouchableOpacity
-            key={f.key}
-            testID={`filter-${f.key}`}
-            style={[styles.filterBtn, filter === f.key && styles.filterBtnActive]}
-            activeOpacity={0.7}
-            onPress={() => setFilter(f.key)}
-          >
-            <Text style={[styles.filterText, filter === f.key && styles.filterTextActive]}>
-              {f.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      {!isClientResponseMode && (
+        <View style={styles.filterRow}>
+          {filters.map((f) => (
+            <TouchableOpacity
+              key={f.key}
+              testID={`filter-${f.key}`}
+              style={[styles.filterBtn, filter === f.key && styles.filterBtnActive]}
+              activeOpacity={0.7}
+              onPress={() => setFilter(f.key)}
+            >
+              <Text style={[styles.filterText, filter === f.key && styles.filterTextActive]}>
+                {f.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
 
       {loading && appointments.length === 0 ? (
         <ActivityIndicator testID="loading-spinner" size="small" color="#000" style={{ marginTop: 48 }} />
@@ -142,10 +208,14 @@ export default function AppointmentsScreen() {
           }
           ListEmptyComponent={
             <View style={styles.emptyState} testID="empty-appointments">
-              <Feather name="inbox" size={48} color="#E5E5E5" />
-              <Text style={styles.emptyTitle}>No appointments found</Text>
+              <Feather name={isClientResponseMode ? 'inbox' : 'inbox'} size={48} color="#E5E5E5" />
+              <Text style={styles.emptyTitle}>
+                {isClientResponseMode ? 'Aucune réponse client' : 'No appointments found'}
+              </Text>
               <Text style={styles.emptySubtitle}>
-                {filter !== 'all' ? 'Try a different filter' : 'Create your first appointment'}
+                {isClientResponseMode
+                  ? 'Les réponses (Réservé / Modifier) apparaîtront ici.'
+                  : filter !== 'all' ? 'Try a different filter' : 'Create your first appointment'}
               </Text>
             </View>
           }
