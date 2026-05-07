@@ -36,6 +36,12 @@ interface Appointment {
   duration_minutes: number;
   notes: string;
   status: string;
+  // Client portal response (set when client uses the public confirm/modify page)
+  client_confirmed?: boolean;
+  client_requested_alternative?: boolean;
+  client_suggested_date?: string | null;
+  client_suggested_time?: string | null;
+  client_suggested_note?: string | null;
 }
 
 interface PendingRequest {
@@ -62,6 +68,10 @@ interface CalendarItem {
   // For tentative: link back to the parent appointment
   parentId?: string;
   parentTime?: string;
+  // Client portal alternative-proposal flag
+  clientAlt?: boolean;
+  clientAltDate?: string;
+  clientAltTime?: string;
 }
 
 const LOGO_URL = process.env.EXPO_PUBLIC_LOGO_URL || '';
@@ -252,6 +262,9 @@ export default function CalendarScreen() {
         ...appts.map((a) => ({
           id: a.id, type: 'appointment' as const, name: a.client_name,
           date: a.date, time: a.time_slot, duration: a.duration_minutes, status: a.status,
+          clientAlt: !!a.client_requested_alternative,
+          clientAltDate: a.client_suggested_date || undefined,
+          clientAltTime: a.client_suggested_time || undefined,
         })),
         ...reqs.map((r) => ({
           id: r.id, type: 'request' as const, name: r.customer_name,
@@ -308,6 +321,9 @@ export default function CalendarScreen() {
           time: a.time_slot,
           duration: a.duration_minutes,
           status: a.status,
+          clientAlt: !!a.client_requested_alternative,
+          clientAltDate: a.client_suggested_date || undefined,
+          clientAltTime: a.client_suggested_time || undefined,
         })),
         ...reqs
           .filter((r) => r.preferred_date === date)
@@ -404,6 +420,9 @@ export default function CalendarScreen() {
               time: a.time_slot,
               duration: a.duration_minutes,
               status: a.status,
+              clientAlt: !!a.client_requested_alternative,
+              clientAltDate: a.client_suggested_date || undefined,
+              clientAltTime: a.client_suggested_time || undefined,
             })),
             ...dayReqs.map((r) => ({
               id: r.id,
@@ -462,6 +481,9 @@ export default function CalendarScreen() {
           time: a.time_slot,
           duration: a.duration_minutes,
           status: a.status,
+          clientAlt: !!a.client_requested_alternative,
+          clientAltDate: a.client_suggested_date || undefined,
+          clientAltTime: a.client_suggested_time || undefined,
         };
         if (!grouped[a.date]) grouped[a.date] = [];
         grouped[a.date].push(item);
@@ -660,8 +682,27 @@ export default function CalendarScreen() {
   const renderItem = ({ item }: { item: CalendarItem }) => {
     const isRequest = item.type === 'request';
     const isTentative = item.type === 'tentative';
-    const accentColor = isTentative ? '#D97706' : (isRequest ? '#FF3B30' : '#34C759');
-    const bgColor = isTentative ? '#FEF3C7' : '#FFFFFF';
+    const isClientAlt = !!item.clientAlt;
+    const accentColor = isClientAlt
+      ? '#F59E0B'
+      : isTentative
+        ? '#D97706'
+        : isRequest
+          ? '#FF3B30'
+          : '#34C759';
+    const bgColor = isClientAlt ? '#FFFBEB' : isTentative ? '#FEF3C7' : '#FFFFFF';
+
+    // Format the client's suggested date for display: e.g. "ven. 15 mai 14:30"
+    let clientAltLabel = '';
+    if (isClientAlt && item.clientAltDate) {
+      try {
+        const d = new Date(item.clientAltDate + 'T00:00:00');
+        clientAltLabel = d.toLocaleDateString('fr-CA', { weekday: 'short', day: 'numeric', month: 'short' });
+        if (item.clientAltTime) clientAltLabel += ` ${item.clientAltTime}`;
+      } catch {
+        clientAltLabel = `${item.clientAltDate}${item.clientAltTime ? ' ' + item.clientAltTime : ''}`;
+      }
+    }
 
     return (
       <TouchableOpacity
@@ -685,16 +726,25 @@ export default function CalendarScreen() {
         <View style={styles.cardDivider} />
         <View style={styles.cardRight}>
           <Text style={styles.cardTitle} numberOfLines={1}>
-            {isTentative ? '⏳ ' : ''}{item.name}
+            {isClientAlt ? '🔄 ' : isTentative ? '⏳ ' : ''}{item.name}
           </Text>
-          <View style={styles.statusRow}>
-            <View style={[styles.statusDot, { backgroundColor: accentColor }]} />
-            <Text style={[styles.statusText, { color: accentColor }]}>
-              {isTentative ? `Alternative en attente (RDV ${item.parentTime || ''})`
-                : isRequest ? 'En attente'
-                : item.status === 'upcoming' ? 'Confirmé' : item.status}
-            </Text>
-          </View>
+          {isClientAlt ? (
+            <View style={styles.clientAltBadge}>
+              <Feather name="alert-circle" size={12} color="#FFFFFF" />
+              <Text style={styles.clientAltBadgeText} numberOfLines={1}>
+                Client propose: {clientAltLabel || 'autre moment'}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.statusRow}>
+              <View style={[styles.statusDot, { backgroundColor: accentColor }]} />
+              <Text style={[styles.statusText, { color: accentColor }]}>
+                {isTentative ? `Alternative en attente (RDV ${item.parentTime || ''})`
+                  : isRequest ? 'En attente'
+                  : item.status === 'upcoming' ? 'Confirmé' : item.status}
+              </Text>
+            </View>
+          )}
         </View>
         <Feather name="chevron-right" size={20} color="#A3A3A3" />
       </TouchableOpacity>
@@ -1406,6 +1456,25 @@ const styles = StyleSheet.create({
     color: '#A3A3A3',
     textTransform: 'uppercase',
     letterSpacing: 0.3,
+  },
+  clientAltBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#F59E0B',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    marginTop: 6,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+  },
+  clientAltBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+    flexShrink: 1,
   },
   emptyState: {
     alignItems: 'center',

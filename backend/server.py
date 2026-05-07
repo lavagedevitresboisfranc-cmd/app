@@ -222,6 +222,14 @@ class AppointmentResponse(BaseModel):
     paid_amount: Optional[float] = None
     paid_method: Optional[str] = None
     revenue_id: Optional[str] = None
+    # Client-side response tracking (from public portal page /client-confirm)
+    client_confirmed: Optional[bool] = None
+    client_confirmed_at: Optional[str] = None
+    client_requested_alternative: Optional[bool] = None
+    client_alt_requested_at: Optional[str] = None
+    client_suggested_date: Optional[str] = None
+    client_suggested_time: Optional[str] = None
+    client_suggested_note: Optional[str] = None
     # Up to 3 tentatively-proposed alternative slots while waiting for the client's reply.
     # Each entry: {"date": "YYYY-MM-DD", "time_slot": "HH:MM", "duration_minutes": int}
     proposed_alternatives: Optional[List[Dict[str, Any]]] = None
@@ -2886,18 +2894,64 @@ async def client_confirm_page(appointment_id: str, request: Request, action: str
             back_url=f"{host_base}/api/appointments/{appointment_id}/client-confirm",
         ))
 
-    # === ACTION = ALTERNATIVE ===
+    # === ACTION = ALTERNATIVE — show form to let client pick a new date/time ===
     if action == "alternative":
-        await db.appointments.update_one(
-            {"id": appointment_id},
-            {"$set": {"client_requested_alternative": True, "client_alt_requested_at": datetime.now(timezone.utc).isoformat()}},
-        )
-        return HTMLResponse(_render_status_page(
-            title="🔄 Demande de modification reçue",
-            color="#F59E0B",
-            message=f"Merci {name}! Nous vous contacterons rapidement pour proposer un autre créneau.",
-            back_url=f"{host_base}/api/appointments/{appointment_id}/client-confirm",
-        ))
+        # Pre-fill with client's previous suggestion (if any)
+        prev_date = appt.get("client_suggested_date") or ""
+        prev_time = appt.get("client_suggested_time") or ""
+        prev_note = appt.get("client_suggested_note") or ""
+        submit_url = f"{host_base}/api/appointments/{appointment_id}/client-suggest-alternative"
+        back_url = f"{host_base}/api/appointments/{appointment_id}/client-confirm"
+
+        form_html = f"""<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Proposer un autre moment</title>
+<style>
+*{{box-sizing:border-box;}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#F1F5F9;margin:0;padding:0;min-height:100vh;color:#0F172A;}}
+.wrap{{max-width:480px;margin:0 auto;padding:18px;}}
+.brand{{text-align:center;padding:14px 0 18px;color:#475569;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;}}
+.card{{background:#FFFFFF;border-radius:16px;padding:22px;box-shadow:0 4px 14px rgba(15,23,42,0.06);margin-bottom:14px;}}
+h1{{font-size:22px;margin:0 0 6px;color:#F59E0B;}}
+.sub{{color:#64748B;font-size:14px;margin:0 0 16px;line-height:1.5;}}
+.lbl{{display:block;font-size:11px;font-weight:700;color:#64748B;letter-spacing:0.5px;margin:14px 0 6px;text-transform:uppercase;}}
+.fld{{width:100%;padding:14px;border:1px solid #CBD5E1;border-radius:10px;font-size:16px;background:#FFFFFF;color:#0F172A;font-family:inherit;}}
+.fld:focus{{outline:none;border-color:#F59E0B;box-shadow:0 0 0 3px rgba(245,158,11,0.15);}}
+textarea.fld{{min-height:80px;resize:vertical;}}
+.btns{{display:flex;flex-direction:column;gap:10px;margin-top:18px;}}
+.btn{{display:block;padding:16px;border-radius:12px;text-decoration:none;font-weight:700;font-size:16px;text-align:center;border:none;cursor:pointer;font-family:inherit;}}
+.btn-primary{{background:#F59E0B;color:#FFFFFF;}}
+.btn-secondary{{background:#FFFFFF;color:#475569;border:1px solid #CBD5E1;}}
+.current{{background:#FEF3C7;border:1px solid #FCD34D;border-radius:10px;padding:12px;margin-bottom:14px;font-size:13px;color:#78350F;}}
+.brand-foot{{text-align:center;color:#94A3B8;font-size:11px;margin-top:14px;}}
+</style></head>
+<body>
+<div class="wrap">
+  <div class="brand">Lavage de Vitres Bois-Franc</div>
+  <div class="card">
+    <h1>🔄 Proposer un autre moment</h1>
+    <p class="sub">Bonjour {name}, sélectionnez votre date et heure préférées. Nous confirmerons rapidement.</p>
+    <div class="current">RDV actuel : <strong>{date_pretty} à {time_slot}</strong></div>
+    <form method="POST" action="{submit_url}">
+      <label class="lbl" for="alt_date">Nouvelle date</label>
+      <input class="fld" type="date" id="alt_date" name="date" value="{prev_date or date}" required>
+
+      <label class="lbl" for="alt_time">Nouvelle heure</label>
+      <input class="fld" type="time" id="alt_time" name="time" value="{prev_time or time_slot}" required>
+
+      <label class="lbl" for="alt_note">Note (optionnel)</label>
+      <textarea class="fld" id="alt_note" name="note" placeholder="Ex: Préférablement en après-midi...">{prev_note}</textarea>
+
+      <div class="btns">
+        <button type="submit" class="btn btn-primary">📤 Envoyer ma proposition</button>
+        <a href="{back_url}" class="btn btn-secondary">← Annuler</a>
+      </div>
+    </form>
+  </div>
+  <div class="brand-foot">Lavage de Vitres Bois-Franc &mdash; Gexia360</div>
+</div>
+</body></html>"""
+        return HTMLResponse(content=form_html)
 
     # === DEFAULT — Portal page with 3 buttons (Réservé / Modifier / Facture) ===
     confirmed_badge = (
@@ -2961,6 +3015,114 @@ h1{{font-size:22px;margin:0 0 6px;color:#0F172A;}}
 </div>
 </body></html>"""
     return HTMLResponse(content=html)
+
+
+@app.post("/api/appointments/{appointment_id}/client-suggest-alternative")
+async def client_suggest_alternative(appointment_id: str, request: Request):
+    """Receive the alternative date/time the CLIENT proposes from the public portal.
+
+    Stores client_suggested_date / client_suggested_time / client_suggested_note +
+    client_requested_alternative=true on the appointment, then renders a thank-you page.
+    Also notifies the owner via email (if Resend configured + NOTIFY_EMAIL set).
+    """
+    from fastapi.responses import HTMLResponse
+    appt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if not appt:
+        return HTMLResponse(
+            "<h1 style='font-family:sans-serif;text-align:center;margin-top:80px;'>Rendez-vous introuvable</h1>",
+            status_code=404,
+        )
+    try:
+        form = await request.form()
+    except Exception:
+        form = {}
+    new_date = (form.get("date") or "").strip()
+    new_time = (form.get("time") or "").strip()
+    note = (form.get("note") or "").strip()
+
+    # Basic validation: YYYY-MM-DD + HH:MM
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", new_date) or not re.match(r"^\d{2}:\d{2}$", new_time):
+        return HTMLResponse(
+            "<h1 style='font-family:sans-serif;text-align:center;margin-top:80px;color:#DC2626;'>Date ou heure invalide</h1>"
+            "<p style='text-align:center;'>Veuillez retourner et réessayer.</p>",
+            status_code=400,
+        )
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.appointments.update_one(
+        {"id": appointment_id},
+        {"$set": {
+            "client_requested_alternative": True,
+            "client_alt_requested_at": now_iso,
+            "client_suggested_date": new_date,
+            "client_suggested_time": new_time,
+            "client_suggested_note": note,
+        }},
+    )
+
+    # Build the host base for the back link
+    try:
+        host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+        proto = request.headers.get("x-forwarded-proto") or "https"
+        host = (host or "").split(",")[0].strip()
+        host_base = f"{proto}://{host}".rstrip("/") if host else (os.environ.get("APP_URL") or "").rstrip("/")
+    except Exception:
+        host_base = (os.environ.get("APP_URL") or "").rstrip("/")
+
+    # Pretty French date
+    try:
+        y, m, d = [int(x) for x in new_date.split('-')]
+        months = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+                  'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
+        date_pretty = f"{d} {months[m-1]} {y}"
+    except Exception:
+        date_pretty = new_date
+
+    # === Notify the owner via email ===
+    owner_email = (NOTIFY_EMAIL or "").strip()
+    if resend.api_key and owner_email:
+        try:
+            client_name = appt.get("client_name") or "Client"
+            client_phone = appt.get("client_phone") or ""
+            old_date = appt.get("date") or ""
+            old_time = appt.get("time_slot") or ""
+            note_block = f'<p style="margin:8px 0;color:#475569;font-size:14px;"><strong>Note du client :</strong> {note}</p>' if note else ""
+            html = f"""
+<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;color:#0F172A;">
+  <div style="background:#F59E0B;color:#FFFFFF;padding:16px 18px;border-radius:8px 8px 0 0;">
+    <h2 style="margin:0;font-size:18px;">🔄 Le client propose un autre moment</h2>
+  </div>
+  <div style="background:#FFFFFF;border:1px solid #E5E7EB;border-top:none;padding:20px;border-radius:0 0 8px 8px;">
+    <p style="margin:0 0 10px 0;"><strong>{client_name}</strong>{f' — 📞 {client_phone}' if client_phone else ''}</p>
+    <p style="margin:0 0 6px 0;color:#64748B;font-size:13px;">RDV initial :</p>
+    <p style="margin:0 0 14px 0;font-size:15px;"><s>{old_date} à {old_time}</s></p>
+    <p style="margin:0 0 6px 0;color:#64748B;font-size:13px;">Proposition du client :</p>
+    <p style="margin:0 0 14px 0;font-size:18px;font-weight:700;color:#92400E;">{date_pretty} à {new_time}</p>
+    {note_block}
+    <p style="font-size:13px;color:#475569;margin-top:14px;">Connectez-vous à Gexia360 pour accepter, modifier ou contacter le client.</p>
+  </div>
+</div>"""
+            await asyncio.to_thread(resend.Emails.send, {
+                "from": os.environ.get("RESEND_FROM") or "onboarding@resend.dev",
+                "to": [owner_email],
+                "subject": f"🔄 {appt.get('client_name','Client')} propose : {date_pretty} à {new_time}",
+                "html": html,
+            })
+            logger.info(f"Client alternative proposal email sent to owner ({owner_email}) for appt {appointment_id}")
+        except Exception as e:
+            logger.warning(f"client-suggest-alternative owner notify failed: {e}")
+
+    return HTMLResponse(_render_status_page(
+        title="🔄 Proposition envoyée!",
+        color="#F59E0B",
+        message=(
+            f"Merci! Votre proposition de <strong>{date_pretty} à {new_time}</strong> a bien été reçue.<br><br>"
+            "Nous vous contacterons rapidement pour confirmer."
+        ),
+        back_url=f"{host_base}/api/appointments/{appointment_id}/client-confirm",
+    ))
+
+
 
 
 def _render_status_page(title: str, color: str, message: str, back_url: str = "") -> str:
