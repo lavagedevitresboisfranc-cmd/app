@@ -170,6 +170,7 @@ export default function CalendarScreen() {
   const [pendingRdvCount, setPendingRdvCount] = useState(0);
   const [pendingEstCount, setPendingEstCount] = useState(0);
   const [confirmedCount, setConfirmedCount] = useState(0);
+  const [clientResponseCount, setClientResponseCount] = useState(0);
   const [prevPendingCount, setPrevPendingCount] = useState(0);
 
   const menuSections: Array<{ key: string; titleKey: string; icon: any; color: string; items: Array<{ icon: any; labelKey: string; route: string }> }> = [
@@ -360,29 +361,61 @@ export default function CalendarScreen() {
       const appts: Appointment[] = await apptRes.json();
       const reqs: PendingRequest[] = await reqRes.json();
 
+      // Use 'custom' marking so we can draw a CIRCLE AROUND the date number
+      // instead of a small dot below it.
       const marks: Record<string, any> = {};
 
-      // Green dots for appointments
+      // Categorize each date by what it has
+      const apptDates = new Set<string>();
+      const altDates = new Set<string>();
       appts.forEach((a) => {
-        if (!marks[a.date]) marks[a.date] = { dots: [] };
-        const hasGreen = marks[a.date].dots.some((d: any) => d.color === '#34C759');
-        if (!hasGreen) marks[a.date].dots.push({ key: 'appt', color: '#34C759' });
+        if (a.status === 'archived' || a.status === 'cancelled') return;
+        apptDates.add(a.date);
+        if ((a as any).client_requested_alternative) altDates.add(a.date);
       });
+      const reqDates = new Set<string>();
+      reqs.forEach((r) => reqDates.add(r.preferred_date));
 
-      // Red dots for pending requests
-      reqs.forEach((r) => {
-        const d = r.preferred_date;
-        if (!marks[d]) marks[d] = { dots: [] };
-        const hasRed = marks[d].dots.some((dd: any) => dd.color === '#FF3B30');
-        if (!hasRed) marks[d].dots.push({ key: 'req', color: '#FF3B30' });
+      const allDates = new Set<string>([...apptDates, ...reqDates, selected]);
+
+      allDates.forEach((d) => {
+        const isSelected = d === selected;
+        const isToday = d === new Date().toISOString().slice(0, 10);
+        // Color priority: client-alt (orange) > pending request (red) > regular appt (green)
+        let ringColor: string | null = null;
+        if (altDates.has(d)) ringColor = '#F59E0B';
+        else if (reqDates.has(d)) ringColor = '#FF3B30';
+        else if (apptDates.has(d)) ringColor = '#34C759';
+
+        // Build container style: circle border around the date
+        const container: any = {
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          alignItems: 'center',
+          justifyContent: 'center',
+        };
+        if (ringColor) {
+          container.borderWidth = 2;
+          container.borderColor = ringColor;
+        }
+        if (isSelected) {
+          container.backgroundColor = '#000000';
+        } else if (isToday && !ringColor) {
+          container.backgroundColor = '#E5E5E5';
+        }
+
+        const text: any = {
+          fontWeight: '600',
+          fontSize: 15,
+        };
+        if (isSelected) text.color = '#FFFFFF';
+        else if (ringColor) text.color = '#0A0A0A';
+
+        marks[d] = {
+          customStyles: { container, text },
+        };
       });
-
-      // Add selected marker
-      if (marks[selected]) {
-        marks[selected] = { ...marks[selected], selected: true, selectedColor: '#000000' };
-      } else {
-        marks[selected] = { selected: true, selectedColor: '#000000', dots: [] };
-      }
 
       setMarkedDates(marks);
     } catch (e) {
@@ -579,10 +612,17 @@ export default function CalendarScreen() {
       if (apptsRes.ok) {
         const appts = await apptsRes.json();
         const todayStr = new Date().toISOString().slice(0, 10);
-        const upcoming = (Array.isArray(appts) ? appts : []).filter(
+        const list = Array.isArray(appts) ? appts : [];
+        const upcoming = list.filter(
           (a: any) => a.status === 'upcoming' && a.date >= todayStr
         ).length;
         setConfirmedCount(upcoming);
+        // Count client responses awaiting attention:
+        //   client_requested_alternative=true on a non-archived appointment.
+        const clientResp = list.filter((a: any) =>
+          a.client_requested_alternative === true && a.status !== 'archived' && a.status !== 'cancelled'
+        ).length;
+        setClientResponseCount(clientResp);
       }
     } catch {}
   }, []);
@@ -955,6 +995,22 @@ export default function CalendarScreen() {
             </View>
           )}
         </TouchableOpacity>
+
+        {/* Réponse client (Réservé / Modifier) — count of appointments awaiting your action */}
+        <TouchableOpacity
+          testID="legend-client-response"
+          style={styles.legendBtn}
+          activeOpacity={0.7}
+          onPress={() => router.push({ pathname: '/appointments', params: { filter: 'client_response' } })}
+        >
+          <View style={[styles.legendDot, { backgroundColor: '#0891B2' }]} />
+          <Text style={styles.legendLabel}>Réponse</Text>
+          {clientResponseCount > 0 && (
+            <View style={[styles.legendBadge, { backgroundColor: '#0891B2' }]}>
+              <Text style={styles.legendBadgeText}>{clientResponseCount > 99 ? '99+' : clientResponseCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
       </View>
 
       <View style={styles.toggleRow}>
@@ -1071,7 +1127,7 @@ export default function CalendarScreen() {
                   fetchMonthItems(month.dateString);
                 }}
                 markedDates={markedDates}
-                markingType="multi-dot"
+                markingType="custom"
                 theme={{
                   backgroundColor: '#FAFAFA',
                   calendarBackground: '#FAFAFA',
@@ -1254,9 +1310,11 @@ const styles = StyleSheet.create({
   menuItemPillText: { color: '#B91C1C', fontSize: 11, fontWeight: '700' },
   legendBar: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     paddingHorizontal: 16,
     paddingBottom: 12,
     gap: 8,
+    rowGap: 8,
   },
   legendItem: {
     flexDirection: 'row',
@@ -1264,7 +1322,6 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   legendBtn: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1273,8 +1330,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
     paddingVertical: 8,
-    paddingHorizontal: 8,
+    paddingHorizontal: 12,
     borderRadius: 10,
+    flexGrow: 1,
+    flexBasis: '22%',
+    minWidth: 100,
   },
   legendBadge: {
     minWidth: 22,
