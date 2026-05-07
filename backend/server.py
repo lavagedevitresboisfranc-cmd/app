@@ -2721,6 +2721,41 @@ async def short_link_resolver(code: str, request: Request):
     return RedirectResponse(url=f"{base_url}{target}", status_code=302)
 
 
+
+@api_router.post("/appointments/{appointment_id}/accept-alternative")
+async def accept_client_alternative(appointment_id: str):
+    """Accept the client's proposed alternative date/time.
+
+    Reads client_suggested_date + client_suggested_time from the appointment,
+    moves the appointment to that slot, marks client_confirmed=true, and clears
+    client_requested_alternative. Returns the full updated appointment.
+    """
+    appt = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if not appt:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+
+    new_date = appt.get("client_suggested_date")
+    new_time = appt.get("client_suggested_time")
+    if not new_date or not new_time:
+        raise HTTPException(status_code=400, detail="No client suggestion to accept")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.appointments.update_one(
+        {"id": appointment_id},
+        {"$set": {
+            "date": new_date,
+            "time_slot": new_time[:5],
+            "client_confirmed": True,
+            "client_confirmed_at": now_iso,
+            "client_requested_alternative": False,
+            # keep client_suggested_* for history; UI hides the card after accept
+        }},
+    )
+    fresh = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    return fresh
+
+
+
 class ShortenReq(BaseModel):
     target: str
 

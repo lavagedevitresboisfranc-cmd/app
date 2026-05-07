@@ -7,6 +7,9 @@ import {
   FlatList,
   ActivityIndicator,
   RefreshControl,
+  Alert,
+  Linking,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -19,6 +22,9 @@ interface Appointment {
   id: string;
   title: string;
   client_name: string;
+  client_phone?: string;
+  client_email?: string;
+  client_address?: string;
   date: string;
   time_slot: string;
   duration_minutes: number;
@@ -94,6 +100,66 @@ export default function AppointmentsScreen() {
     setRefreshing(false);
   };
 
+  // === Accept the client's proposed alternative date/time ===
+  // mode='sms' → opens iMessage with the portal SMS body
+  // mode='email' → triggers a confirmation email via the backend
+  const acceptAndNotify = async (apt: Appointment, mode: 'sms' | 'email') => {
+    const newDate = apt.client_suggested_date || '';
+    const newTime = apt.client_suggested_time || '';
+    if (!newDate || !newTime) {
+      Alert.alert('Erreur', 'Pas de proposition à accepter.');
+      return;
+    }
+    try {
+      // 1) Accept the alternative — backend moves the appointment + clears flags
+      const acceptRes = await fetch(`${API_URL}/api/appointments/${apt.id}/accept-alternative`, { method: 'POST' });
+      if (!acceptRes.ok) {
+        const txt = await acceptRes.text().catch(() => '');
+        Alert.alert('Erreur', 'Acceptation échouée. ' + txt.slice(0, 120));
+        return;
+      }
+
+      if (mode === 'email') {
+        // Email path: backend builds + sends the confirmation email
+        const r = await fetch(`${API_URL}/api/appointments/${apt.id}/send-client-confirmation`, { method: 'POST' });
+        const d = await r.json().catch(() => ({}));
+        const okMsg = d?.email_sent
+          ? `✅ Nouvelle date acceptée et courriel envoyé à ${d.client_email || apt.client_email || 'client'}.`
+          : `✅ Nouvelle date acceptée. (Pas d'adresse courriel — aucun envoi.)`;
+        if (Platform.OS === 'web') { try { (window as any).alert(okMsg); } catch {} }
+        else Alert.alert('Succès', okMsg);
+      } else {
+        // SMS path: use the backend SMS body (with short portal URL) and open iMessage
+        const r = await fetch(`${API_URL}/api/appointments/${apt.id}/send-client-confirmation`, { method: 'POST' });
+        const d = await r.json().catch(() => ({}));
+        const phone = (apt.client_phone || d?.client_phone || '').replace(/\D/g, '');
+        const body = String(d?.sms_body || '');
+        if (!phone) {
+          Alert.alert('Téléphone manquant', '✅ Nouvelle date acceptée, mais ce client n\'a pas de numéro pour SMS.');
+        } else {
+          const sep = Platform.OS === 'ios' ? '&' : '?';
+          const url = `sms:${phone}${sep}body=${encodeURIComponent(body)}`;
+          if (Platform.OS === 'web') {
+            try { (window as any).open(url, '_blank'); } catch { (window as any).location.href = url; }
+          } else {
+            try {
+              const can = await Linking.canOpenURL(url);
+              if (can) await Linking.openURL(url);
+              else Alert.alert('SMS non disponible', body.slice(0, 200));
+            } catch {
+              Alert.alert('Erreur', 'Impossible d\'ouvrir l\'app SMS');
+            }
+          }
+        }
+      }
+
+      // Refresh the list — the accepted item should disappear (no longer client_requested_alternative)
+      fetchAppointments();
+    } catch {
+      Alert.alert('Erreur', 'Erreur réseau');
+    }
+  };
+
   const getStatusColor = (status: string) => {
     if (status === 'completed') return '#34C759';
     if (status === 'cancelled') return '#FF3B30';
@@ -132,44 +198,72 @@ export default function AppointmentsScreen() {
     const bg = isClientAlt ? '#FFFBEB' : isClientConfirmed ? '#ECFDF5' : '#FFFFFF';
 
     return (
-      <TouchableOpacity
-        testID={`appointment-item-${item.id}`}
+      <View
+        testID={`appointment-row-${item.id}`}
         style={[styles.card, isClientResponseMode && { borderLeftWidth: 4, borderLeftColor: accent, backgroundColor: bg }]}
-        activeOpacity={0.7}
-        onPress={() => router.push({ pathname: '/detail', params: { id: item.id } })}
       >
-        <View style={styles.cardRow}>
-          <View style={styles.dateBox}>
-            <Text style={styles.dateBoxDay}>{formatDate(item.date)}</Text>
-            <Text style={styles.dateBoxTime}>{item.time_slot}</Text>
-          </View>
-          <View style={styles.cardContent}>
-            <Text style={styles.cardTitle} numberOfLines={1}>
-              {isClientAlt ? '🔄 ' : isClientConfirmed ? '✅ ' : ''}{item.client_name || item.title}
-            </Text>
-            {isClientResponseMode ? (
-              <Text style={[styles.cardClient, { color: accent, fontWeight: '700' }]} numberOfLines={1}>
-                {isClientAlt ? clientSuggestion || 'Client demande modification' : 'Confirmé par le client'}
+        <TouchableOpacity
+          testID={`appointment-item-${item.id}`}
+          activeOpacity={0.7}
+          onPress={() => router.push({ pathname: '/detail', params: { id: item.id } })}
+        >
+          <View style={styles.cardRow}>
+            <View style={styles.dateBox}>
+              <Text style={styles.dateBoxDay}>{formatDate(item.date)}</Text>
+              <Text style={styles.dateBoxTime}>{item.time_slot}</Text>
+            </View>
+            <View style={styles.cardContent}>
+              <Text style={styles.cardTitle} numberOfLines={1}>
+                {isClientAlt ? '🔄 ' : isClientConfirmed ? '✅ ' : ''}{item.client_name || item.title}
               </Text>
-            ) : (
-              <Text style={styles.cardClient} numberOfLines={1}>{item.client_name}</Text>
-            )}
-            {isClientResponseMode && isClientAlt && item.client_suggested_note ? (
-              <Text style={[styles.cardClient, { fontSize: 12, fontStyle: 'italic', marginTop: 2 }]} numberOfLines={2}>
-                « {item.client_suggested_note} »
-              </Text>
-            ) : null}
-          </View>
-          <View style={styles.cardEnd}>
-            <View style={[styles.statusBadge, { borderColor: accent }]}>
-              <View style={[styles.statusDot, { backgroundColor: accent }]} />
-              <Text style={[styles.statusBadgeText, { color: accent }]}>
-                {isClientAlt ? 'MODIFIER' : isClientConfirmed ? 'RÉSERVÉ' : item.status}
-              </Text>
+              {isClientResponseMode ? (
+                <Text style={[styles.cardClient, { color: accent, fontWeight: '700' }]} numberOfLines={1}>
+                  {isClientAlt ? clientSuggestion || 'Client demande modification' : 'Confirmé par le client'}
+                </Text>
+              ) : (
+                <Text style={styles.cardClient} numberOfLines={1}>{item.client_name}</Text>
+              )}
+              {isClientResponseMode && isClientAlt && item.client_suggested_note ? (
+                <Text style={[styles.cardClient, { fontSize: 12, fontStyle: 'italic', marginTop: 2 }]} numberOfLines={2}>
+                  « {item.client_suggested_note} »
+                </Text>
+              ) : null}
+            </View>
+            <View style={styles.cardEnd}>
+              <View style={[styles.statusBadge, { borderColor: accent }]}>
+                <View style={[styles.statusDot, { backgroundColor: accent }]} />
+                <Text style={[styles.statusBadgeText, { color: accent }]}>
+                  {isClientAlt ? 'MODIFIER' : isClientConfirmed ? 'RÉSERVÉ' : item.status}
+                </Text>
+              </View>
             </View>
           </View>
-        </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+
+        {/* Quick action buttons — only shown for client_requested_alternative items */}
+        {isClientResponseMode && isClientAlt && (
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              testID={`accept-sms-${item.id}`}
+              style={[styles.actionBtn, styles.actionBtnPrimary]}
+              activeOpacity={0.8}
+              onPress={() => acceptAndNotify(item, 'sms')}
+            >
+              <Feather name="message-square" size={14} color="#FFFFFF" />
+              <Text style={styles.actionBtnText}>Accepter + SMS</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID={`accept-email-${item.id}`}
+              style={[styles.actionBtn, styles.actionBtnSecondary]}
+              activeOpacity={0.8}
+              onPress={() => acceptAndNotify(item, 'email')}
+            >
+              <Feather name="mail" size={14} color="#FFFFFF" />
+              <Text style={styles.actionBtnText}>Accepter + Courriel</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
     );
   };
 
@@ -338,6 +432,34 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.3,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingTop: 4,
+    paddingBottom: 12,
+  },
+  actionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 11,
+    borderRadius: 10,
+  },
+  actionBtnPrimary: {
+    backgroundColor: '#10B981',
+  },
+  actionBtnSecondary: {
+    backgroundColor: '#0B5394',
+  },
+  actionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   emptyState: {
     alignItems: 'center',
