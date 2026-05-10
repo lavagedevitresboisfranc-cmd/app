@@ -25,7 +25,7 @@ import calendar_feed as calendar_feed_module
 import geocoder as geocoder_module
 
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env', override=False)
+load_dotenv(ROOT_DIR / '.env', override=True)
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
