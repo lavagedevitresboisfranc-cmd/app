@@ -94,20 +94,42 @@ def _build_daily_summary_email(date_iso: str, appts: List[Dict[str, Any]]) -> st
         t = (a.get("time_slot") or "")[:5]
         name = a.get("client_name", "")
         addr = a.get("client_address", "") or "—"
-        phone = a.get("client_phone", "") or "—"
+        phone_raw = (a.get("client_phone", "") or "").strip()
+        phone_digits = "".join(c for c in phone_raw if c.isdigit())
+        phone_display = phone_raw or "—"
         email = a.get("client_email", "") or "—"
         title = a.get("title", "")
         email_status = "✅" if a.get("reminder_email_sent_at") else "—"
+
+        # Quick-action SMS/call buttons — tappable from the owner's iPhone
+        action_buttons = ""
+        if phone_digits:
+            sms_body = (
+                f"Bonjour {name}, petit rappel pour votre rendez-vous demain "
+                f"{long_date} à {t}. Au plaisir! - Lavage de Vitres Bois-Franc"
+            )
+            from urllib.parse import quote
+            sms_body_enc = quote(sms_body)
+            # iOS uses '&body=' after the phone with '&' separator (iMessage)
+            sms_url = f"sms:{phone_digits}&body={sms_body_enc}"
+            tel_url = f"tel:{phone_digits}"
+            action_buttons = f"""
+<div style="margin-top:6px;">
+  <a href="{sms_url}" style="display:inline-block;padding:6px 10px;background:#10B981;color:#FFFFFF;text-decoration:none;border-radius:6px;font-size:11px;font-weight:700;margin-right:4px;">📱 SMS</a>
+  <a href="{tel_url}" style="display:inline-block;padding:6px 10px;background:#0B5394;color:#FFFFFF;text-decoration:none;border-radius:6px;font-size:11px;font-weight:700;">📞 Appeler</a>
+</div>"""
+
         rows += f"""
 <tr>
-  <td style="padding:10px 12px;border-bottom:1px solid #E5E7EB;font-weight:700;color:#0891B2;white-space:nowrap;">{t}</td>
-  <td style="padding:10px 12px;border-bottom:1px solid #E5E7EB;">
+  <td style="padding:10px 12px;border-bottom:1px solid #E5E7EB;font-weight:700;color:#0891B2;white-space:nowrap;vertical-align:top;">{t}</td>
+  <td style="padding:10px 12px;border-bottom:1px solid #E5E7EB;vertical-align:top;">
     <div style="font-weight:600;color:#0F172A;">{name}</div>
     <div style="font-size:11px;color:#64748B;margin-top:2px;">{title}</div>
+    {action_buttons}
   </td>
-  <td style="padding:10px 12px;border-bottom:1px solid #E5E7EB;font-size:12px;color:#334155;">📍 {addr}</td>
-  <td style="padding:10px 12px;border-bottom:1px solid #E5E7EB;font-size:12px;color:#334155;">📞 {phone}<br/>✉️ {email}</td>
-  <td style="padding:10px 12px;border-bottom:1px solid #E5E7EB;text-align:center;font-size:14px;">{email_status}</td>
+  <td style="padding:10px 12px;border-bottom:1px solid #E5E7EB;font-size:12px;color:#334155;vertical-align:top;">📍 {addr}</td>
+  <td style="padding:10px 12px;border-bottom:1px solid #E5E7EB;font-size:12px;color:#334155;vertical-align:top;">📞 {phone_display}<br/>✉️ {email}</td>
+  <td style="padding:10px 12px;border-bottom:1px solid #E5E7EB;text-align:center;font-size:14px;vertical-align:top;">{email_status}</td>
 </tr>
 """
     count = len(appts)
@@ -133,7 +155,7 @@ def _build_daily_summary_email(date_iso: str, appts: List[Dict[str, Any]]) -> st
   <tbody>{rows}</tbody>
 </table>
 <p style="margin:16px 0 0 0;color:#94A3B8;font-size:12px;font-style:italic;">
-  📧 = courriel de rappel envoyé au client. Pour les clients sans courriel, envoyez le SMS depuis l'écran « Rappels » dans l'app.
+  📱 = Tapez pour envoyer SMS de rappel via iMessage. 📞 = Tapez pour appeler. 📧 = Courriel de rappel envoyé au client.
 </p>
 """
     return branding.wrap_email(body, unsubscribe_url="")

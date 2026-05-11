@@ -5616,7 +5616,7 @@ async def start_scheduler():
         scheduler.add_job(_process_due_campaigns, IntervalTrigger(minutes=1), id="process_campaigns", replace_existing=True)
         scheduler.add_job(
             _run_24h_reminders,
-            CronTrigger(hour=9, minute=0),
+            CronTrigger(hour=18, minute=0, timezone=ZoneInfo("America/Toronto")),
             id="daily_24h_reminders",
             replace_existing=True,
         )
@@ -5627,7 +5627,7 @@ async def start_scheduler():
             replace_existing=True,
         )
         scheduler.start()
-        logger.info("Scheduler started: daily backup @ 00:00 + campaigns every minute + 24h reminders @ 09:00 ET + prod sync every 3 min")
+        logger.info("Scheduler started: daily backup @ 00:00 + campaigns every minute + 24h reminders @ 18:00 ET (day before) + prod sync every 3 min")
     except Exception as e:
         logger.error(f"Scheduler failed to start: {e}")
 
