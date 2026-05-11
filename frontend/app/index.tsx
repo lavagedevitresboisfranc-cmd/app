@@ -36,6 +36,8 @@ interface Appointment {
   duration_minutes: number;
   notes: string;
   status: string;
+  price?: number;
+  paid_amount?: number;
   // Client portal response (set when client uses the public confirm/modify page)
   client_confirmed?: boolean;
   client_requested_alternative?: boolean;
@@ -72,6 +74,9 @@ interface CalendarItem {
   clientAlt?: boolean;
   clientAltDate?: string;
   clientAltTime?: string;
+  // For day summary (revenue calculation)
+  paidAmount?: number;
+  price?: number;
 }
 
 const LOGO_URL = process.env.EXPO_PUBLIC_LOGO_URL || '';
@@ -517,6 +522,8 @@ export default function CalendarScreen() {
           clientAlt: !!a.client_requested_alternative,
           clientAltDate: a.client_suggested_date || undefined,
           clientAltTime: a.client_suggested_time || undefined,
+          paidAmount: typeof a.paid_amount === 'number' ? a.paid_amount : undefined,
+          price: typeof a.price === 'number' ? a.price : undefined,
         };
         if (!grouped[a.date]) grouped[a.date] = [];
         grouped[a.date].push(item);
@@ -1098,73 +1105,124 @@ export default function CalendarScreen() {
       )}
 
       {/* MONTH VIEW */}
-      {viewMode === 'month' && (
-        <SectionList
-          testID="month-list"
-          sections={Object.keys(monthItems)
-            .sort()
-            .map((day) => ({ title: formatDayLabel(day), data: monthItems[day] }))}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          renderSectionHeader={({ section }) => (
-            <View style={styles.weekDayHeader}>
-              <Text style={styles.weekDayTitle}>{section.title}</Text>
-              <Text style={styles.weekDayCount}>{section.data.length}</Text>
-            </View>
-          )}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#000" />}
-          ListHeaderComponent={
-            <View>
-              <Calendar
-                key={selectedDate}
-                current={selectedDate}
-                onDayPress={(day: { dateString: string }) => {
-                  setSelectedDate(day.dateString);
-                  fetchMonthItems(day.dateString);
-                  fetchMarkedDates(day.dateString);
-                }}
-                onMonthChange={(month: { dateString: string }) => {
-                  fetchMonthItems(month.dateString);
-                }}
-                markedDates={markedDates}
-                markingType="custom"
-                theme={{
-                  backgroundColor: '#FAFAFA',
-                  calendarBackground: '#FAFAFA',
-                  textSectionTitleColor: '#737373',
-                  selectedDayBackgroundColor: '#000000',
-                  selectedDayTextColor: '#FFFFFF',
-                  todayTextColor: '#000000',
-                  todayBackgroundColor: '#E5E5E5',
-                  dayTextColor: '#0A0A0A',
-                  textDisabledColor: '#A3A3A3',
-                  arrowColor: '#000000',
-                  monthTextColor: '#0A0A0A',
-                  textMonthFontWeight: '700',
-                  textMonthFontSize: 18,
-                  textDayFontSize: 15,
-                  textDayHeaderFontSize: 13,
-                  textDayFontWeight: '500',
-                  textDayHeaderFontWeight: '600',
-                }}
-                style={styles.calendar}
-              />
-            </View>
-          }
-          ListEmptyComponent={
-            loading ? (
-              <ActivityIndicator size="small" color="#000" style={{ marginTop: 32 }} />
-            ) : (
-              <View style={styles.emptyState}>
-                <Feather name="calendar" size={48} color="#E5E5E5" />
-                <Text style={styles.emptyTitle}>Aucun rendez-vous ce mois-ci</Text>
+      {viewMode === 'month' && (() => {
+        // === Build a filtered section list — only the selectedDate's items ===
+        const dayItemsSelected: CalendarItem[] = monthItems[selectedDate] || [];
+        const sectionsToRender = dayItemsSelected.length > 0
+          ? [{ title: formatDayLabel(selectedDate), data: dayItemsSelected }]
+          : [];
+        // Day summary
+        let totalRevenue = 0;
+        let totalMinutes = 0;
+        dayItemsSelected.forEach((it) => {
+          if (it.type !== 'appointment') return;
+          if (it.status === 'paid' && typeof it.paidAmount === 'number') totalRevenue += it.paidAmount;
+          else if (typeof it.price === 'number') totalRevenue += it.price;
+          totalMinutes += it.duration || 0;
+        });
+        const h = Math.floor(totalMinutes / 60);
+        const m = totalMinutes % 60;
+        const timeLabel = h > 0 ? `${h}h${m > 0 ? ` ${m}min` : ''}` : `${m} min`;
+        // Pretty date
+        let prettyDate = selectedDate;
+        try {
+          const dObj = new Date(selectedDate + 'T00:00:00');
+          prettyDate = dObj.toLocaleDateString('fr-CA', { weekday: 'long', day: 'numeric', month: 'long' });
+          prettyDate = prettyDate.charAt(0).toUpperCase() + prettyDate.slice(1);
+        } catch {}
+
+        return (
+          <SectionList
+            testID="month-list"
+            sections={sectionsToRender}
+            keyExtractor={(item) => item.id}
+            renderItem={renderItem}
+            renderSectionHeader={({ section }) => (
+              <View style={styles.weekDayHeader}>
+                <Text style={styles.weekDayTitle}>{section.title}</Text>
+                <Text style={styles.weekDayCount}>{section.data.length}</Text>
               </View>
-            )
-          }
-          contentContainerStyle={styles.listContent}
-          stickySectionHeadersEnabled={false}
-        />
-      )}
+            )}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#000" />}
+            ListHeaderComponent={
+              <View>
+                <Calendar
+                  key={selectedDate}
+                  current={selectedDate}
+                  onDayPress={(day: { dateString: string }) => {
+                    setSelectedDate(day.dateString);
+                    fetchMonthItems(day.dateString);
+                    fetchMarkedDates(day.dateString);
+                  }}
+                  onMonthChange={(month: { dateString: string }) => {
+                    fetchMonthItems(month.dateString);
+                  }}
+                  markedDates={markedDates}
+                  markingType="custom"
+                  theme={{
+                    backgroundColor: '#FAFAFA',
+                    calendarBackground: '#FAFAFA',
+                    textSectionTitleColor: '#737373',
+                    selectedDayBackgroundColor: '#000000',
+                    selectedDayTextColor: '#FFFFFF',
+                    todayTextColor: '#000000',
+                    todayBackgroundColor: '#E5E5E5',
+                    dayTextColor: '#0A0A0A',
+                    textDisabledColor: '#A3A3A3',
+                    arrowColor: '#000000',
+                    monthTextColor: '#0A0A0A',
+                    textMonthFontWeight: '700',
+                    textMonthFontSize: 18,
+                    textDayFontSize: 15,
+                    textDayHeaderFontSize: 13,
+                    textDayFontWeight: '500',
+                    textDayHeaderFontWeight: '600',
+                  }}
+                  style={styles.calendar}
+                />
+
+                {/* Day summary banner — revenue + time worked for the selected day */}
+                <View style={styles.daySummaryCard} testID="day-summary">
+                  <View style={styles.daySummaryHeader}>
+                    <Text style={styles.daySummaryDate}>{prettyDate}</Text>
+                    <Text style={styles.daySummaryCount}>
+                      {dayItemsSelected.length} RDV{dayItemsSelected.length > 1 ? 's' : ''}
+                    </Text>
+                  </View>
+                  <View style={styles.daySummaryRow}>
+                    <View style={styles.daySummaryCol}>
+                      <Text style={styles.daySummaryLabel}>💰 Revenu</Text>
+                      <Text style={[styles.daySummaryValue, { color: '#10B981' }]}>
+                        {totalRevenue.toFixed(2)} $
+                      </Text>
+                    </View>
+                    <View style={styles.daySummaryDivider} />
+                    <View style={styles.daySummaryCol}>
+                      <Text style={styles.daySummaryLabel}>⏱️ Temps</Text>
+                      <Text style={[styles.daySummaryValue, { color: '#0891B2' }]}>
+                        {totalMinutes > 0 ? timeLabel : '—'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            }
+            ListEmptyComponent={
+              loading ? (
+                <ActivityIndicator size="small" color="#000" style={{ marginTop: 32 }} />
+              ) : (
+                <View style={styles.emptyState}>
+                  <Feather name="calendar" size={48} color="#E5E5E5" />
+                  <Text style={styles.emptyTitle}>Aucun rendez-vous ce jour</Text>
+                  <Text style={styles.emptySubtitle}>Sélectionnez une autre date sur le calendrier.</Text>
+                </View>
+              )
+            }
+            contentContainerStyle={styles.listContent}
+            stickySectionHeadersEnabled={false}
+          />
+        );
+      })()}
 
       {/* SEASON VIEW */}
       {viewMode === 'season' && (
@@ -1535,6 +1593,62 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.2,
     flexShrink: 1,
+  },
+  // === Day summary banner (Month view) ===
+  daySummaryCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  daySummaryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  daySummaryDate: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  daySummaryCount: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  daySummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  daySummaryCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  daySummaryDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: '#E5E7EB',
+  },
+  daySummaryLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  daySummaryValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginTop: 4,
   },
   emptyState: {
     alignItems: 'center',
