@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 import resend
 import branding
 import invoice_logo
+import web_push
 import reminders as reminders_module
 import prod_sync as prod_sync_module
 import calendar_feed as calendar_feed_module
@@ -958,6 +959,16 @@ async def create_request(data: RequestCreate):
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.appointment_requests.insert_one(request_doc)
+
+    # PWA push notification to owner (free, instant; even when app closed)
+    try:
+        req_type_lbl = "estimation" if (request_doc.get("request_type") or "rdv") == "est" else "rendez-vous"
+        push_title = f"🔔 Nouvelle demande de {req_type_lbl}"
+        push_body = f"{request_doc.get('customer_name','Client')} — {request_doc.get('preferred_date','')} {request_doc.get('preferred_time','')}"
+        push_url = f"/request-detail?id={request_doc['id']}"
+        asyncio.create_task(_notify_owner_push(push_title, push_body, push_url, tag=f"req-{request_doc['id']}"))
+    except Exception as _e:
+        logger.warning(f"push trigger (new request) failed: {_e}")
 
     # Send branded email notification with rich layout + CTA button
     if NOTIFY_EMAIL and resend.api_key:
@@ -3147,6 +3158,15 @@ async def client_suggest_alternative(appointment_id: str, request: Request):
         except Exception as e:
             logger.warning(f"client-suggest-alternative owner notify failed: {e}")
 
+    # PWA push notification to owner
+    try:
+        push_title = "🔄 Client propose un autre moment"
+        push_body = f"{appt.get('client_name','Client')} → {date_pretty} {new_time}"
+        push_url = f"/appointments?filter=client_response"
+        asyncio.create_task(_notify_owner_push(push_title, push_body, push_url, tag=f"alt-{appointment_id}"))
+    except Exception as _e:
+        logger.warning(f"push trigger (client alt) failed: {_e}")
+
     return HTMLResponse(_render_status_page(
         title="🔄 Proposition envoyée!",
         color="#F59E0B",
@@ -3281,6 +3301,60 @@ async def get_tomorrow_reminders():
     Each appointment includes its reminder_email_sent_at / reminder_sms_sent_at fields.
     """
     return await reminders_module.get_tomorrow_appointments(db)
+
+
+# === Web Push (PWA notifications) endpoints ===
+@api_router.get("/push/config")
+async def push_config():
+    """Return the public VAPID key the frontend needs to subscribe."""
+    return {
+        "configured": web_push.is_configured(),
+        "vapid_public_key": web_push._vapid_public_key() if web_push.is_configured() else "",
+    }
+
+
+@api_router.post("/push/subscribe")
+async def push_subscribe(payload: dict = Body(...)):
+    """Save (or update) a browser push subscription.
+    Body: { subscription: PushSubscriptionJSON, label?: str }
+    """
+    sub = payload.get("subscription") or payload
+    label = (payload.get("label") or "").strip()
+    try:
+        endpoint = await web_push.save_subscription(db, sub, label=label)
+        return {"ok": True, "endpoint": endpoint}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.warning(f"push subscribe failed: {e}")
+        raise HTTPException(status_code=500, detail="subscribe failed")
+
+
+@api_router.post("/push/unsubscribe")
+async def push_unsubscribe(payload: dict = Body(...)):
+    endpoint = (payload.get("endpoint") or "").strip()
+    deleted = await web_push.delete_subscription(db, endpoint)
+    return {"ok": True, "deleted": deleted}
+
+
+@api_router.post("/push/test")
+async def push_test(payload: dict = Body(...)):
+    """Send a test push to all subscribed devices."""
+    title = (payload.get("title") or "🔔 Test Gexia360").strip()
+    body = (payload.get("body") or "Les notifications fonctionnent! 🎉").strip()
+    url = (payload.get("url") or "/").strip()
+    result = await web_push.broadcast(db, title=title, body=body, url=url)
+    return result
+
+
+async def _notify_owner_push(title: str, body: str, url: str = "/", tag: str = ""):
+    """Internal helper: fire-and-forget push notification to all owner devices."""
+    try:
+        await web_push.broadcast(db, title=title, body=body, url=url, tag=tag)
+    except Exception as e:
+        logger.warning(f"_notify_owner_push failed: {e}")
+
+
 
 
 @api_router.post("/reminders/run-now")

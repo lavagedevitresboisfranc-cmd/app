@@ -1,12 +1,55 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import AppHeader from '../components/AppHeader';
 import { useTheme, ThemeMode } from '../src/theme/ThemeContext';
+import { getPushState, enablePush, disablePush, sendTestPush, PushState } from '../src/webPush';
 
 export default function SettingsScreen() {
   const { mode, setMode, colors, isDark, scheme } = useTheme();
+
+  // === Push notifications state ===
+  const [push, setPush] = useState<PushState>({ supported: false, permission: 'unsupported', subscribed: false, endpoint: '' });
+  const [busy, setBusy] = useState(false);
+  const [pushMsg, setPushMsg] = useState('');
+
+  const refreshPush = useCallback(async () => {
+    const s = await getPushState();
+    setPush(s);
+  }, []);
+
+  useEffect(() => { refreshPush(); }, [refreshPush]);
+
+  const handleEnable = async () => {
+    setBusy(true); setPushMsg('');
+    const r = await enablePush(`${Platform.OS === 'web' ? 'PWA' : 'Native'} - ${new Date().toLocaleDateString('fr-CA')}`);
+    setBusy(false);
+    if (r.ok) {
+      setPushMsg('✅ Notifications activées sur cet appareil!');
+      // Send a quick test
+      const t = await sendTestPush();
+      setPushMsg(`✅ Notifications activées. Test envoyé à ${t.sent}/${t.total} appareil(s).`);
+    } else {
+      setPushMsg('⚠️ ' + (r.error || 'Échec'));
+    }
+    refreshPush();
+  };
+
+  const handleDisable = async () => {
+    setBusy(true); setPushMsg('');
+    const r = await disablePush();
+    setBusy(false);
+    setPushMsg(r.ok ? '🔕 Notifications désactivées.' : '⚠️ ' + (r.error || 'Échec'));
+    refreshPush();
+  };
+
+  const handleTest = async () => {
+    setBusy(true); setPushMsg('');
+    const t = await sendTestPush();
+    setBusy(false);
+    setPushMsg(`📨 Test envoyé à ${t.sent}/${t.total} appareil(s). ${t.failed ? `(${t.failed} échec)` : ''}`);
+  };
 
   const themeOptions: { id: ThemeMode; label: string; icon: keyof typeof Feather.glyphMap; description: string }[] = [
     { id: 'auto',  label: 'Automatique', icon: 'smartphone', description: 'Suit le réglage système de votre appareil' },
@@ -19,6 +62,61 @@ export default function SettingsScreen() {
       <AppHeader title="Paramètres" showBack />
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+        {/* === Notifications push (PWA) === */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>NOTIFICATIONS</Text>
+          <Text style={[styles.sectionHint, { color: colors.textSubtle }]}>
+            Recevez une alerte instantanée sur cet appareil pour chaque nouvelle demande ou réponse client.
+          </Text>
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 16 }]}>
+            {!push.supported ? (
+              <View>
+                <Text style={[styles.optionLabel, { color: colors.text }]}>📵 Non disponible</Text>
+                <Text style={[styles.optionDesc, { color: colors.textMuted, marginTop: 6 }]}>
+                  Sur iPhone, installez d'abord l'app: tapez « Partager » → « Sur l'écran d'accueil » → puis ouvrez l'app depuis l'icône Gexia360 et revenez ici.
+                </Text>
+              </View>
+            ) : (
+              <View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                  <Feather name={push.subscribed ? 'bell' : 'bell-off'} size={22} color={push.subscribed ? '#10B981' : '#A3A3A3'} />
+                  <Text style={[styles.optionLabel, { color: colors.text, marginLeft: 12 }]}>
+                    {push.subscribed ? 'Activées sur cet appareil' : 'Désactivées'}
+                  </Text>
+                </View>
+                {push.permission === 'denied' && (
+                  <Text style={[styles.optionDesc, { color: '#DC2626', marginBottom: 10 }]}>
+                    ⚠️ Permission refusée. Pour activer: Réglages iOS → Notifications → cherchez « Gexia360 » → Autoriser.
+                  </Text>
+                )}
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                  {!push.subscribed ? (
+                    <TouchableOpacity
+                      style={[styles.btn, { backgroundColor: '#10B981' }]}
+                      onPress={handleEnable}
+                      disabled={busy}
+                    >
+                      {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.btnText}>🔔 Activer</Text>}
+                    </TouchableOpacity>
+                  ) : (
+                    <>
+                      <TouchableOpacity style={[styles.btn, { backgroundColor: '#0B5394', flex: 1 }]} onPress={handleTest} disabled={busy}>
+                        <Text style={styles.btnText}>📨 Tester</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.btn, { backgroundColor: '#DC2626', flex: 1 }]} onPress={handleDisable} disabled={busy}>
+                        <Text style={styles.btnText}>🔕 Désactiver</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
+                {!!pushMsg && (
+                  <Text style={[styles.optionDesc, { color: colors.text, marginTop: 12 }]}>{pushMsg}</Text>
+                )}
+              </View>
+            )}
+          </View>
+        </View>
+
         {/* Theme section */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>APPARENCE</Text>
@@ -84,7 +182,15 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   optionLabel: { fontSize: 15, fontWeight: '700' },
-  optionDesc: { fontSize: 12, marginTop: 2 },
+  optionDesc: { fontSize: 12, marginTop: 2, lineHeight: 18 },
   aboutApp: { fontSize: 18, fontWeight: '800' },
   aboutVersion: { fontSize: 12, marginTop: 4 },
+  btn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 14 },
 });
