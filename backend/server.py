@@ -5035,6 +5035,23 @@ async def encaisser_appointment(appointment_id: str, payload: dict = Body(...)):
     if not appt:
         raise HTTPException(status_code=404, detail="Appointment not found")
 
+    # Idempotent: if this appointment is already paid (has a revenue), return the existing one
+    # to prevent duplicate revenue entries from accidental double-taps.
+    existing_rev_id = appt.get("revenue_id")
+    if existing_rev_id:
+        existing = await db.revenues.find_one({"id": existing_rev_id}, {"_id": 0})
+        if existing:
+            return {
+                "ok": True,
+                "already_paid": True,
+                "revenue": _revenue_doc_to_response(existing),
+                "appointment_id": appointment_id,
+                "status": appt.get("status", "paid"),
+                "paid_at": appt.get("paid_at"),
+                "paid_amount": appt.get("paid_amount"),
+                "paid_method": appt.get("paid_method"),
+            }
+
     try:
         amount = float(payload.get("amount", 0) or 0)
     except Exception:
@@ -5050,7 +5067,7 @@ async def encaisser_appointment(appointment_id: str, payload: dict = Body(...)):
     if category not in VALID_REVENUE_CATEGORIES:
         raise HTTPException(status_code=400, detail=f"Catégorie invalide. Valides: {VALID_REVENUE_CATEGORIES}")
 
-    date_str = payload.get("date") or datetime.now(timezone.utc).date().isoformat()
+    date_str = payload.get("date") or appt.get("date") or datetime.now(timezone.utc).date().isoformat()
     address = appt.get("client_address", "") or ""
     default_desc = f"Lavage de vitres - {address}".strip(" -")
     description = (payload.get("description") or default_desc).strip()
