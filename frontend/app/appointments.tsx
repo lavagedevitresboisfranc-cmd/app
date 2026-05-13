@@ -180,8 +180,11 @@ export default function AppointmentsScreen() {
   ];
 
   const renderAppointment = ({ item }: { item: Appointment }) => {
-    const isClientAlt = !!item.client_requested_alternative;
-    const isClientConfirmed = !!item.client_confirmed && !isClientAlt;
+    // Only show client response badges for upcoming appointments — once paid/completed/cancelled,
+    // the final status takes priority over the client's earlier booking confirmation.
+    const isActive = item.status === 'upcoming';
+    const isClientAlt = !!item.client_requested_alternative && isActive;
+    const isClientConfirmed = !!item.client_confirmed && !isClientAlt && isActive;
 
     // Build "client suggestion" subtitle when applicable
     let clientSuggestion = '';
