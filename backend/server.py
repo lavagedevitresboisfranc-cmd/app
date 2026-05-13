@@ -5688,6 +5688,18 @@ async def start_scheduler():
     try:
         scheduler.add_job(_create_auto_backup, CronTrigger(hour=0, minute=0), id="daily_backup", replace_existing=True)
         scheduler.add_job(_process_due_campaigns, IntervalTrigger(minutes=1), id="process_campaigns", replace_existing=True)
+        # === Daily recap of TOMORROW's appointments ===
+        # We run it TWICE per day so the owner always has the correct info:
+        #   • 05:00 ET (matches the old broken production cron — preview's
+        #     correct recap arrives at the same time so the user can ignore
+        #     the bogus "0 RDV" email from the dead production backend)
+        #   • 18:00 ET the day before (preferred timing per user)
+        scheduler.add_job(
+            _run_24h_reminders,
+            CronTrigger(hour=5, minute=0, timezone=ZoneInfo("America/Toronto")),
+            id="daily_24h_reminders_morning",
+            replace_existing=True,
+        )
         scheduler.add_job(
             _run_24h_reminders,
             CronTrigger(hour=18, minute=0, timezone=ZoneInfo("America/Toronto")),
