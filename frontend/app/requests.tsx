@@ -58,9 +58,13 @@ export default function RequestsScreen() {
         : `${API_URL}/api/requests?status=${filter}`;
       const res = await fetch(url);
       const data = await res.json();
-      // Client-side filter by type
+      // Client-side filter by type, plus hide accepted/declined when on "Toutes" (active only)
       const filtered = Array.isArray(data)
         ? data.filter((r: AppointmentRequest) => {
+            // When "Toutes" is selected, only show ACTIVE requests (hide accepted & archived/declined)
+            if (filter === 'all' && (r.status === 'accepted' || r.status === 'declined')) {
+              return false;
+            }
             if (typeFilter === 'all') return true;
             const t = r.request_type || 'rdv';
             return t === typeFilter;
