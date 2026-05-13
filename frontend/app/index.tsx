@@ -98,29 +98,20 @@ const getDaysOfWeek = (baseDate: string) => {
   return days;
 };
 
-// Return [startISO, endISO] for the current meteorological season (Quebec):
-//   Printemps: 1 mars  – 31 mai
-//   Été:       1 juin  – 31 août
-//   Automne:   1 sept  – 30 nov
-//   Hiver:     1 dec   – 28/29 fév
+// Window-cleaning season (per user): April 1 → November 30.
+// Outside that range (Dec, Jan, Feb, Mar), we still return that same range for
+// the closest year so the Saison view always shows a meaningful list.
 const getSeasonRange = (baseDate: string): { startISO: string; endISO: string; label: string } => {
   const d = new Date(baseDate + 'T00:00:00');
-  const m = d.getMonth();
   const y = d.getFullYear();
-  let startY = y, startM = 0, endY = y, endM = 0, label = 'Saison';
-  if (m >= 2 && m <= 4) { startM = 2; endM = 4; label = 'Printemps'; }
-  else if (m >= 5 && m <= 7) { startM = 5; endM = 7; label = 'Été'; }
-  else if (m >= 8 && m <= 10) { startM = 8; endM = 10; label = 'Automne'; }
-  else {
-    label = 'Hiver';
-    if (m === 11) { startM = 11; endY = y + 1; endM = 1; }
-    else { startY = y - 1; startM = 11; endM = 1; }
-  }
-  const start = new Date(startY, startM, 1);
-  // Last day of endM
-  const end = new Date(endY, endM + 1, 0);
+  const m = d.getMonth(); // 0-11
+  // If we're in Jan/Feb/Mar → show last year's season (Apr 1 - Nov 30 of y-1).
+  // Otherwise show this year's season.
+  const seasonYear = (m <= 2) ? y - 1 : y;
+  const start = new Date(seasonYear, 3, 1);       // April 1
+  const end = new Date(seasonYear, 10, 30);       // November 30
   const fmt = (dt: Date) => dt.toISOString().split('T')[0];
-  return { startISO: fmt(start), endISO: fmt(end), label };
+  return { startISO: fmt(start), endISO: fmt(end), label: `Saison ${seasonYear}` };
 };
 
 const formatDayLabel = (dateStr: string) => {
@@ -1106,12 +1097,12 @@ export default function CalendarScreen() {
 
       {/* MONTH VIEW */}
       {viewMode === 'month' && (() => {
-        // === Build a filtered section list — only the selectedDate's items ===
+        // === Show ALL appointments of the month, grouped by day. ===
+        // The currently-selected day still gets a quick "revenue + time" summary card
+        // pinned above the list so the owner can glance at today's numbers.
         const dayItemsSelected: CalendarItem[] = monthItems[selectedDate] || [];
-        const sectionsToRender = dayItemsSelected.length > 0
-          ? [{ title: formatDayLabel(selectedDate), data: dayItemsSelected }]
-          : [];
-        // Day summary
+
+        // Day summary (for the selected date)
         let totalRevenue = 0;
         let totalMinutes = 0;
         dayItemsSelected.forEach((it) => {
@@ -1123,13 +1114,17 @@ export default function CalendarScreen() {
         const h = Math.floor(totalMinutes / 60);
         const m = totalMinutes % 60;
         const timeLabel = h > 0 ? `${h}h${m > 0 ? ` ${m}min` : ''}` : `${m} min`;
-        // Pretty date
         let prettyDate = selectedDate;
         try {
           const dObj = new Date(selectedDate + 'T00:00:00');
           prettyDate = dObj.toLocaleDateString('fr-CA', { weekday: 'long', day: 'numeric', month: 'long' });
           prettyDate = prettyDate.charAt(0).toUpperCase() + prettyDate.slice(1);
         } catch {}
+
+        // Build full-month sections (every day with at least 1 item)
+        const sectionsToRender = Object.keys(monthItems)
+          .sort()
+          .map((day) => ({ title: formatDayLabel(day), data: monthItems[day] }));
 
         return (
           <SectionList
@@ -1151,7 +1146,6 @@ export default function CalendarScreen() {
                   current={selectedDate}
                   onDayPress={(day: { dateString: string }) => {
                     setSelectedDate(day.dateString);
-                    fetchMonthItems(day.dateString);
                     fetchMarkedDates(day.dateString);
                   }}
                   onMonthChange={(month: { dateString: string }) => {
@@ -1181,7 +1175,7 @@ export default function CalendarScreen() {
                   style={styles.calendar}
                 />
 
-                {/* Day summary banner — revenue + time worked for the selected day */}
+                {/* Day summary banner — revenue + time worked for the SELECTED day */}
                 <View style={styles.daySummaryCard} testID="day-summary">
                   <View style={styles.daySummaryHeader}>
                     <Text style={styles.daySummaryDate}>{prettyDate}</Text>
@@ -1213,8 +1207,7 @@ export default function CalendarScreen() {
               ) : (
                 <View style={styles.emptyState}>
                   <Feather name="calendar" size={48} color="#E5E5E5" />
-                  <Text style={styles.emptyTitle}>Aucun rendez-vous ce jour</Text>
-                  <Text style={styles.emptySubtitle}>Sélectionnez une autre date sur le calendrier.</Text>
+                  <Text style={styles.emptyTitle}>Aucun rendez-vous ce mois-ci</Text>
                 </View>
               )
             }
@@ -1420,29 +1413,34 @@ const styles = StyleSheet.create({
   },
   toggleRow: {
     flexDirection: 'row',
-    paddingHorizontal: 24,
+    paddingHorizontal: 12,
     paddingBottom: 12,
-    gap: 8,
+    gap: 6,
     borderBottomWidth: 1,
     borderColor: '#E5E5E5',
   },
   toggleBtn: {
     flex: 1,
     paddingVertical: 10,
-    borderRadius: 4,
+    paddingHorizontal: 4,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: '#E5E5E5',
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 40,
   },
   toggleBtnActive: {
     backgroundColor: '#000000',
     borderColor: '#000000',
   },
   toggleText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#737373',
+    textAlign: 'center',
+    letterSpacing: -0.1,
   },
   toggleTextActive: {
     color: '#FFFFFF',
