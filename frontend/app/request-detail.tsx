@@ -72,6 +72,70 @@ export default function RequestDetailScreen() {
   const [loadingDay, setLoadingDay] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
 
+  // --- Edit mode for customer info / preferred date+time ---
+  const [editMode, setEditMode] = useState(false);
+  const [eName, setEName] = useState('');
+  const [eEmail, setEEmail] = useState('');
+  const [ePhone, setEPhone] = useState('');
+  const [eAddress, setEAddress] = useState('');
+  const [eDate, setEDate] = useState('');
+  const [eTime, setETime] = useState('');
+  const [eMessage, setEMessage] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [showEditCal, setShowEditCal] = useState(false);
+  const [showEditTime, setShowEditTime] = useState(false);
+
+  const openEdit = () => {
+    if (!request) return;
+    setEName(request.customer_name || '');
+    setEEmail(request.customer_email || '');
+    setEPhone(request.customer_phone || '');
+    setEAddress(request.customer_address || '');
+    setEDate(request.preferred_date || '');
+    setETime(request.preferred_time || '');
+    setEMessage(request.message || '');
+    setEditMode(true);
+  };
+
+  const saveEdit = async () => {
+    if (!request) return;
+    setSavingEdit(true);
+    try {
+      const res = await fetch(`${API_URL}/api/requests/${request.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_name: eName.trim(),
+          customer_email: eEmail.trim(),
+          customer_phone: ePhone.trim(),
+          customer_address: eAddress.trim(),
+          preferred_date: eDate,
+          preferred_time: eTime,
+          message: eMessage,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'patch failed');
+      }
+      const data = await res.json();
+      setRequest(data);
+      setEditMode(false);
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        // brief confirmation via alert is too intrusive; just close edit mode
+      }
+    } catch (e: any) {
+      console.error(e);
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.alert(`Erreur: ${e?.message || 'sauvegarde échouée'}`);
+      } else {
+        Alert.alert('Erreur', e?.message || 'Sauvegarde échouée');
+      }
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   useFocusEffect(
     useCallback(() => {
       if (id) fetchRequest();
@@ -513,11 +577,39 @@ export default function RequestDetailScreen() {
   return (
     <SafeAreaView style={styles.safeArea} testID="request-detail-screen">
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <AppHeader title="Demande" showBack />
+        <AppHeader
+          title="Demande"
+          showBack
+          rightAction={
+            editMode ? (
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity onPress={() => setEditMode(false)} disabled={savingEdit} style={styles.editCancelBtn}>
+                  <Text style={styles.editCancelText}>Annuler</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={saveEdit} disabled={savingEdit} style={styles.editSaveBtn}>
+                  {savingEdit ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.editSaveText}>Enregistrer</Text>}
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity onPress={openEdit} style={styles.editIconBtn} testID="edit-request-btn">
+                <Feather name="edit-2" size={18} color="#0A0A0A" />
+              </TouchableOpacity>
+            )
+          }
+        />
 
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           {/* Customer Info */}
-          <Text style={styles.title} testID="request-customer-name">{request.customer_name}</Text>
+          {editMode ? (
+            <TextInput
+              value={eName}
+              onChangeText={setEName}
+              placeholder="Nom du client"
+              style={[styles.title, styles.editTitleInput]}
+            />
+          ) : (
+            <Text style={styles.title} testID="request-customer-name">{request.customer_name}</Text>
+          )}
           <View style={styles.statusRow}>
             {/* Type badge */}
             <View style={[styles.statusBadge, {
@@ -544,46 +636,84 @@ export default function RequestDetailScreen() {
               <Feather name="mail" size={18} color="#737373" />
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>EMAIL</Text>
-                <Text style={styles.infoValue} testID="request-email">{request.customer_email}</Text>
+                {editMode ? (
+                  <TextInput
+                    value={eEmail}
+                    onChangeText={setEEmail}
+                    placeholder="email@exemple.com"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    style={styles.editInput}
+                  />
+                ) : (
+                  <Text style={styles.infoValue} testID="request-email">{request.customer_email}</Text>
+                )}
               </View>
             </View>
           </View>
 
-          {request.customer_phone ? (
+          {(editMode || request.customer_phone) ? (
             <View style={styles.infoCard}>
               <View style={styles.infoRow}>
                 <Feather name="phone" size={18} color="#737373" />
                 <View style={styles.infoContent}>
                   <Text style={styles.infoLabel}>TÉLÉPHONE</Text>
-                  <Text style={styles.infoValue} testID="request-phone">{request.customer_phone}</Text>
+                  {editMode ? (
+                    <TextInput
+                      value={ePhone}
+                      onChangeText={setEPhone}
+                      placeholder="514-555-5555"
+                      keyboardType="phone-pad"
+                      style={styles.editInput}
+                    />
+                  ) : (
+                    <Text style={styles.infoValue} testID="request-phone">{request.customer_phone}</Text>
+                  )}
                 </View>
               </View>
             </View>
           ) : null}
 
-          {request.customer_address ? (
-            <TouchableOpacity
-              testID="request-address-link"
-              activeOpacity={0.7}
-              onPress={() => {
-                const address = encodeURIComponent(request.customer_address);
-                Alert.alert('Ouvrir avec', 'Choisissez votre app de navigation', [
-                  { text: 'Waze', onPress: () => Linking.openURL(`https://waze.com/ul?q=${address}&navigate=yes`) },
-                  { text: 'Google Maps', onPress: () => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${address}`) },
-                  { text: 'Annuler', style: 'cancel' },
-                ]);
-              }}
-              style={styles.infoCard}
-            >
-              <View style={styles.infoRow}>
-                <Feather name="map-pin" size={18} color="#737373" />
-                <View style={styles.infoContent}>
-                  <Text style={styles.infoLabel}>ADRESSE</Text>
-                  <Text style={[styles.infoValue, { textDecorationLine: 'underline' }]} testID="request-address">{request.customer_address}</Text>
+          {(editMode || request.customer_address) ? (
+            editMode ? (
+              <View style={styles.infoCard}>
+                <View style={styles.infoRow}>
+                  <Feather name="map-pin" size={18} color="#737373" />
+                  <View style={styles.infoContent}>
+                    <Text style={styles.infoLabel}>ADRESSE</Text>
+                    <TextInput
+                      value={eAddress}
+                      onChangeText={setEAddress}
+                      placeholder="123 Rue Exemple, Ville"
+                      style={styles.editInput}
+                    />
+                  </View>
                 </View>
-                <Feather name="navigation" size={18} color="#000000" />
               </View>
-            </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                testID="request-address-link"
+                activeOpacity={0.7}
+                onPress={() => {
+                  const address = encodeURIComponent(request.customer_address);
+                  Alert.alert('Ouvrir avec', 'Choisissez votre app de navigation', [
+                    { text: 'Waze', onPress: () => Linking.openURL(`https://waze.com/ul?q=${address}&navigate=yes`) },
+                    { text: 'Google Maps', onPress: () => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${address}`) },
+                    { text: 'Annuler', style: 'cancel' },
+                  ]);
+                }}
+                style={styles.infoCard}
+              >
+                <View style={styles.infoRow}>
+                  <Feather name="map-pin" size={18} color="#737373" />
+                  <View style={styles.infoContent}>
+                    <Text style={styles.infoLabel}>ADRESSE</Text>
+                    <Text style={[styles.infoValue, { textDecorationLine: 'underline' }]} testID="request-address">{request.customer_address}</Text>
+                  </View>
+                  <Feather name="navigation" size={18} color="#000000" />
+                </View>
+              </TouchableOpacity>
+            )
           ) : null}
 
           <View style={styles.infoCard}>
@@ -591,9 +721,20 @@ export default function RequestDetailScreen() {
               <Feather name="calendar" size={18} color="#737373" />
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>PRÉFÉRÉ: DATE & HEURE</Text>
-                <Text style={styles.infoValue} testID="request-datetime">
-                  {formatDate(request.preferred_date)} at {request.preferred_time}
-                </Text>
+                {editMode ? (
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity onPress={() => setShowEditCal(true)} style={[styles.editInput, { flex: 1, justifyContent: 'center' }]} activeOpacity={0.7}>
+                      <Text style={styles.editInputText}>{eDate || 'Choisir date'}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => setShowEditTime(true)} style={[styles.editInput, { width: 100, justifyContent: 'center' }]} activeOpacity={0.7}>
+                      <Text style={styles.editInputText}>{eTime || 'Heure'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <Text style={styles.infoValue} testID="request-datetime">
+                    {formatDate(request.preferred_date)} at {request.preferred_time}
+                  </Text>
+                )}
               </View>
             </View>
           </View>
@@ -1307,6 +1448,52 @@ export default function RequestDetailScreen() {
             </Pressable>
           </Pressable>
         </Modal>
+
+        {/* Edit Date Picker Modal */}
+        <Modal visible={showEditCal} animationType="slide" transparent onRequestClose={() => setShowEditCal(false)}>
+          <Pressable style={styles.estimateOverlay} onPress={() => setShowEditCal(false)}>
+            <Pressable style={[styles.estimateBox, { padding: 12 }]} onPress={(e: any) => e.stopPropagation()}>
+              <View style={styles.estimateHeader}>
+                <Text style={styles.estimateTitle}>📅 Choisir une date</Text>
+                <TouchableOpacity onPress={() => setShowEditCal(false)}><Feather name="x" size={24} color="#111" /></TouchableOpacity>
+              </View>
+              <Calendar
+                current={eDate || new Date().toISOString().slice(0, 10)}
+                markedDates={eDate ? { [eDate]: { selected: true, selectedColor: '#0891B2' } } : {}}
+                onDayPress={(day: { dateString: string }) => {
+                  setEDate(day.dateString);
+                  setShowEditCal(false);
+                }}
+                theme={{ todayTextColor: '#0891B2', arrowColor: '#0891B2' }}
+              />
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        {/* Edit Time Picker Modal */}
+        <Modal visible={showEditTime} animationType="slide" transparent onRequestClose={() => setShowEditTime(false)}>
+          <Pressable style={styles.estimateOverlay} onPress={() => setShowEditTime(false)}>
+            <Pressable style={[styles.estimateBox, { maxHeight: '70%' }]} onPress={(e: any) => e.stopPropagation()}>
+              <View style={styles.estimateHeader}>
+                <Text style={styles.estimateTitle}>🕐 Choisir une heure</Text>
+                <TouchableOpacity onPress={() => setShowEditTime(false)}><Feather name="x" size={24} color="#111" /></TouchableOpacity>
+              </View>
+              <ScrollView style={{ maxHeight: 400 }}>
+                {TIME_SLOTS.map((t) => (
+                  <TouchableOpacity
+                    key={t}
+                    style={[styles.editTimeRow, eTime === t && styles.editTimeRowActive]}
+                    onPress={() => { setETime(t); setShowEditTime(false); }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.editTimeText, eTime === t && styles.editTimeTextActive]}>{t}</Text>
+                    {eTime === t && <Feather name="check" size={18} color="#0891B2" />}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </Pressable>
+          </Pressable>
+        </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -1402,6 +1589,56 @@ const styles = StyleSheet.create({
     color: '#0A0A0A',
     lineHeight: 22,
   },
+  editInput: {
+    fontSize: 16,
+    color: '#0A0A0A',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: '#0891B2',
+    borderRadius: 8,
+    backgroundColor: '#F0F9FF',
+    minHeight: 40,
+  },
+  editInputText: {
+    fontSize: 15,
+    color: '#0A0A0A',
+    fontWeight: '500',
+  },
+  editTitleInput: {
+    borderWidth: 1,
+    borderColor: '#0891B2',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#F0F9FF',
+  },
+  editIconBtn: {
+    width: 44, height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  editCancelBtn: {
+    paddingHorizontal: 10, paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+  },
+  editCancelText: { fontSize: 13, color: '#374151', fontWeight: '600' },
+  editSaveBtn: {
+    paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#0891B2',
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+  },
+  editSaveText: { fontSize: 13, color: '#FFFFFF', fontWeight: '700' },
+  editTimeRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 12, paddingHorizontal: 16,
+    borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
+  },
+  editTimeRowActive: { backgroundColor: '#ECFEFF' },
+  editTimeText: { fontSize: 16, color: '#0A0A0A', fontWeight: '500' },
+  editTimeTextActive: { color: '#0891B2', fontWeight: '700' },
   suggestedCard: {
     backgroundColor: '#FFF8F0',
     borderWidth: 1,

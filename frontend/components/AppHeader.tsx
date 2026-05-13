@@ -9,6 +9,7 @@ import { useTheme } from '../src/theme/ThemeContext';
 interface Props {
   title?: string;
   showBack?: boolean;
+  rightAction?: React.ReactNode;
 }
 
 type MenuItem = { icon: any; labelKey: string; route: string };
@@ -89,7 +90,7 @@ const menuSections: MenuSection[] = [
   },
 ];
 
-export default function AppHeader({ title, showBack }: Props) {
+export default function AppHeader({ title, showBack, rightAction }: Props) {
   const router = useRouter();
   const { t, i18n } = useTranslation();
   const { colors, isDark } = useTheme();
@@ -227,7 +228,9 @@ export default function AppHeader({ title, showBack }: Props) {
           </View>
         )}
 
-        {showBack ? (
+        {rightAction ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>{rightAction}</View>
+        ) : showBack ? (
           <TouchableOpacity testID="back-btn" onPress={() => router.back()} style={styles.btn} activeOpacity={0.7}>
             <Feather name="arrow-left" size={22} color={colors.text} />
           </TouchableOpacity>

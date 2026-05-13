@@ -1519,6 +1519,29 @@ async def delete_request_permanent(request_id: str):
     await prod_sync_module.add_tombstone(db, "request", request_id)
     return {"message": "Request permanently deleted"}
 
+
+# --- Edit request customer/preferred info ---
+@api_router.patch("/requests/{request_id}")
+async def patch_request(request_id: str, payload: dict = Body(...)):
+    """
+    Partially update a request's editable fields:
+    customer_name, customer_email, customer_phone, customer_address,
+    preferred_date, preferred_time, message.
+    """
+    allowed = {
+        "customer_name", "customer_email", "customer_phone", "customer_address",
+        "preferred_date", "preferred_time", "message",
+    }
+    update = {k: v for k, v in (payload or {}).items() if k in allowed and v is not None}
+    if not update:
+        raise HTTPException(status_code=400, detail="Aucun champ valide à mettre à jour")
+    update["updated_at"] = datetime.now(timezone.utc).isoformat()
+    res = await db.appointment_requests.update_one({"id": request_id}, {"$set": update})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Request not found")
+    doc = await db.appointment_requests.find_one({"id": request_id}, {"_id": 0})
+    return doc
+
 @api_router.get("/requests/count/pending")
 async def get_pending_count():
     count = await db.appointment_requests.count_documents({"status": "pending"})
