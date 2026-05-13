@@ -2276,11 +2276,13 @@ async def _build_backup_data():
     """Return all DB data as a plain dict (used by export endpoint + scheduler)."""
     data = {
         "exported_at": datetime.utcnow().isoformat() + "Z",
-        "version": 1,
+        "version": 2,
         "appointments": [],
         "requests": [],
         "employees": [],
         "reviews": [],
+        "revenues": [],
+        "expenses": [],
     }
     async for d in db.appointments.find({}, {"_id": 0}):
         data["appointments"].append(d)
@@ -2290,6 +2292,11 @@ async def _build_backup_data():
         data["employees"].append(d)
     async for d in db.reviews.find({}, {"_id": 0}):
         data["reviews"].append(d)
+    async for d in db.revenues.find({}, {"_id": 0}):
+        data["revenues"].append(d)
+    # Expenses: exclude base64 receipt photos/PDFs from backup to keep size small
+    async for d in db.expenses.find({}, {"_id": 0, "receipt_photo": 0, "receipt_pdf": 0}):
+        data["expenses"].append(d)
     return data
 
 
@@ -2313,6 +2320,8 @@ async def _create_auto_backup():
                 "requests": len(data.get("requests", [])),
                 "employees": len(data.get("employees", [])),
                 "reviews": len(data.get("reviews", [])),
+                "revenues": len(data.get("revenues", [])),
+                "expenses": len(data.get("expenses", [])),
             },
         }
         await db.backups.insert_one(backup_doc)
@@ -2352,12 +2361,14 @@ async def download_backup(backup_id: str):
 @api_router.post("/backup/import")
 async def import_backup(body: dict):
     """Import/restore data from a backup JSON. Upserts based on id field."""
-    results = {"appointments": 0, "requests": 0, "employees": 0, "reviews": 0}
+    results = {"appointments": 0, "requests": 0, "employees": 0, "reviews": 0, "revenues": 0, "expenses": 0}
     for coll_key, coll_name in [
         ("appointments", "appointments"),
         ("requests", "appointment_requests"),
         ("employees", "employees"),
         ("reviews", "reviews"),
+        ("revenues", "revenues"),
+        ("expenses", "expenses"),
     ]:
         items = body.get(coll_key, [])
         if not isinstance(items, list):
