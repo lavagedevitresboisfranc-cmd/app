@@ -253,10 +253,6 @@ export default function RevenuesScreen() {
           <Text style={styles.totalAmount}>+{(filterCategory ? totalVisible : (stats?.grand_total || 0)).toFixed(2)} $</Text>
         </View>
         <View style={{ gap: 8, justifyContent: 'space-between' }}>
-          <TouchableOpacity style={styles.addBtn} onPress={openNew} activeOpacity={0.85}>
-            <Feather name="plus" size={20} color="#fff" />
-            <Text style={styles.addBtnText}>Ajouter</Text>
-          </TouchableOpacity>
           <TouchableOpacity
             style={styles.exportBtn}
             onPress={() => Linking.openURL(`${API_URL}/api/revenues/export/excel${filterCategory ? `?category=${filterCategory}` : ''}`)}
@@ -266,6 +262,14 @@ export default function RevenuesScreen() {
             <Text style={styles.exportBtnText}>Excel</Text>
           </TouchableOpacity>
         </View>
+      </View>
+
+      {/* Info banner: revenues are auto-created via "Encaisser" — no manual add to prevent duplicates */}
+      <View style={styles.infoBanner}>
+        <Feather name="info" size={14} color="#0EA5E9" />
+        <Text style={styles.infoBannerText}>
+          Les revenus sont créés automatiquement quand vous cliquez « Encaisser » sur un rendez-vous.
+        </Text>
       </View>
 
       {/* === SOMMAIRE SEMAINE / MOIS / ANNÉE === */}
@@ -589,6 +593,25 @@ const styles = StyleSheet.create({
   addBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   exportBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#A7F3D0', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10 },
   exportBtnText: { color: '#059669', fontSize: 13, fontWeight: '700' },
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: 10,
+  },
+  infoBannerText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#0369A1',
+    lineHeight: 16,
+  },
   hamburgerBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginHorizontal: 16, marginBottom: 10,
