@@ -114,6 +114,27 @@ const getSeasonRange = (baseDate: string): { startISO: string; endISO: string; l
   return { startISO: fmt(start), endISO: fmt(end), label: `Saison ${seasonYear}` };
 };
 
+// Compute total revenue for a day's items.
+// Uses paid_amount for paid/completed status, otherwise falls back to price (estimated).
+const computeDayRevenue = (items: { type?: string; status?: string; paidAmount?: number; price?: number }[]): number => {
+  let total = 0;
+  items.forEach((it) => {
+    if (it.type && it.type !== 'appointment') return;
+    if ((it.status === 'paid' || it.status === 'completed') && typeof it.paidAmount === 'number') {
+      total += it.paidAmount;
+    } else if (typeof it.price === 'number') {
+      total += it.price;
+    }
+  });
+  return total;
+};
+
+const formatRev = (n: number): string => {
+  if (!n) return '';
+  return `${Math.round(n)} $`;
+};
+
+
 const formatDayLabel = (dateStr: string) => {
   const d = new Date(dateStr + 'T00:00:00');
   const today = new Date().toISOString().split('T')[0];
@@ -169,7 +190,7 @@ export default function CalendarScreen() {
   const [clientResponseCount, setClientResponseCount] = useState(0);
   const [prevPendingCount, setPrevPendingCount] = useState(0);
 
-  const menuSections: Array<{ key: string; titleKey: string; icon: any; color: string; items: Array<{ icon: any; labelKey: string; route: string }> }> = [
+  const menuSections: Array<{ key: string; titleKey: string; icon: any; color: string; items: Array<{ icon: any; labelKey?: string; label?: string; route: string }> }> = [
     {
       key: 'agenda',
       titleKey: 'menu.sections.agenda',
@@ -216,6 +237,7 @@ export default function CalendarScreen() {
       color: '#10B981',
       items: [
         { icon: 'trending-up' as const, labelKey: 'menu.items.revenues', route: '/revenues' },
+        { icon: 'alert-circle' as const, label: 'Revenus orphelins', route: '/orphan-revenues' },
         { icon: 'credit-card' as const, labelKey: 'menu.items.expenses', route: '/expenses' },
         { icon: 'bar-chart-2' as const, labelKey: 'menu.items.summary', route: '/finance-summary' },
         { icon: 'pie-chart' as const, labelKey: 'menu.items.bilan', route: '/bilan' },
@@ -452,6 +474,8 @@ export default function CalendarScreen() {
               clientAlt: !!a.client_requested_alternative,
               clientAltDate: a.client_suggested_date || undefined,
               clientAltTime: a.client_suggested_time || undefined,
+              paidAmount: typeof a.paid_amount === 'number' ? a.paid_amount : undefined,
+              price: typeof a.price === 'number' ? a.price : undefined,
             })),
             ...dayReqs.map((r) => ({
               id: r.id,
@@ -558,6 +582,8 @@ export default function CalendarScreen() {
           time: a.time_slot,
           duration: a.duration_minutes,
           status: a.status,
+          paidAmount: typeof a.paid_amount === 'number' ? a.paid_amount : undefined,
+          price: typeof a.price === 'number' ? a.price : undefined,
         };
         if (!grouped[a.date]) grouped[a.date] = [];
         grouped[a.date].push(item);
@@ -908,7 +934,7 @@ export default function CalendarScreen() {
                             </View>
                           )}
                         </View>
-                        <Text style={styles.menuItemText}>{t(item.labelKey)}</Text>
+                        <Text style={styles.menuItemText}>{item.label || t(item.labelKey || '')}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -1062,12 +1088,16 @@ export default function CalendarScreen() {
           sections={weekSections}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
-          renderSectionHeader={({ section }) => (
-            <View style={styles.weekDayHeader}>
-              <Text style={styles.weekDayTitle}>{section.title}</Text>
-              <Text style={styles.weekDayCount}>{section.data.length}</Text>
-            </View>
-          )}
+          renderSectionHeader={({ section }) => {
+            const rev = computeDayRevenue(section.data as any);
+            return (
+              <View style={styles.weekDayHeader}>
+                <Text style={styles.weekDayTitle}>{section.title}</Text>
+                {rev > 0 ? <Text style={styles.weekDayRevenue}>{formatRev(rev)}</Text> : null}
+                <Text style={styles.weekDayCount}>{section.data.length}</Text>
+              </View>
+            );
+          }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#000" />}
           ListHeaderComponent={
             <View style={styles.weekNav}>
@@ -1132,12 +1162,16 @@ export default function CalendarScreen() {
             sections={sectionsToRender}
             keyExtractor={(item) => item.id}
             renderItem={renderItem}
-            renderSectionHeader={({ section }) => (
-              <View style={styles.weekDayHeader}>
-                <Text style={styles.weekDayTitle}>{section.title}</Text>
-                <Text style={styles.weekDayCount}>{section.data.length}</Text>
-              </View>
-            )}
+            renderSectionHeader={({ section }) => {
+              const rev = computeDayRevenue(section.data as any);
+              return (
+                <View style={styles.weekDayHeader}>
+                  <Text style={styles.weekDayTitle}>{section.title}</Text>
+                  {rev > 0 ? <Text style={styles.weekDayRevenue}>{formatRev(rev)}</Text> : null}
+                  <Text style={styles.weekDayCount}>{section.data.length}</Text>
+                </View>
+              );
+            }}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#000" />}
             ListHeaderComponent={
               <View>
@@ -1224,12 +1258,16 @@ export default function CalendarScreen() {
           sections={seasonSections}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
-          renderSectionHeader={({ section }) => (
-            <View style={styles.weekDayHeader}>
-              <Text style={styles.weekDayTitle}>{section.title}</Text>
-              <Text style={styles.weekDayCount}>{section.data.length}</Text>
-            </View>
-          )}
+          renderSectionHeader={({ section }) => {
+            const rev = computeDayRevenue(section.data as any);
+            return (
+              <View style={styles.weekDayHeader}>
+                <Text style={styles.weekDayTitle}>{section.title}</Text>
+                {rev > 0 ? <Text style={styles.weekDayRevenue}>{formatRev(rev)}</Text> : null}
+                <Text style={styles.weekDayCount}>{section.data.length}</Text>
+              </View>
+            );
+          }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#000" />}
           ListHeaderComponent={
             <View style={styles.weekNav}>
@@ -1507,6 +1545,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#A3A3A3',
     fontWeight: '500',
+  },
+  weekDayRevenue: {
+    fontSize: 13,
+    color: '#10B981',
+    fontWeight: '700',
+    marginLeft: 'auto',
+    marginRight: 10,
   },
   listContent: {
     paddingBottom: 24,

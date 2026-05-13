@@ -5084,6 +5084,46 @@ async def encaisser_appointment(appointment_id: str, payload: dict = Body(...)):
     }
 
 
+# --- Link existing (orphan) revenue to an appointment, marking it as paid ---
+@api_router.post("/revenues/{revenue_id}/link-appointment/{appointment_id}")
+async def link_revenue_to_appointment(revenue_id: str, appointment_id: str):
+    """
+    Bind an existing orphan Revenue document to an appointment:
+      - sets appointment.status='paid', paid_at, paid_amount, paid_method, revenue_id
+      - sets revenue.appointment_id
+    No new revenue is created (avoids double-counting).
+    """
+    rev = await db.revenues.find_one({"id": revenue_id})
+    if not rev:
+        raise HTTPException(status_code=404, detail="Revenu introuvable")
+    appt = await db.appointments.find_one({"id": appointment_id})
+    if not appt:
+        raise HTTPException(status_code=404, detail="Rendez-vous introuvable")
+    if appt.get("revenue_id") and appt.get("revenue_id") != revenue_id:
+        raise HTTPException(status_code=400, detail="Ce rendez-vous est déjà lié à un autre revenu")
+
+    now = datetime.now(timezone.utc).isoformat()
+    pm = (rev.get("payment_method") or "cash").lower()
+    amount = float(rev.get("amount") or 0)
+
+    await db.appointments.update_one(
+        {"id": appointment_id},
+        {"$set": {
+            "status": "paid",
+            "paid_at": rev.get("date") or now,
+            "paid_amount": amount,
+            "paid_method": pm,
+            "revenue_id": revenue_id,
+        }}
+    )
+    await db.revenues.update_one(
+        {"id": revenue_id},
+        {"$set": {"appointment_id": appointment_id, "updated_at": now,
+                  "client_name": rev.get("client_name") or appt.get("client_name", "")}}
+    )
+    return {"ok": True, "appointment_id": appointment_id, "revenue_id": revenue_id, "status": "paid"}
+
+
 
 
 @api_router.get("/revenues/export/excel")
