@@ -84,6 +84,38 @@ export default function RequestDetailScreen() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [showEditCal, setShowEditCal] = useState(false);
   const [showEditTime, setShowEditTime] = useState(false);
+  // Map of date → count of appointments, used to mark calendar in edit mode
+  const [editDayCounts, setEditDayCounts] = useState<Record<string, number>>({});
+  const [editDayAppts, setEditDayAppts] = useState<any[]>([]); // appointments for selected eDate
+
+  // Load all appointments once when opening the edit calendar to display occupancy
+  const loadEditCalendar = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/appointments`);
+      const list = await res.json();
+      const counts: Record<string, number> = {};
+      (Array.isArray(list) ? list : []).forEach((a: any) => {
+        if (a.status === 'completed' || a.status === 'cancelled' || a.status === 'archived') return;
+        const d = a.date;
+        if (d) counts[d] = (counts[d] || 0) + 1;
+      });
+      setEditDayCounts(counts);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // When eDate changes in edit mode, load that day's appointments to show which time slots are taken
+  const loadEditDayAppts = async (d: string) => {
+    if (!d) { setEditDayAppts([]); return; }
+    try {
+      const res = await fetch(`${API_URL}/api/appointments?date=${d}`);
+      const list = await res.json();
+      setEditDayAppts(Array.isArray(list) ? list : []);
+    } catch (e) {
+      console.error(e); setEditDayAppts([]);
+    }
+  };
 
   const openEdit = () => {
     if (!request) return;
@@ -95,6 +127,8 @@ export default function RequestDetailScreen() {
     setETime(request.preferred_time || '');
     setEMessage(request.message || '');
     setEditMode(true);
+    loadEditCalendar();
+    if (request.preferred_date) loadEditDayAppts(request.preferred_date);
   };
 
   const saveEdit = async () => {
@@ -1449,7 +1483,7 @@ export default function RequestDetailScreen() {
           </Pressable>
         </Modal>
 
-        {/* Edit Date Picker Modal */}
+        {/* Edit Date Picker Modal — with occupancy markers */}
         <Modal visible={showEditCal} animationType="slide" transparent onRequestClose={() => setShowEditCal(false)}>
           <Pressable style={styles.estimateOverlay} onPress={() => setShowEditCal(false)}>
             <Pressable style={[styles.estimateBox, { padding: 12 }]} onPress={(e: any) => e.stopPropagation()}>
@@ -1457,39 +1491,77 @@ export default function RequestDetailScreen() {
                 <Text style={styles.estimateTitle}>📅 Choisir une date</Text>
                 <TouchableOpacity onPress={() => setShowEditCal(false)}><Feather name="x" size={24} color="#111" /></TouchableOpacity>
               </View>
-              <Calendar
-                current={eDate || new Date().toISOString().slice(0, 10)}
-                markedDates={eDate ? { [eDate]: { selected: true, selectedColor: '#0891B2' } } : {}}
-                onDayPress={(day: { dateString: string }) => {
-                  setEDate(day.dateString);
-                  setShowEditCal(false);
-                }}
-                theme={{ todayTextColor: '#0891B2', arrowColor: '#0891B2' }}
-              />
+              {(() => {
+                // Build markedDates: red dot when 6+ RDV, orange dot when 3-5, green when 1-2
+                const md: Record<string, any> = {};
+                Object.entries(editDayCounts).forEach(([d, n]) => {
+                  const color = n >= 6 ? '#DC2626' : n >= 3 ? '#F59E0B' : '#10B981';
+                  md[d] = { marked: true, dotColor: color, dots: [{ color }] };
+                });
+                if (eDate) {
+                  md[eDate] = { ...(md[eDate] || {}), selected: true, selectedColor: '#0891B2' };
+                }
+                return (
+                  <Calendar
+                    current={eDate || new Date().toISOString().slice(0, 10)}
+                    markedDates={md}
+                    onDayPress={(day: { dateString: string }) => {
+                      setEDate(day.dateString);
+                      loadEditDayAppts(day.dateString);
+                      setShowEditCal(false);
+                    }}
+                    theme={{ todayTextColor: '#0891B2', arrowColor: '#0891B2' }}
+                  />
+                );
+              })()}
+              <View style={styles.legendRow}>
+                <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#10B981' }]} /><Text style={styles.legendText}>1–2 RDV</Text></View>
+                <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#F59E0B' }]} /><Text style={styles.legendText}>3–5 RDV</Text></View>
+                <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#DC2626' }]} /><Text style={styles.legendText}>6+ RDV</Text></View>
+              </View>
             </Pressable>
           </Pressable>
         </Modal>
 
-        {/* Edit Time Picker Modal */}
+        {/* Edit Time Picker Modal — shows which slots are occupied */}
         <Modal visible={showEditTime} animationType="slide" transparent onRequestClose={() => setShowEditTime(false)}>
           <Pressable style={styles.estimateOverlay} onPress={() => setShowEditTime(false)}>
-            <Pressable style={[styles.estimateBox, { maxHeight: '70%' }]} onPress={(e: any) => e.stopPropagation()}>
+            <Pressable style={[styles.estimateBox, { maxHeight: '75%' }]} onPress={(e: any) => e.stopPropagation()}>
               <View style={styles.estimateHeader}>
-                <Text style={styles.estimateTitle}>🕐 Choisir une heure</Text>
+                <Text style={styles.estimateTitle}>🕐 Choisir une heure {eDate ? `— ${eDate}` : ''}</Text>
                 <TouchableOpacity onPress={() => setShowEditTime(false)}><Feather name="x" size={24} color="#111" /></TouchableOpacity>
               </View>
-              <ScrollView style={{ maxHeight: 400 }}>
-                {TIME_SLOTS.map((t) => (
-                  <TouchableOpacity
-                    key={t}
-                    style={[styles.editTimeRow, eTime === t && styles.editTimeRowActive]}
-                    onPress={() => { setETime(t); setShowEditTime(false); }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.editTimeText, eTime === t && styles.editTimeTextActive]}>{t}</Text>
-                    {eTime === t && <Feather name="check" size={18} color="#0891B2" />}
-                  </TouchableOpacity>
-                ))}
+              <ScrollView style={{ maxHeight: 450 }}>
+                {TIME_SLOTS.map((t) => {
+                  const taken = editDayAppts.find((a: any) =>
+                    (a.time_slot || '').slice(0, 5) === t && a.id !== request?.appointment_id
+                  );
+                  const isMe = eTime === t;
+                  return (
+                    <TouchableOpacity
+                      key={t}
+                      style={[
+                        styles.editTimeRow,
+                        isMe && styles.editTimeRowActive,
+                        taken && !isMe && { backgroundColor: '#FEF2F2' },
+                      ]}
+                      onPress={() => { setETime(t); setShowEditTime(false); }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[
+                          styles.editTimeText,
+                          isMe && styles.editTimeTextActive,
+                          taken && !isMe && { color: '#DC2626' },
+                        ]}>
+                          {t} {taken && !isMe ? `— ${taken.client_name || 'occupé'}` : ''}
+                        </Text>
+                      </View>
+                      {isMe && <Feather name="check" size={18} color="#0891B2" />}
+                      {taken && !isMe && <Feather name="alert-circle" size={16} color="#DC2626" />}
+                    </TouchableOpacity>
+                  );
+                })}
               </ScrollView>
             </Pressable>
           </Pressable>
@@ -1639,6 +1711,18 @@ const styles = StyleSheet.create({
   editTimeRowActive: { backgroundColor: '#ECFEFF' },
   editTimeText: { fontSize: 16, color: '#0A0A0A', fontWeight: '500' },
   editTimeTextActive: { color: '#0891B2', fontWeight: '700' },
+  legendRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    marginTop: 8,
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendDot: { width: 10, height: 10, borderRadius: 5 },
+  legendText: { fontSize: 12, color: '#525252', fontWeight: '500' },
   suggestedCard: {
     backgroundColor: '#FFF8F0',
     borderWidth: 1,
