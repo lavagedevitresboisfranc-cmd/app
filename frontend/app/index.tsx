@@ -543,9 +543,9 @@ export default function CalendarScreen() {
 
       const apptRes = await fetch(`${API_URL}/api/appointments`);
       const appts: Appointment[] = await apptRes.json();
-      // SEASON view: ONLY completed appointments — for archive/history reference
+      // SEASON view: completed + paid appointments — archive/history of work done
       const filtered = (Array.isArray(appts) ? appts : [])
-        .filter((a) => a.status === 'completed')
+        .filter((a) => a.status === 'completed' || a.status === 'paid')
         .filter((a) => a.date >= range.startISO && a.date <= range.endISO);
 
       const grouped: Record<string, CalendarItem[]> = {};
