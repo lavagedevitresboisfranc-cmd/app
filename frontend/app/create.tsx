@@ -189,6 +189,30 @@ export default function CreateScreen() {
   // Fetch already-booked slots for the selected date so we can grey them out
   const [busySlots, setBusySlots] = useState<Set<string>>(new Set());
 
+  // === Fetch ALL upcoming appointments — so the calendar can show a dot
+  // on every day that already has at least one booking. ===
+  const [bookedDates, setBookedDates] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadBookedDates = async () => {
+      try {
+        const r = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/api/appointments`);
+        const items = await r.json();
+        if (!Array.isArray(items) || cancelled) return;
+        const dates = new Set<string>();
+        for (const a of items) {
+          if (a.status === 'archived' || a.status === 'cancelled') continue;
+          if (params.editId && a.id === params.editId) continue;
+          if (a.date) dates.add(a.date);
+        }
+        setBookedDates(dates);
+      } catch { /* ignore */ }
+    };
+    loadBookedDates();
+    return () => { cancelled = true; };
+  }, [params.editId]);
+
   useEffect(() => {
     let cancelled = false;
     const loadBusy = async () => {
@@ -613,7 +637,20 @@ export default function CreateScreen() {
             <Calendar
               current={date}
               onDayPress={(day: { dateString: string }) => setDate(day.dateString)}
-              markedDates={{ [date]: { selected: true, selectedColor: '#0891B2' } }}
+              markedDates={(() => {
+                const marks: Record<string, any> = {};
+                // Highlight every date that already has at least one RDV
+                bookedDates.forEach((d) => {
+                  marks[d] = { marked: true, dotColor: '#0891B2' };
+                });
+                // Selected date overlay
+                marks[date] = {
+                  ...(marks[date] || {}),
+                  selected: true,
+                  selectedColor: '#0891B2',
+                };
+                return marks;
+              })()}
               theme={{
                 backgroundColor: '#FAFAFA',
                 calendarBackground: '#FFFFFF',
@@ -632,6 +669,8 @@ export default function CreateScreen() {
                 textDayHeaderFontSize: 13,
                 textDayFontWeight: '500',
                 textDayHeaderFontWeight: '600',
+                dotColor: '#0891B2',
+                selectedDotColor: '#FFFFFF',
               }}
               style={{ borderRadius: 8, borderWidth: 1, borderColor: '#E5E5E5' }}
             />
