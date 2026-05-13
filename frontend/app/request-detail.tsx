@@ -1492,18 +1492,41 @@ export default function RequestDetailScreen() {
                 <TouchableOpacity onPress={() => setShowEditCal(false)}><Feather name="x" size={24} color="#111" /></TouchableOpacity>
               </View>
               {(() => {
-                // Build markedDates: red dot when 6+ RDV, orange dot when 3-5, green when 1-2
+                // Build markedDates with CIRCLE AROUND each occupied day (matching main calendar style)
                 const md: Record<string, any> = {};
                 Object.entries(editDayCounts).forEach(([d, n]) => {
-                  const color = n >= 6 ? '#DC2626' : n >= 3 ? '#F59E0B' : '#10B981';
-                  md[d] = { marked: true, dotColor: color, dots: [{ color }] };
+                  // Color tiers: green (1-2), orange (3-5), red (6+)
+                  const ringColor = n >= 6 ? '#DC2626' : n >= 3 ? '#F59E0B' : '#10B981';
+                  md[d] = {
+                    customStyles: {
+                      container: {
+                        width: 32, height: 32, borderRadius: 16,
+                        alignItems: 'center', justifyContent: 'center',
+                        borderWidth: 2, borderColor: ringColor,
+                      },
+                      text: { fontWeight: '600', fontSize: 15, color: '#0A0A0A' },
+                    },
+                  };
                 });
+                // Selected day overrides — black filled circle
                 if (eDate) {
-                  md[eDate] = { ...(md[eDate] || {}), selected: true, selectedColor: '#0891B2' };
+                  md[eDate] = {
+                    customStyles: {
+                      container: {
+                        width: 32, height: 32, borderRadius: 16,
+                        alignItems: 'center', justifyContent: 'center',
+                        backgroundColor: '#0891B2',
+                        borderWidth: md[eDate]?.customStyles?.container?.borderWidth || 0,
+                        borderColor: md[eDate]?.customStyles?.container?.borderColor || 'transparent',
+                      },
+                      text: { fontWeight: '700', fontSize: 15, color: '#FFFFFF' },
+                    },
+                  };
                 }
                 return (
                   <Calendar
                     current={eDate || new Date().toISOString().slice(0, 10)}
+                    markingType="custom"
                     markedDates={md}
                     onDayPress={(day: { dateString: string }) => {
                       setEDate(day.dateString);
@@ -1515,9 +1538,9 @@ export default function RequestDetailScreen() {
                 );
               })()}
               <View style={styles.legendRow}>
-                <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#10B981' }]} /><Text style={styles.legendText}>1–2 RDV</Text></View>
-                <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#F59E0B' }]} /><Text style={styles.legendText}>3–5 RDV</Text></View>
-                <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#DC2626' }]} /><Text style={styles.legendText}>6+ RDV</Text></View>
+                <View style={styles.legendItem}><View style={[styles.legendCircle, { borderColor: '#10B981' }]} /><Text style={styles.legendText}>1–2 RDV</Text></View>
+                <View style={styles.legendItem}><View style={[styles.legendCircle, { borderColor: '#F59E0B' }]} /><Text style={styles.legendText}>3–5 RDV</Text></View>
+                <View style={styles.legendItem}><View style={[styles.legendCircle, { borderColor: '#DC2626' }]} /><Text style={styles.legendText}>6+ RDV</Text></View>
               </View>
             </Pressable>
           </Pressable>
@@ -1722,6 +1745,7 @@ const styles = StyleSheet.create({
   },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
+  legendCircle: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, backgroundColor: 'transparent' },
   legendText: { fontSize: 12, color: '#525252', fontWeight: '500' },
   suggestedCard: {
     backgroundColor: '#FFF8F0',
