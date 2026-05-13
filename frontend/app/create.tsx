@@ -637,28 +637,59 @@ export default function CreateScreen() {
             <Calendar
               current={date}
               onDayPress={(day: { dateString: string }) => setDate(day.dateString)}
+              markingType="custom"
               markedDates={(() => {
                 const marks: Record<string, any> = {};
-                // Highlight every date that already has at least one RDV
+                const todayStr = new Date().toISOString().slice(0, 10);
                 bookedDates.forEach((d) => {
-                  marks[d] = { marked: true, dotColor: '#0891B2' };
+                  marks[d] = {
+                    customStyles: {
+                      container: {
+                        width: 34,
+                        height: 34,
+                        borderRadius: 17,
+                        borderWidth: 2,
+                        borderColor: '#0891B2',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      },
+                      text: { color: '#0F172A', fontWeight: '600' },
+                    },
+                  };
                 });
-                // Selected date overlay
+                // Selected date — solid filled circle on top
                 marks[date] = {
-                  ...(marks[date] || {}),
-                  selected: true,
-                  selectedColor: '#0891B2',
+                  customStyles: {
+                    container: {
+                      width: 34,
+                      height: 34,
+                      borderRadius: 17,
+                      backgroundColor: '#0891B2',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    },
+                    text: { color: '#FFFFFF', fontWeight: '700' },
+                  },
                 };
+                // Today indicator (only if not already booked and not selected)
+                if (!marks[todayStr]) {
+                  marks[todayStr] = {
+                    customStyles: {
+                      container: {
+                        width: 34, height: 34, borderRadius: 17,
+                        backgroundColor: '#E5F5F6',
+                        alignItems: 'center', justifyContent: 'center',
+                      },
+                      text: { color: '#0891B2', fontWeight: '700' },
+                    },
+                  };
+                }
                 return marks;
               })()}
               theme={{
                 backgroundColor: '#FAFAFA',
                 calendarBackground: '#FFFFFF',
                 textSectionTitleColor: '#737373',
-                selectedDayBackgroundColor: '#0891B2',
-                selectedDayTextColor: '#FFFFFF',
-                todayTextColor: '#0891B2',
-                todayBackgroundColor: '#E5F5F6',
                 dayTextColor: '#0A0A0A',
                 textDisabledColor: '#D4D4D4',
                 arrowColor: '#0891B2',
@@ -669,8 +700,6 @@ export default function CreateScreen() {
                 textDayHeaderFontSize: 13,
                 textDayFontWeight: '500',
                 textDayHeaderFontWeight: '600',
-                dotColor: '#0891B2',
-                selectedDotColor: '#FFFFFF',
               }}
               style={{ borderRadius: 8, borderWidth: 1, borderColor: '#E5E5E5' }}
             />
