@@ -5785,17 +5785,24 @@ async def start_scheduler():
         #     correct recap arrives at the same time so the user can ignore
         #     the bogus "0 RDV" email from the dead production backend)
         #   • 18:00 ET the day before (preferred timing per user)
+        # `misfire_grace_time=3600` means if backend was restarted within an
+        # hour of the scheduled time, the missed job will still run when
+        # backend comes back up (instead of being silently skipped).
         scheduler.add_job(
             _run_24h_reminders,
             CronTrigger(hour=5, minute=0, timezone=ZoneInfo("America/Toronto")),
             id="daily_24h_reminders_morning",
             replace_existing=True,
+            misfire_grace_time=3600,
+            coalesce=True,
         )
         scheduler.add_job(
             _run_24h_reminders,
             CronTrigger(hour=18, minute=0, timezone=ZoneInfo("America/Toronto")),
             id="daily_24h_reminders",
             replace_existing=True,
+            misfire_grace_time=3600,
+            coalesce=True,
         )
         scheduler.add_job(
             _run_prod_sync,
