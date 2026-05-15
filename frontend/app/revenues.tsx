@@ -87,7 +87,8 @@ export default function RevenuesScreen() {
   );
 
   // === Period totals (always computed from ALL revenues, ignoring category filter) ===
-  const { weekTotal, monthTotal, yearTotal, weekCount, monthCount, yearCount } = useMemo(() => {
+  const { weekTotal, monthTotal, yearTotal, weekCount, monthCount, yearCount,
+          weekByMethod, monthByMethod, yearByMethod } = useMemo(() => {
     const now = new Date();
     // Start of current week (Monday 00:00 local)
     const d = new Date(now);
@@ -105,17 +106,29 @@ export default function RevenuesScreen() {
       : revenues;
 
     let w = 0, m = 0, y = 0, wc = 0, mc = 0, yc = 0;
+    // Per-payment-method totals per period (cash / etransfert / other)
+    const wM: Record<string, number> = { cash: 0, etransfert: 0, autre: 0 };
+    const mM: Record<string, number> = { cash: 0, etransfert: 0, autre: 0 };
+    const yM: Record<string, number> = { cash: 0, etransfert: 0, autre: 0 };
+    const normalizeMethod = (pm: string) => {
+      const p = (pm || '').toLowerCase();
+      if (p === 'cash' || p === 'comptant') return 'cash';
+      if (p === 'etransfert' || p === 'e-transfert' || p === 'etransfer' || p === 'e-transfer') return 'etransfert';
+      return 'autre';
+    };
     for (const r of src) {
       if (!r.date) continue;
       const dt = new Date(r.date + 'T00:00:00');
       if (isNaN(dt.getTime())) continue;
-      if (dt >= yearStart) { y += r.amount; yc += 1; }
-      if (dt >= monthStart) { m += r.amount; mc += 1; }
-      if (dt >= weekStart) { w += r.amount; wc += 1; }
+      const pm = normalizeMethod((r as any).payment_method || '');
+      if (dt >= yearStart) { y += r.amount; yc += 1; yM[pm] += r.amount; }
+      if (dt >= monthStart) { m += r.amount; mc += 1; mM[pm] += r.amount; }
+      if (dt >= weekStart) { w += r.amount; wc += 1; wM[pm] += r.amount; }
     }
     return {
       weekTotal: w, monthTotal: m, yearTotal: y,
       weekCount: wc, monthCount: mc, yearCount: yc,
+      weekByMethod: wM, monthByMethod: mM, yearByMethod: yM,
     };
   }, [revenues, filterCategory]);
 
@@ -285,6 +298,11 @@ export default function RevenuesScreen() {
           <Text style={styles.summaryCount}>
             {weekCount} revenu{weekCount > 1 ? 's' : ''}
           </Text>
+          <View style={styles.methodBreakdown}>
+            <Text style={styles.methodLine}>💵 {weekByMethod.cash.toFixed(0)} $</Text>
+            <Text style={styles.methodLine}>📲 {weekByMethod.etransfert.toFixed(0)} $</Text>
+            {weekByMethod.autre > 0 ? <Text style={styles.methodLine}>• {weekByMethod.autre.toFixed(0)} $</Text> : null}
+          </View>
         </View>
         <View style={[styles.summaryCard, { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }]}>
           <View style={styles.summaryIconWrap}>
@@ -297,6 +315,11 @@ export default function RevenuesScreen() {
           <Text style={styles.summaryCount}>
             {monthCount} revenu{monthCount > 1 ? 's' : ''}
           </Text>
+          <View style={styles.methodBreakdown}>
+            <Text style={styles.methodLine}>💵 {monthByMethod.cash.toFixed(0)} $</Text>
+            <Text style={styles.methodLine}>📲 {monthByMethod.etransfert.toFixed(0)} $</Text>
+            {monthByMethod.autre > 0 ? <Text style={styles.methodLine}>• {monthByMethod.autre.toFixed(0)} $</Text> : null}
+          </View>
         </View>
         <View style={[styles.summaryCard, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
           <View style={styles.summaryIconWrap}>
@@ -309,6 +332,11 @@ export default function RevenuesScreen() {
           <Text style={styles.summaryCount}>
             {yearCount} revenu{yearCount > 1 ? 's' : ''}
           </Text>
+          <View style={styles.methodBreakdown}>
+            <Text style={styles.methodLine}>💵 {yearByMethod.cash.toFixed(0)} $</Text>
+            <Text style={styles.methodLine}>📲 {yearByMethod.etransfert.toFixed(0)} $</Text>
+            {yearByMethod.autre > 0 ? <Text style={styles.methodLine}>• {yearByMethod.autre.toFixed(0)} $</Text> : null}
+          </View>
         </View>
       </View>
 
@@ -585,6 +613,18 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     fontWeight: '600',
     marginTop: 2,
+  },
+  methodBreakdown: {
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.06)',
+    gap: 1,
+  },
+  methodLine: {
+    fontSize: 10,
+    color: '#374151',
+    fontWeight: '600',
   },
   totalBox: { flex: 1, backgroundColor: '#064E3B', padding: 14, borderRadius: 12 },
   totalLabel: { color: '#A7F3D0', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
