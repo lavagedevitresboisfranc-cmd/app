@@ -331,7 +331,7 @@ export default function CalendarScreen() {
       const items: CalendarItem[] = [
         ...appts
           // Hide completed appointments from the calendar timeline views
-          .filter((a) => a.status !== 'completed' && a.status !== 'archived' && a.status !== 'cancelled')
+          .filter((a) => a.status !== 'archived' && a.status !== 'cancelled')
           .map((a) => ({
           id: a.id,
           type: 'appointment' as const,
@@ -462,7 +462,7 @@ export default function CalendarScreen() {
           const items: CalendarItem[] = [
             ...appts
               // Hide completed/archived/cancelled appointments
-              .filter((a) => a.status !== 'completed' && a.status !== 'archived' && a.status !== 'cancelled')
+              .filter((a) => a.status !== 'archived' && a.status !== 'cancelled')
               .map((a) => ({
               id: a.id,
               type: 'appointment' as const,
