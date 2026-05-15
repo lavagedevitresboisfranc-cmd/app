@@ -1104,7 +1104,19 @@ export default function CalendarScreen() {
               <TouchableOpacity testID="week-prev" onPress={() => changeWeek(-1)} activeOpacity={0.7} style={styles.weekArrow}>
                 <Feather name="chevron-left" size={20} color="#0A0A0A" />
               </TouchableOpacity>
-              <Text style={styles.weekRangeText}>{formatWeekRange(weekDays)}</Text>
+              <View style={{ alignItems: 'center', flex: 1 }}>
+                <Text style={styles.weekRangeText}>{formatWeekRange(weekDays)}</Text>
+                {(() => {
+                  // Sum revenue across all days of this week
+                  let total = 0;
+                  weekDays.forEach((d) => {
+                    total += computeDayRevenue((weekItems[d] || []) as any);
+                  });
+                  return total > 0 ? (
+                    <Text style={styles.weekTotalRevenue}>💰 {formatRev(total)}</Text>
+                  ) : null;
+                })()}
+              </View>
               <TouchableOpacity testID="week-next" onPress={() => changeWeek(1)} activeOpacity={0.7} style={styles.weekArrow}>
                 <Feather name="chevron-right" size={20} color="#0A0A0A" />
               </TouchableOpacity>
@@ -1525,6 +1537,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#0A0A0A',
+  },
+  weekTotalRevenue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#10B981',
+    marginTop: 2,
   },
   weekDayHeader: {
     flexDirection: 'row',

@@ -223,6 +223,12 @@ export default function RequestDetailScreen() {
     }
   }, [showSuggest, suggestedDate]);
 
+  // Load all appointments occupancy data once so the inline calendar can show
+  // green/orange/red rings on dates with existing RDV.
+  useEffect(() => {
+    loadEditCalendar();
+  }, []);
+
   // Cross-platform alert that actually works on web/PWA
   const showAlert = (title: string, message: string, onOk?: () => void) => {
     if (Platform.OS === 'web') {
@@ -1146,38 +1152,66 @@ export default function RequestDetailScreen() {
               </View>
 
               <Text style={styles.fieldLabel}>DATE</Text>
-              <Calendar
-                current={suggestedDate}
-                onDayPress={(day: { dateString: string }) => {
-                  setSuggestedDate(day.dateString);
-                  setSuggestedTime(''); // reset time selection when date changes
-                }}
-                markedDates={{
-                  [suggestedDate]: { selected: true, selectedColor: '#FF9500' },
-                }}
-                firstDay={1}
-                theme={{
-                  backgroundColor: '#FAFAFA',
-                  calendarBackground: '#FFFFFF',
-                  textSectionTitleColor: '#737373',
-                  selectedDayBackgroundColor: '#FF9500',
-                  selectedDayTextColor: '#FFFFFF',
-                  todayTextColor: '#0891B2',
-                  todayBackgroundColor: '#E5F5F6',
-                  dayTextColor: '#0A0A0A',
-                  textDisabledColor: '#D4D4D4',
-                  arrowColor: '#FF9500',
-                  monthTextColor: '#0A0A0A',
-                  textMonthFontWeight: '700',
-                  textMonthFontSize: 16,
-                  textDayFontSize: 15,
-                  textDayHeaderFontSize: 13,
-                  textDayFontWeight: '500',
-                  textDayHeaderFontWeight: '600',
-                }}
-                style={styles.calendarBox}
-              />
-
+              {(() => {
+                // Build markedDates: ring-circle around each occupied day
+                const md: Record<string, any> = {};
+                Object.entries(editDayCounts).forEach(([d, n]) => {
+                  const ringColor = n >= 6 ? '#DC2626' : n >= 3 ? '#F59E0B' : '#10B981';
+                  md[d] = {
+                    customStyles: {
+                      container: {
+                        width: 32, height: 32, borderRadius: 16,
+                        alignItems: 'center', justifyContent: 'center',
+                        borderWidth: 2, borderColor: ringColor,
+                      },
+                      text: { fontWeight: '600', fontSize: 15, color: '#0A0A0A' },
+                    },
+                  };
+                });
+                // Selected suggested date — orange filled circle on top
+                if (suggestedDate) {
+                  md[suggestedDate] = {
+                    customStyles: {
+                      container: {
+                        width: 32, height: 32, borderRadius: 16,
+                        alignItems: 'center', justifyContent: 'center',
+                        backgroundColor: '#FF9500',
+                      },
+                      text: { fontWeight: '700', fontSize: 15, color: '#FFFFFF' },
+                    },
+                  };
+                }
+                return (
+                  <Calendar
+                    current={suggestedDate}
+                    onDayPress={(day: { dateString: string }) => {
+                      setSuggestedDate(day.dateString);
+                      setSuggestedTime(''); // reset time selection when date changes
+                    }}
+                    markingType="custom"
+                    markedDates={md}
+                    firstDay={1}
+                    theme={{
+                      backgroundColor: '#FAFAFA',
+                      calendarBackground: '#FFFFFF',
+                      textSectionTitleColor: '#737373',
+                      todayTextColor: '#0891B2',
+                      todayBackgroundColor: '#E5F5F6',
+                      dayTextColor: '#0A0A0A',
+                      textDisabledColor: '#D4D4D4',
+                      arrowColor: '#FF9500',
+                      monthTextColor: '#0A0A0A',
+                      textMonthFontWeight: '700',
+                      textMonthFontSize: 16,
+                      textDayFontSize: 15,
+                      textDayHeaderFontSize: 13,
+                      textDayFontWeight: '500',
+                      textDayHeaderFontWeight: '600',
+                    }}
+                    style={styles.calendarBox}
+                  />
+                );
+              })()}
               {/* Pretty date recap */}
               <View style={styles.pickedDateRecap}>
                 <Feather name="calendar" size={14} color="#FF9500" />
