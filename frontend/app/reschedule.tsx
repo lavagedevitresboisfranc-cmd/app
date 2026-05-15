@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Alert, Platform,
@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { Calendar } from 'react-native-calendars';
 import AppHeader from '../components/AppHeader';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -175,42 +176,94 @@ export default function RescheduleScreen() {
           </Text>
         </View>
 
-        <Text style={styles.sectionTitle}>📅 14 PROCHAINS JOURS — Choisis un nouveau créneau</Text>
+        <Text style={styles.sectionTitle}>📅 Choisir une date</Text>
 
-        {days.map(({ iso, date }) => {
-          const occupied = occupiedByDate[iso] || {};
-          const occupiedCount = Object.keys(occupied).length;
-          const isSelectedDate = selectedDate === iso;
-          const dayLabel = `${dayNames[date.getDay()]} ${date.getDate()} ${monthNames[date.getMonth()].slice(0, 3)}`;
-          const isToday = iso === fmtDateISO(today);
-
+        {/* Calendar with colored ring circles showing occupancy per day */}
+        {(() => {
+          // Build markedDates: ring around occupied days, filled circle on selected
+          const counts: Record<string, number> = {};
+          Object.keys(occupiedByDate).forEach((d) => {
+            counts[d] = Object.keys(occupiedByDate[d] || {}).length;
+          });
+          const md: Record<string, any> = {};
+          Object.entries(counts).forEach(([d, n]) => {
+            const ringColor = n >= 6 ? '#DC2626' : n >= 3 ? '#F59E0B' : '#10B981';
+            md[d] = {
+              customStyles: {
+                container: {
+                  width: 32, height: 32, borderRadius: 16,
+                  alignItems: 'center', justifyContent: 'center',
+                  borderWidth: 2, borderColor: ringColor,
+                },
+                text: { fontWeight: '600', fontSize: 15, color: '#0A0A0A' },
+              },
+            };
+          });
+          if (selectedDate) {
+            md[selectedDate] = {
+              customStyles: {
+                container: {
+                  width: 32, height: 32, borderRadius: 16,
+                  alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: '#0891B2',
+                },
+                text: { fontWeight: '700', fontSize: 15, color: '#FFFFFF' },
+              },
+            };
+          }
           return (
-            <View key={iso} style={[styles.dayCard, isSelectedDate && styles.dayCardActive]}>
-              <View style={styles.dayHeader}>
-                <Text style={[styles.dayLabel, isToday && { color: '#0891B2' }]}>
-                  {dayLabel} {isToday ? '— Aujourd\'hui' : ''}
-                </Text>
-                <View style={[
-                  styles.statusPill,
-                  occupiedCount === 0 ? styles.statusFree : styles.statusBusy,
-                ]}>
-                  <Text style={[
-                    styles.statusText,
-                    occupiedCount === 0 ? { color: '#065F46' } : { color: '#92400E' },
-                  ]}>
-                    {occupiedCount === 0 ? '✓ Libre' : `${occupiedCount} RDV`}
+            <Calendar
+              current={selectedDate || fmtDateISO(today)}
+              minDate={fmtDateISO(today)}
+              markingType="custom"
+              markedDates={md}
+              firstDay={1}
+              onDayPress={(day: { dateString: string }) => {
+                setSelectedDate(day.dateString);
+                setSelectedSlot(null);
+              }}
+              theme={{
+                todayTextColor: '#0891B2',
+                arrowColor: '#0891B2',
+                monthTextColor: '#0A0A0A',
+                textMonthFontWeight: '700',
+              }}
+              style={styles.calBox}
+            />
+          );
+        })()}
+
+        {/* Legend */}
+        <View style={styles.legendRow}>
+          <View style={styles.legendItem}><View style={[styles.legendCircle, { borderColor: '#10B981' }]} /><Text style={styles.legendText}>1–2 RDV</Text></View>
+          <View style={styles.legendItem}><View style={[styles.legendCircle, { borderColor: '#F59E0B' }]} /><Text style={styles.legendText}>3–5 RDV</Text></View>
+          <View style={styles.legendItem}><View style={[styles.legendCircle, { borderColor: '#DC2626' }]} /><Text style={styles.legendText}>6+ RDV</Text></View>
+        </View>
+
+        {/* Time slots for selected date */}
+        {selectedDate ? (() => {
+          const occupied = occupiedByDate[selectedDate] || {};
+          const occupiedCount = Object.keys(occupied).length;
+          const sel = new Date(selectedDate + 'T00:00:00');
+          const dayLabel = `${dayNames[sel.getDay()]} ${sel.getDate()} ${monthNames[sel.getMonth()]}`;
+          return (
+            <View style={styles.slotsCard}>
+              <View style={styles.slotsHeader}>
+                <Text style={styles.slotsHeaderTitle}>🕐 {dayLabel}</Text>
+                <View style={[styles.statusPill, occupiedCount === 0 ? styles.statusFree : styles.statusBusy]}>
+                  <Text style={[styles.statusText, occupiedCount === 0 ? { color: '#065F46' } : { color: '#92400E' }]}>
+                    {occupiedCount === 0 ? '✓ Libre' : `${occupiedCount} occupé${occupiedCount > 1 ? 's' : ''}`}
                   </Text>
                 </View>
               </View>
-
               <View style={styles.slotsGrid}>
                 {TIME_SLOTS.map((slot) => {
                   const isOccupied = !!occupied[slot];
-                  const isSelected = isSelectedDate && selectedSlot === slot;
+                  const isSelected = selectedSlot === slot;
                   return (
                     <TouchableOpacity
                       key={slot}
-                      testID={`slot-${iso}-${slot}`}
+                      testID={`slot-${selectedDate}-${slot}`}
                       disabled={isOccupied}
                       style={[
                         styles.slotBtn,
@@ -220,7 +273,6 @@ export default function RescheduleScreen() {
                       activeOpacity={isOccupied ? 1 : 0.7}
                       onPress={() => {
                         if (isOccupied) return;
-                        setSelectedDate(iso);
                         setSelectedSlot(slot);
                       }}
                     >
@@ -235,7 +287,12 @@ export default function RescheduleScreen() {
               </View>
             </View>
           );
-        })}
+        })() : (
+          <View style={styles.hintBox}>
+            <Feather name="info" size={18} color="#0891B2" />
+            <Text style={styles.hintText}>Tapez sur une date au calendrier pour voir les créneaux disponibles.</Text>
+          </View>
+        )}
 
         {/* Confirm */}
         <View style={styles.confirmBar}>
@@ -295,6 +352,27 @@ const styles = StyleSheet.create({
   currentClient: { fontSize: 16, fontWeight: '700', color: '#0A0A0A', marginTop: 4 },
   currentSlot: { fontSize: 13, color: '#525252', marginTop: 2 },
   sectionTitle: { fontSize: 12, fontWeight: '700', color: '#525252', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.4 },
+  calBox: { borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', overflow: 'hidden', marginBottom: 8 },
+  legendRow: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 8, marginBottom: 12 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendCircle: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, backgroundColor: 'transparent' },
+  legendText: { fontSize: 12, color: '#525252', fontWeight: '500' },
+  slotsCard: {
+    backgroundColor: '#FFFFFF', borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 14,
+  },
+  slotsHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: 12,
+  },
+  slotsHeaderTitle: { fontSize: 16, fontWeight: '700', color: '#0A0A0A' },
+  hintBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    padding: 14, marginBottom: 16,
+    backgroundColor: '#F0F9FF', borderRadius: 10,
+    borderWidth: 1, borderColor: '#BAE6FD',
+  },
+  hintText: { flex: 1, fontSize: 13, color: '#0369A1' },
   dayCard: {
     backgroundColor: '#FFFFFF', borderRadius: 10, padding: 12, marginBottom: 10,
     borderWidth: 1, borderColor: '#E5E5E5',
