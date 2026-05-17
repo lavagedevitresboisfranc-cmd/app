@@ -2700,7 +2700,13 @@ async def calendar_ics_feed(token: str):
 import secrets as _secrets
 import string as _string
 
-_SHORT_ALPHABET = _string.ascii_letters + _string.digits
+# Exclude visually-ambiguous characters that look identical in SMS fonts:
+#   - 'I' (uppercase i) vs 'l' (lowercase L) vs '1' (one)
+#   - 'O' (uppercase o) vs 'o' (lowercase o) vs '0' (zero)
+# Without these, clients reading the URL manually won't confuse one character
+# for another and end up at a 404.
+_AMBIGUOUS = set("Il1O0o")
+_SHORT_ALPHABET = ''.join(c for c in (_string.ascii_letters + _string.digits) if c not in _AMBIGUOUS)
 
 
 def _gen_short_code(length: int = 6) -> str:
@@ -2751,7 +2757,28 @@ async def short_link_resolver(code: str, request: Request):
     from fastapi.responses import RedirectResponse, HTMLResponse
     row = await db.short_links.find_one({"code": code})
     if not row or not row.get("target"):
-        return HTMLResponse("<h1>Lien expiré ou invalide</h1>", status_code=404)
+        # Fallback: try ambiguous-char swaps so clients reading the URL manually
+        # (and confusing 'I' vs 'l', 'O' vs '0', etc.) still land on the right page.
+        # Build the list of plausible codes by substituting each ambiguous char.
+        ambiguous_groups = ["Il1", "Oo0"]
+        def variants(s: str) -> set[str]:
+            out = {s}
+            for group in ambiguous_groups:
+                if any(c in s for c in group):
+                    new_set = set()
+                    for v in out:
+                        for ch in group:
+                            new_set.add(''.join(ch if c in group else c for c in v))
+                    out |= new_set
+            return out
+        for cand in variants(code):
+            if cand == code:
+                continue
+            row = await db.short_links.find_one({"code": cand})
+            if row and row.get("target"):
+                break
+        if not row or not row.get("target"):
+            return HTMLResponse("<h1>Lien expiré ou invalide</h1>", status_code=404)
     target = row["target"]
     if target.startswith("http"):
         return RedirectResponse(url=target, status_code=302)
