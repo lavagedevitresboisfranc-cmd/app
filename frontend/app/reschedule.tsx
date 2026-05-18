@@ -206,9 +206,14 @@ export default function RescheduleScreen() {
         {/* Calendar with colored ring circles showing occupancy per day */}
         {(() => {
           // Build markedDates: ring around occupied days, filled circle on selected
+          // Count UNIQUE appointments per day (not the 30-min sub-slots they span)
           const counts: Record<string, number> = {};
-          Object.keys(occupiedByDate).forEach((d) => {
-            counts[d] = Object.keys(occupiedByDate[d] || {}).length;
+          Object.entries(occupiedByDate).forEach(([d, slots]) => {
+            const uniqueIds = new Set<string>();
+            Object.values(slots || {}).forEach((a: any) => {
+              if (a && a.id) uniqueIds.add(a.id);
+            });
+            counts[d] = uniqueIds.size;
           });
           const md: Record<string, any> = {};
           Object.entries(counts).forEach(([d, n]) => {
@@ -268,7 +273,12 @@ export default function RescheduleScreen() {
         {/* Time slots for selected date */}
         {selectedDate ? (() => {
           const occupied = occupiedByDate[selectedDate] || {};
-          const occupiedCount = Object.keys(occupied).length;
+          // Count UNIQUE appointments (not 30-min sub-slots)
+          const uniqueIds = new Set<string>();
+          Object.values(occupied).forEach((a: any) => {
+            if (a && a.id) uniqueIds.add(a.id);
+          });
+          const occupiedCount = uniqueIds.size;
           const sel = new Date(selectedDate + 'T00:00:00');
           const dayLabel = `${dayNames[sel.getDay()]} ${sel.getDate()} ${monthNames[sel.getMonth()]}`;
           return (
@@ -277,7 +287,7 @@ export default function RescheduleScreen() {
                 <Text style={styles.slotsHeaderTitle}>🕐 {dayLabel}</Text>
                 <View style={[styles.statusPill, occupiedCount === 0 ? styles.statusFree : styles.statusBusy]}>
                   <Text style={[styles.statusText, occupiedCount === 0 ? { color: '#065F46' } : { color: '#92400E' }]}>
-                    {occupiedCount === 0 ? '✓ Libre' : `${occupiedCount} occupé${occupiedCount > 1 ? 's' : ''}`}
+                    {occupiedCount === 0 ? '✓ Libre' : `${occupiedCount} RDV`}
                   </Text>
                 </View>
               </View>
