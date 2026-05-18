@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert, Platform,
+  ActivityIndicator, Alert, Platform, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -21,6 +21,7 @@ interface Appointment {
   id: string;
   client_name: string;
   client_email: string | null;
+  client_phone?: string | null;
   date: string;
   time_slot: string;
   duration_minutes: number;
@@ -47,6 +48,7 @@ export default function RescheduleScreen() {
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [notifyClient, setNotifyClient] = useState(true);
+  const [notifySMS, setNotifySMS] = useState(false);
 
   // Build the list of 14 days starting from today
   const today = new Date();
@@ -123,11 +125,34 @@ export default function RescheduleScreen() {
         }),
       });
       if (!res.ok) throw new Error('Échec de la reprogrammation');
+
+      // If SMS option is checked, open the messages app with a pre-filled message.
+      // Format the date in French for the SMS body.
+      if (notifySMS && appointment.client_phone) {
+        try {
+          const dt = new Date(selectedDate + 'T00:00:00');
+          const dayName = dayNames[dt.getDay()];
+          const monthName = monthNames[dt.getMonth()];
+          const firstName = (appointment.client_name || '').split(' ')[0];
+          const body = `Bonjour ${firstName},\n\nVotre rendez-vous Lavage de Vitres Bois-Franc a été reprogrammé:\n\n📅 ${dayName} ${dt.getDate()} ${monthName} ${dt.getFullYear()} à ${selectedSlot}\n\nMerci!`;
+          const phone = (appointment.client_phone || '').replace(/[^0-9+]/g, '');
+          const sep = Platform.OS === 'ios' ? '&' : '?';
+          const smsUrl = `sms:${phone}${sep}body=${encodeURIComponent(body)}`;
+          await Linking.openURL(smsUrl);
+        } catch (e) {
+          console.warn('sms open failed', e);
+        }
+      }
+
+      const summary = [
+        `Nouveau créneau: ${selectedDate} à ${selectedSlot}`,
+        notifyClient && appointment.client_email ? `📧 Courriel envoyé à ${appointment.client_email}` : '',
+        notifySMS && appointment.client_phone ? `📱 SMS ouvert pour ${appointment.client_phone}` : '',
+      ].filter(Boolean).join('\n\n');
+
       Alert.alert(
         '✅ Rendez-vous reprogrammé',
-        notifyClient && appointment.client_email
-          ? `Nouveau créneau: ${selectedDate} à ${selectedSlot}\n\nUn courriel a été envoyé à ${appointment.client_email}.`
-          : `Nouveau créneau: ${selectedDate} à ${selectedSlot}`,
+        summary,
         [{ text: 'OK', onPress: () => router.back() }]
       );
     } catch (e: any) {
@@ -312,7 +337,20 @@ export default function RescheduleScreen() {
                   <View style={[styles.checkbox, notifyClient && styles.checkboxOn]}>
                     {notifyClient && <Feather name="check" size={14} color="#FFFFFF" />}
                   </View>
-                  <Text style={styles.checkboxLabel}>Aviser le client par courriel ({appointment.client_email})</Text>
+                  <Text style={styles.checkboxLabel}>📧 Aviser par courriel ({appointment.client_email})</Text>
+                </TouchableOpacity>
+              )}
+
+              {!!appointment.client_phone && (
+                <TouchableOpacity
+                  onPress={() => setNotifySMS((v) => !v)}
+                  style={styles.checkboxRow}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.checkbox, notifySMS && styles.checkboxOn]}>
+                    {notifySMS && <Feather name="check" size={14} color="#FFFFFF" />}
+                  </View>
+                  <Text style={styles.checkboxLabel}>📱 Aviser par SMS ({appointment.client_phone})</Text>
                 </TouchableOpacity>
               )}
 
