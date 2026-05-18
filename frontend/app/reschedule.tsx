@@ -310,6 +310,35 @@ export default function RescheduleScreen() {
                   );
                 })}
               </View>
+
+              {/* List of existing appointments for the selected day */}
+              {(() => {
+                // Group occupied entries back to unique appointments by id
+                const seen = new Set<string>();
+                const list: any[] = [];
+                Object.values(occupied).forEach((a: any) => {
+                  if (a && a.id && !seen.has(a.id)) {
+                    seen.add(a.id);
+                    list.push(a);
+                  }
+                });
+                list.sort((a, b) => (a.time_slot || '').localeCompare(b.time_slot || ''));
+                if (list.length === 0) return null;
+                return (
+                  <View style={styles.dayApptList}>
+                    <Text style={styles.dayApptListTitle}>📋 Rendez-vous du jour</Text>
+                    {list.map((a) => (
+                      <View key={a.id} style={styles.dayApptRow}>
+                        <Text style={styles.dayApptTime}>{(a.time_slot || '').slice(0, 5)}</Text>
+                        <Text style={styles.dayApptName} numberOfLines={1}>
+                          {a.client_name || a.title || '—'}
+                        </Text>
+                        <Text style={styles.dayApptDur}>{a.duration_minutes || 60} min</Text>
+                      </View>
+                    ))}
+                  </View>
+                );
+              })()}
             </View>
           );
         })() : (
@@ -411,6 +440,24 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#BAE6FD',
   },
   hintText: { flex: 1, fontSize: 13, color: '#0369A1' },
+  dayApptList: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  dayApptListTitle: { fontSize: 12, fontWeight: '700', color: '#525252', marginBottom: 8, letterSpacing: 0.3 },
+  dayApptRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 6, paddingHorizontal: 8,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 6,
+    marginBottom: 4,
+    gap: 10,
+  },
+  dayApptTime: { fontSize: 13, fontWeight: '700', color: '#92400E', width: 50 },
+  dayApptName: { flex: 1, fontSize: 13, color: '#1F2937', fontWeight: '500' },
+  dayApptDur: { fontSize: 11, color: '#6B7280' },
   dayCard: {
     backgroundColor: '#FFFFFF', borderRadius: 10, padding: 12, marginBottom: 10,
     borderWidth: 1, borderColor: '#E5E5E5',
