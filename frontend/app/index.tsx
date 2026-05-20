@@ -237,7 +237,6 @@ export default function CalendarScreen() {
       color: '#10B981',
       items: [
         { icon: 'trending-up' as const, labelKey: 'menu.items.revenues', route: '/revenues' },
-        { icon: 'alert-circle' as const, label: 'Revenus orphelins', route: '/orphan-revenues' },
         { icon: 'credit-card' as const, labelKey: 'menu.items.expenses', route: '/expenses' },
         { icon: 'bar-chart-2' as const, labelKey: 'menu.items.summary', route: '/finance-summary' },
         { icon: 'pie-chart' as const, labelKey: 'menu.items.bilan', route: '/bilan' },

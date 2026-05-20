@@ -12,16 +12,28 @@ const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 interface Appointment {
   id: string;
-  customer_name: string;
+  // Backend returns these field names (we keep both for safety)
+  client_name?: string;
+  customer_name?: string;
   date: string;
-  time: string;
+  time_slot?: string;
+  time?: string;
+  client_address?: string;
   address?: string;
+  client_phone?: string;
   phone?: string;
   service_type?: string;
+  price?: number;
   total_price?: number;
   status: string;
   archived_at?: string;
 }
+
+// Helper to read the display name regardless of which field is set
+const nameOf = (a: Appointment) => a.client_name || a.customer_name || 'Sans nom';
+const timeOf = (a: Appointment) => a.time_slot || a.time || '';
+const addrOf = (a: Appointment) => a.client_address || a.address || '';
+const phoneOf = (a: Appointment) => a.client_phone || a.phone || '';
 
 const formatDate = (iso?: string) => {
   if (!iso) return '';
@@ -66,9 +78,9 @@ export default function AppointmentsArchiveScreen() {
     const q = search.trim().toLowerCase();
     if (!q) return items;
     return items.filter((a) =>
-      (a.customer_name || '').toLowerCase().includes(q) ||
-      (a.address || '').toLowerCase().includes(q) ||
-      (a.phone || '').toLowerCase().includes(q)
+      nameOf(a).toLowerCase().includes(q) ||
+      addrOf(a).toLowerCase().includes(q) ||
+      phoneOf(a).toLowerCase().includes(q)
     );
   }, [items, search]);
 
@@ -87,7 +99,7 @@ export default function AppointmentsArchiveScreen() {
   const handleRestore = (item: Appointment) => {
     confirmAction(
       'Restaurer le rendez-vous ?',
-      `"${item.customer_name}" sera remis dans le calendrier actif.`,
+      `"${nameOf(item)}" sera remis dans le calendrier actif.`,
       async () => {
         setProcessing(true);
         try {
@@ -109,7 +121,7 @@ export default function AppointmentsArchiveScreen() {
   const handlePermanentDelete = (item: Appointment) => {
     confirmAction(
       'Suppression DÉFINITIVE ?',
-      `"${item.customer_name}" sera effacé de manière permanente. Cette action est IRRÉVERSIBLE.`,
+      `"${nameOf(item)}" sera effacé de manière permanente. Cette action est IRRÉVERSIBLE.`,
       async () => {
         setProcessing(true);
         try {
@@ -138,11 +150,11 @@ export default function AppointmentsArchiveScreen() {
       >
         <View style={styles.dateBox}>
           <Text style={styles.dateText}>{formatDate(item.date)}</Text>
-          <Text style={styles.timeText}>{item.time || '--:--'}</Text>
+          <Text style={styles.timeText}>{timeOf(item) || '--:--'}</Text>
         </View>
         <View style={styles.info}>
-          <Text style={styles.name}>{item.customer_name || 'Sans nom'}</Text>
-          {item.address ? <Text style={styles.meta} numberOfLines={1}>{item.address}</Text> : null}
+          <Text style={styles.name}>{nameOf(item)}</Text>
+          {addrOf(item) ? <Text style={styles.meta} numberOfLines={1}>{addrOf(item)}</Text> : null}
           {item.service_type ? <Text style={styles.metaSmall}>{item.service_type}</Text> : null}
           {item.archived_at ? (
             <Text style={styles.archivedDate}>
