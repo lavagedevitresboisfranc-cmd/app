@@ -217,6 +217,9 @@ export default function CampaignsScreen() {
       Alert.alert(t('campaigns.noRecipients'), t('campaigns.selectAtLeastOne'));
       return;
     }
+      Alert.alert(t('campaigns.noRecipients'), t('campaigns.selectAtLeastOne'));
+      return;
+    }
 
     const proceed = async () => {
       try {
@@ -259,6 +262,62 @@ export default function CampaignsScreen() {
       Alert.alert('Envoyer la campagne ?', confirmMsg, [
         { text: 'Annuler', style: 'cancel' },
         { text: 'Envoyer', onPress: () => proceed() },
+      ]);
+    }
+  };
+
+  const sendCampaignSMS = async () => {
+    if (!preview) return;
+    const excludedSet = excluded; // a Set of emails
+    // Get phones of non-excluded clients
+    const phones = clients
+      .filter((c) => !excludedSet.has(c.email))
+      .map((c) => (c.phone || '').replace(/[^0-9+]/g, ''))
+      .filter((p) => p && p.length >= 10);
+    if (phones.length === 0) {
+      const m = 'Aucun numéro de téléphone trouvé parmi les clients sélectionnés.';
+      if (Platform.OS === 'web') window.alert(m); else Alert.alert('Aucun SMS', m);
+      return;
+    }
+
+    // Build a plain-text SMS body from the campaign subject + a short message
+    // (strip HTML, keep only the first few lines of the email body for SMS readability).
+    const stripHtml = (html: string) => html
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    const plain = stripHtml(preview.body || '');
+    // Keep SMS short — first ~280 chars max
+    const shortPlain = plain.length > 280 ? plain.slice(0, 277) + '...' : plain;
+    const smsBody = `${preview.subject}\n\n${shortPlain}\n\n— Powered by Gexia360`;
+
+    // iOS uses comma to separate multiple recipients, Android uses semicolon.
+    const sep = Platform.OS === 'ios' ? ',' : ';';
+    const recipients = phones.join(sep);
+    const qSep = Platform.OS === 'ios' ? '&' : '?';
+    const smsUrl = `sms:${recipients}${qSep}body=${encodeURIComponent(smsBody)}`;
+
+    const confirmMsg = `Ouvrir l'app Messages pour envoyer un SMS à ${phones.length} client(s) ?\n\nVous pourrez revoir et envoyer manuellement.`;
+    const proceed = async () => {
+      try {
+        await Linking.openURL(smsUrl);
+      } catch (e: any) {
+        const m = 'Impossible d\'ouvrir l\'app Messages: ' + (e?.message || '');
+        if (Platform.OS === 'web') window.alert(m); else Alert.alert('Erreur', m);
+      }
+    };
+    if (Platform.OS === 'web') {
+      if (window.confirm(confirmMsg)) await proceed();
+    } else {
+      Alert.alert('Envoyer SMS ?', confirmMsg, [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Ouvrir Messages', onPress: () => proceed() },
       ]);
     }
   };
@@ -536,14 +595,24 @@ export default function CampaignsScreen() {
                 <Text style={styles.footerBtnText}>Planifier</Text>
               </TouchableOpacity>
               <TouchableOpacity
+                testID="send-sms-confirm"
+                style={[styles.footerBtn, { backgroundColor: '#10B981', flex: 1 }]}
+                activeOpacity={0.7}
+                onPress={sendCampaignSMS}
+                disabled={selectedCount === 0}
+              >
+                <Feather name="message-circle" size={16} color="#FFF" />
+                <Text style={styles.footerBtnText}>SMS</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 testID="send-campaign-confirm"
                 style={[styles.footerBtn, { backgroundColor: preview?.color || '#0891B2', flex: 1.2 }]}
                 activeOpacity={0.7}
                 onPress={sendCampaign}
                 disabled={selectedCount === 0}
               >
-                <Feather name="send" size={16} color="#FFF" />
-                <Text style={styles.footerBtnText}>{t('campaigns.sendTo', { count: selectedCount })}</Text>
+                <Feather name="mail" size={16} color="#FFF" />
+                <Text style={styles.footerBtnText}>Courriel</Text>
               </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>
