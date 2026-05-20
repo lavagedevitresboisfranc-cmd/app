@@ -133,11 +133,13 @@ async def run_sync(db) -> dict:
         prod_requests = await _get_json(client, "/api/requests")
         prod_appts = await _get_json(client, "/api/appointments")
         prod_clients = await _get_json(client, "/api/clients-db?limit=2000")
+        prod_short_links = await _get_json(client, "/api/short-links/list?limit=2000")
 
     # Tombstones (local deletions/archives we should never re-import)
     tomb_req = await _load_tombstones(db, "request")
     tomb_appt = await _load_tombstones(db, "appointment")
     tomb_cli = await _load_tombstones(db, "client")
+    tomb_link = await _load_tombstones(db, "short_link")
 
     # Get existing ids in preview so we don't duplicate
     preview_req_ids = set()
@@ -151,6 +153,11 @@ async def run_sync(db) -> dict:
     preview_client_ids = set()
     async for c in db.clients.find({}, {"id": 1, "_id": 0}):
         preview_client_ids.add(c.get("id"))
+
+    # Existing short link codes — keyed by `code` (not id) since that's the lookup field
+    preview_link_codes = set()
+    async for sl in db.short_links.find({}, {"code": 1, "_id": 0}):
+        preview_link_codes.add(sl.get("code"))
 
     new_reqs = 0
     for r in prod_requests:
@@ -192,11 +199,27 @@ async def run_sync(db) -> dict:
         except Exception as e:
             logger.warning(f"prod_sync insert client {cid[:8]} failed: {e}")
 
+    # Short links — pulled by `code` (the lookup field). Without this, a short
+    # link generated on production (e.g. for an SMS sent before this code
+    # change) would 404 on preview, and vice versa.
+    new_links = 0
+    for sl in prod_short_links:
+        code = sl.get("code")
+        if not code or code in preview_link_codes or code in tomb_link:
+            continue
+        sl.pop("_id", None)
+        try:
+            await db.short_links.insert_one(sl)
+            new_links += 1
+        except Exception as e:
+            logger.warning(f"prod_sync insert short_link {code} failed: {e}")
+
     result = {
         "requests_added": new_reqs,
         "appointments_added": new_appts,
         "clients_added": new_clients,
+        "short_links_added": new_links,
     }
-    if new_reqs or new_appts or new_clients:
+    if new_reqs or new_appts or new_clients or new_links:
         logger.info(f"prod_sync: {result}")
     return result

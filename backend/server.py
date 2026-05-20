@@ -26,7 +26,7 @@ import calendar_feed as calendar_feed_module
 import geocoder as geocoder_module
 
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env', override=True)
+load_dotenv(ROOT_DIR / '.env', override=False)
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
@@ -2814,6 +2814,19 @@ async def short_link_resolver(code: str, request: Request):
     except Exception:
         base_url = (os.environ.get("APP_URL") or "").rstrip("/")
     return RedirectResponse(url=f"{base_url}{target}", status_code=302)
+
+
+# --- Internal sync endpoint: list short links so prod_sync can pull them ---
+@api_router.get("/short-links/list")
+async def list_short_links(limit: int = 2000):
+    """Return all short links so the prod_sync background job can mirror them
+    between preview and production. This guarantees a code generated on either
+    side resolves correctly regardless of where the SMS link is opened."""
+    cursor = db.short_links.find({}, {"_id": 0}).limit(max(1, min(limit, 5000)))
+    out = []
+    async for r in cursor:
+        out.append(r)
+    return out
 
 
 
