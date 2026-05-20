@@ -53,6 +53,38 @@ export default function ClientsDbScreen() {
   const [campaignMode, setCampaignMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
+  // Spring season filter: clients without an appointment in the current year's
+  // spring window (Apr 1 → Jul 31). Useful to follow up with non-bookers.
+  const [filterNoSpring, setFilterNoSpring] = useState(false);
+  const [springClientKeys, setSpringClientKeys] = useState<Set<string>>(new Set());
+
+  const fetchSpringBookings = useCallback(async () => {
+    try {
+      const year = new Date().getFullYear();
+      const start = `${year}-04-01`;
+      const end = `${year}-07-31`;
+      const res = await fetch(`${API_URL}/api/appointments?start_date=${start}&end_date=${end}`);
+      const list = await res.json();
+      const keys = new Set<string>();
+      const normalize = (s: string) => (s || '').trim().toLowerCase();
+      const phoneKey = (p: string) => (p || '').replace(/[^0-9]/g, '');
+      (Array.isArray(list) ? list : []).forEach((a: any) => {
+        // Only count actual scheduled work (not cancelled/archived)
+        if (a.status === 'cancelled' || a.status === 'archived') return;
+        if (a.date < start || a.date > end) return;
+        const name = normalize(a.client_name);
+        const email = normalize(a.client_email);
+        const phone = phoneKey(a.client_phone);
+        if (name) keys.add('n:' + name);
+        if (email) keys.add('e:' + email);
+        if (phone) keys.add('p:' + phone);
+      });
+      setSpringClientKeys(keys);
+    } catch (e) {
+      console.error('fetchSpringBookings failed', e);
+    }
+  }, []);
+
   // Create modal
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
@@ -80,20 +112,34 @@ export default function ClientsDbScreen() {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { fetchClients(); }, [fetchClients]));
-  useEffect(() => { fetchClients(); }, [fetchClients]);
+  useFocusEffect(useCallback(() => { fetchClients(); fetchSpringBookings(); }, [fetchClients, fetchSpringBookings]));
+  useEffect(() => { fetchClients(); fetchSpringBookings(); }, [fetchClients, fetchSpringBookings]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return clients;
-    return clients.filter(
+    const normalize = (s: string) => (s || '').trim().toLowerCase();
+    const phoneKey = (p: string) => (p || '').replace(/[^0-9]/g, '');
+    const hasSpringRdv = (c: Client) => {
+      if (springClientKeys.size === 0) return false;
+      const n = normalize(c.name);
+      const e = normalize(c.email);
+      const p = phoneKey(c.phone);
+      return (n && springClientKeys.has('n:' + n)) ||
+             (e && springClientKeys.has('e:' + e)) ||
+             (p && springClientKeys.has('p:' + p));
+    };
+
+    let list = clients;
+    if (filterNoSpring) list = list.filter((c) => !hasSpringRdv(c));
+    if (!q) return list;
+    return list.filter(
       (c) =>
         c.name.toLowerCase().includes(q) ||
         c.email.toLowerCase().includes(q) ||
         c.phone.toLowerCase().includes(q) ||
         c.address.toLowerCase().includes(q),
     );
-  }, [clients, search]);
+  }, [clients, search, filterNoSpring, springClientKeys]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -640,6 +686,25 @@ export default function ClientsDbScreen() {
         ) : null}
       </View>
 
+      {/* Filter chips */}
+      <View style={styles.chipsRow}>
+        <TouchableOpacity
+          onPress={() => setFilterNoSpring((v) => !v)}
+          style={[styles.chip, filterNoSpring && styles.chipActive]}
+          activeOpacity={0.7}
+        >
+          <Feather name="filter" size={13} color={filterNoSpring ? '#FFFFFF' : '#0891B2'} />
+          <Text style={[styles.chipText, filterNoSpring && styles.chipTextActive]}>
+            🌷 Sans RDV ce printemps
+          </Text>
+          {filterNoSpring && (
+            <View style={styles.chipBadge}>
+              <Text style={styles.chipBadgeText}>{filtered.length}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
+
       {/* Campaign mode banner */}
       {campaignMode && (
         <View style={styles.campaignBanner}>
@@ -866,6 +931,32 @@ const styles = StyleSheet.create({
   },
   campaignBannerText: { flex: 1, fontSize: 12, color: '#5B21B6', fontWeight: '600', lineHeight: 16 },
   searchInput: { flex: 1, fontSize: 15, color: '#111' },
+  chipsRow: {
+    flexDirection: 'row', gap: 8,
+    paddingHorizontal: 16, marginBottom: 12, flexWrap: 'wrap',
+  },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: 16,
+    backgroundColor: '#ECFEFF',
+    borderWidth: 1, borderColor: '#A5F3FC',
+  },
+  chipActive: {
+    backgroundColor: '#0891B2',
+    borderColor: '#0891B2',
+  },
+  chipText: { fontSize: 13, color: '#0E7490', fontWeight: '600' },
+  chipTextActive: { color: '#FFFFFF', fontWeight: '700' },
+  chipBadge: {
+    minWidth: 22, height: 18,
+    paddingHorizontal: 6,
+    borderRadius: 9,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center', justifyContent: 'center',
+    marginLeft: 4,
+  },
+  chipBadgeText: { fontSize: 11, fontWeight: '800', color: '#0891B2' },
   card: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', gap: 12 },
   cardSelected: { backgroundColor: '#ECFEFF', borderColor: '#0891B2', borderWidth: 2 },
   checkbox: {
