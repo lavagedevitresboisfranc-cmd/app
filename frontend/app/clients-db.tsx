@@ -208,33 +208,73 @@ export default function ClientsDbScreen() {
 
   const archiveSelected = () => {
     if (selectedIds.size === 0) return;
-    Alert.alert(
-      '🗑️ Archiver les clients',
-      `Voulez-vous archiver ${selectedIds.size} client${selectedIds.size > 1 ? 's' : ''} ?\n\nLes clients archivés seront déplacés vers la corbeille et pourront être restaurés ou supprimés définitivement.`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Archiver',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const res = await fetch(`${API_URL}/api/clients-db/archive-bulk`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ids: Array.from(selectedIds) }),
-              });
-              const data = await res.json();
-              if (!res.ok) throw new Error(data.detail || 'Erreur');
-              Alert.alert('✅ Archivé', `${data.archived} client${data.archived > 1 ? 's' : ''} déplacé${data.archived > 1 ? 's' : ''} vers la corbeille.`);
-              exitSelectionMode();
-              await fetchClients();
-            } catch (e: any) {
-              Alert.alert('Erreur', e?.message || 'Archivage impossible');
-            }
-          },
-        },
-      ]
-    );
+    const doArchive = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/clients-db/archive-bulk`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: Array.from(selectedIds) }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Erreur');
+        if (Platform.OS === 'web') window.alert(`✅ ${data.archived} client${data.archived > 1 ? 's' : ''} archivé${data.archived > 1 ? 's' : ''}.`);
+        else Alert.alert('✅ Archivé', `${data.archived} client${data.archived > 1 ? 's' : ''} archivé${data.archived > 1 ? 's' : ''}.`);
+        exitSelectionMode();
+        await fetchClients();
+      } catch (e: any) {
+        if (Platform.OS === 'web') window.alert('Erreur: ' + (e?.message || 'Archivage impossible'));
+        else Alert.alert('Erreur', e?.message || 'Archivage impossible');
+      }
+    };
+    if (Platform.OS === 'web') {
+      const ok = window.confirm(`🗑️ Archiver ${selectedIds.size} client${selectedIds.size > 1 ? 's' : ''} ?\n\nLes clients archivés iront dans la corbeille et pourront être restaurés.`);
+      if (ok) doArchive();
+    } else {
+      Alert.alert(
+        '🗑️ Archiver les clients',
+        `Voulez-vous archiver ${selectedIds.size} client${selectedIds.size > 1 ? 's' : ''} ?`,
+        [
+          { text: 'Annuler', style: 'cancel' },
+          { text: 'Archiver', style: 'destructive', onPress: doArchive },
+        ]
+      );
+    }
+  };
+
+  const deleteSelectedPermanent = () => {
+    if (selectedIds.size === 0) return;
+    const n = selectedIds.size;
+    const doDelete = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/clients-db/delete-permanent-bulk`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: Array.from(selectedIds) }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Erreur');
+        if (Platform.OS === 'web') window.alert(`✅ ${data.deleted} client${data.deleted > 1 ? 's' : ''} supprimé${data.deleted > 1 ? 's' : ''} définitivement.`);
+        else Alert.alert('✅ Supprimé', `${data.deleted} client${data.deleted > 1 ? 's' : ''} supprimé${data.deleted > 1 ? 's' : ''}.`);
+        exitSelectionMode();
+        await fetchClients();
+      } catch (e: any) {
+        if (Platform.OS === 'web') window.alert('Erreur: ' + (e?.message || 'Suppression impossible'));
+        else Alert.alert('Erreur', e?.message || 'Suppression impossible');
+      }
+    };
+    if (Platform.OS === 'web') {
+      const ok = window.confirm(`⚠️ SUPPRIMER DÉFINITIVEMENT ${n} client${n > 1 ? 's' : ''} ?\n\nCette action est IRRÉVERSIBLE — les données seront perdues.`);
+      if (ok) doDelete();
+    } else {
+      Alert.alert(
+        `⚠️ Supprimer ${n} client${n > 1 ? 's' : ''} ?`,
+        'Action irréversible — les données seront perdues.',
+        [
+          { text: 'Annuler', style: 'cancel' },
+          { text: 'Supprimer', style: 'destructive', onPress: doDelete },
+        ]
+      );
+    }
   };
 
   // IMPORT CSV / XLSX
@@ -749,21 +789,29 @@ export default function ClientsDbScreen() {
           <Text style={styles.bottomBarText}>
             {selectedIds.size} client{selectedIds.size > 1 ? 's' : ''}
           </Text>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <TouchableOpacity
               onPress={archiveSelected}
+              style={[styles.bottomBarBtn, { backgroundColor: '#F59E0B' }]}
+              activeOpacity={0.85}
+            >
+              <Feather name="archive" size={14} color="#fff" />
+              <Text style={styles.bottomBarBtnText}>Archiver</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={deleteSelectedPermanent}
               style={[styles.bottomBarBtn, { backgroundColor: '#DC2626' }]}
               activeOpacity={0.85}
             >
-              <Feather name="trash-2" size={16} color="#fff" />
-              <Text style={styles.bottomBarBtnText}>Archiver</Text>
+              <Feather name="trash-2" size={14} color="#fff" />
+              <Text style={styles.bottomBarBtnText}>Effacer</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={launchCampaignWithSelection}
               style={styles.bottomBarBtn}
               activeOpacity={0.85}
             >
-              <Feather name="mail" size={16} color="#fff" />
+              <Feather name="mail" size={14} color="#fff" />
               <Text style={styles.bottomBarBtnText}>Campagne</Text>
             </TouchableOpacity>
           </View>

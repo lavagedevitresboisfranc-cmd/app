@@ -11,6 +11,8 @@ import {
   Linking,
   Platform,
   KeyboardAvoidingView,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -102,31 +104,31 @@ export default function ClientDbDetailScreen() {
     }
   };
 
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
   const deleteClient = () => {
-    const doDelete = async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/clients-db/${id}`, { method: 'DELETE' });
-        if (!res.ok) throw new Error('Erreur');
-        if (Platform.OS === 'web') {
-          window.alert('✅ Client supprimé');
-        } else {
-          Alert.alert('✅ Supprimé');
-        }
-        router.back();
-      } catch (e: any) {
-        const msg = e?.message || 'Suppression impossible';
-        if (Platform.OS === 'web') window.alert('Erreur: ' + msg);
-        else Alert.alert('Erreur', msg);
+    // Always use an in-app Modal (works reliably on iOS Safari PWA where
+    // window.confirm can be silently rate-limited after multiple uses).
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = async () => {
+    setDeleting(true);
+    try {
+      const res = await fetch(`${API_URL}/api/clients-db/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e?.detail || 'Erreur');
       }
-    };
-    if (Platform.OS === 'web') {
-      const ok = window.confirm('Supprimer ce client?\n\nAction irréversible.');
-      if (ok) doDelete();
-    } else {
-      Alert.alert('Supprimer ce client?', 'Action irréversible', [
-        { text: 'Annuler', style: 'cancel' },
-        { text: 'Supprimer', style: 'destructive', onPress: doDelete },
-      ]);
+      setShowDeleteModal(false);
+      router.back();
+    } catch (e: any) {
+      const msg = e?.message || 'Suppression impossible';
+      if (Platform.OS === 'web') window.alert('Erreur: ' + msg);
+      else Alert.alert('Erreur', msg);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -303,6 +305,40 @@ export default function ClientDbDetailScreen() {
           {createdAt && <Text style={styles.createdText}>Ajouté le {new Date(createdAt).toLocaleDateString('fr-CA')}</Text>}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* In-app delete confirmation modal — works reliably on iOS Safari PWA */}
+      <Modal visible={showDeleteModal} animationType="fade" transparent onRequestClose={() => setShowDeleteModal(false)}>
+        <Pressable style={styles.delOverlay} onPress={() => !deleting && setShowDeleteModal(false)}>
+          <Pressable style={styles.delBox} onPress={(e: any) => e.stopPropagation && e.stopPropagation()}>
+            <View style={styles.delIcon}>
+              <Feather name="alert-triangle" size={28} color="#DC2626" />
+            </View>
+            <Text style={styles.delTitle}>Supprimer ce client ?</Text>
+            <Text style={styles.delMsg}>
+              <Text style={{ fontWeight: '700' }}>{name || 'Ce client'}</Text> sera supprimé définitivement. Action irréversible.
+            </Text>
+            <View style={styles.delActions}>
+              <TouchableOpacity
+                onPress={() => setShowDeleteModal(false)}
+                disabled={deleting}
+                style={[styles.delBtn, styles.delBtnCancel]}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.delBtnCancelText}>Annuler</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={confirmDelete}
+                disabled={deleting}
+                style={[styles.delBtn, styles.delBtnConfirm, deleting && { opacity: 0.6 }]}
+                activeOpacity={0.7}
+              >
+                {deleting ? <ActivityIndicator size="small" color="#fff" /> :
+                  <Text style={styles.delBtnConfirmText}>Supprimer</Text>}
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -342,5 +378,34 @@ const styles = StyleSheet.create({
   emptyHistory: { fontSize: 14, color: '#9CA3AF', textAlign: 'center', padding: 20 },
   deleteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 10, backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', marginBottom: 16 },
   deleteBtnText: { color: '#DC2626', fontSize: 14, fontWeight: '700' },
+  delOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  delBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+  },
+  delIcon: {
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 12,
+  },
+  delTitle: { fontSize: 18, fontWeight: '700', color: '#0A0A0A', marginBottom: 8, textAlign: 'center' },
+  delMsg: { fontSize: 14, color: '#525252', lineHeight: 20, textAlign: 'center', marginBottom: 20 },
+  delActions: { flexDirection: 'row', gap: 10, width: '100%' },
+  delBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
+  delBtnCancel: { backgroundColor: '#F3F4F6' },
+  delBtnCancelText: { fontSize: 15, color: '#374151', fontWeight: '600' },
+  delBtnConfirm: { backgroundColor: '#DC2626' },
+  delBtnConfirmText: { fontSize: 15, color: '#FFFFFF', fontWeight: '700' },
   createdText: { fontSize: 11, color: '#9CA3AF', textAlign: 'center' },
 });
