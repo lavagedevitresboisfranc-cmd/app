@@ -8,6 +8,7 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Calendar } from 'react-native-calendars';
 import AppHeader from '../components/AppHeader';
+import { wrapSms } from '../src/utils/smsTemplate';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -127,14 +128,30 @@ export default function RescheduleScreen() {
       if (!res.ok) throw new Error('Échec de la reprogrammation');
 
       // If SMS option is checked, open the messages app with a pre-filled message.
-      // Format the date in French for the SMS body.
+      // Format the date in French for the SMS body, and ask the backend for a short
+      // portal URL so the client can Confirm or Propose an alternative in one tap.
       if (notifySMS && appointment.client_phone) {
         try {
           const dt = new Date(selectedDate + 'T00:00:00');
           const dayName = dayNames[dt.getDay()];
           const monthName = monthNames[dt.getMonth()];
           const firstName = (appointment.client_name || '').split(' ')[0];
-          const body = `Bonjour ${firstName},\n\nVotre rendez-vous Lavage de Vitres Bois-Franc a été reprogrammé:\n\n📅 ${dayName} ${dt.getDate()} ${monthName} ${dt.getFullYear()} à ${selectedSlot}\n\nMerci!`;
+
+          // Try to get a short portal URL (Confirmer / Modifier / Facture)
+          let portalUrl = '';
+          try {
+            const portalRes = await fetch(`${API_URL}/api/appointments/${id}/send-client-confirmation`, { method: 'POST' });
+            if (portalRes.ok) {
+              const d = await portalRes.json();
+              portalUrl = String(d?.portal_url || '');
+            }
+          } catch (e) { /* non-blocking */ }
+
+          const dateLine = `📅 ${dayName} ${dt.getDate()} ${monthName} ${dt.getFullYear()} à ${selectedSlot}`;
+          const portalLine = portalUrl ? `\n\n👉 Confirmer ou proposer un autre créneau:\n${portalUrl}` : '';
+          const rawBody = `Bonjour ${firstName},\n\nVotre rendez-vous a été reprogrammé:\n\n${dateLine}${portalLine}\n\nMerci!`;
+          const body = wrapSms(rawBody);
+
           const phone = (appointment.client_phone || '').replace(/[^0-9+]/g, '');
           const sep = Platform.OS === 'ios' ? '&' : '?';
           const smsUrl = `sms:${phone}${sep}body=${encodeURIComponent(body)}`;

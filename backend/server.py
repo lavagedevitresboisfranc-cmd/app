@@ -826,6 +826,13 @@ async def update_appointment(appointment_id: str, data: AppointmentUpdate):
                 fmt_date_fr = _fmt_date_fr(new_date)
                 old_fmt = _fmt_date_fr(old_date)
 
+                # Generate a short portal URL with Confirm / Propose alternative / Invoice buttons
+                portal_target = f"/api/appointments/{appointment_id}/client-confirm"
+                try:
+                    portal_url = await _make_short_url(portal_target, request=request)
+                except Exception:
+                    portal_url = ""
+
                 html = f"""<!DOCTYPE html>
 <html><body style="margin:0;padding:0;background:#F1F5F9;font-family:'Segoe UI',Arial,sans-serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F1F5F9;padding:24px 12px;">
@@ -857,8 +864,22 @@ async def update_appointment(appointment_id: str, data: AppointmentUpdate):
           </table>
 
           <p style="margin:0 0 6px 0;font-size:13px;color:#475569;line-height:1.6;">
-            Si ce nouveau créneau ne vous convient pas, n'hésitez pas à nous contacter pour en convenir d'un autre.
+            Si ce nouveau créneau ne vous convient pas, vous pouvez nous proposer une alternative en cliquant ci-dessous&nbsp;:
           </p>
+          {f'''
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:18px 0 12px 0;">
+            <tr>
+              <td align="center">
+                <a href="{portal_url}" style="display:inline-block;padding:14px 28px;background:#0891B2;color:#FFFFFF;text-decoration:none;border-radius:8px;font-weight:700;font-size:15px;">
+                  📋 Confirmer ou proposer un autre créneau
+                </a>
+              </td>
+            </tr>
+          </table>
+          <p style="font-size:11px;color:#94A3B8;text-align:center;margin:0 0 12px 0;">
+            Si le bouton ne fonctionne pas, copiez ce lien dans votre navigateur&nbsp;:<br>
+            <span style="word-break:break-all;color:#64748B;">{portal_url}</span>
+          </p>''' if portal_url else ''}
           <p style="margin:0;font-size:13px;color:#475569;line-height:1.6;">
             Merci de votre compréhension et au plaisir de vous voir bientôt&nbsp;!
           </p>
@@ -2885,7 +2906,8 @@ async def send_client_confirmation(appointment_id: str, request: Request):
         f"📅 {date_pretty} à {time_slot}\n"
         f"📍 {addr}\n\n"
         f"👉 Voir / Confirmer / Modifier / Facture:\n{portal_url}\n\n"
-        f"Merci!"
+        f"Merci!\n\n"
+        f"— Powered by Gexia360"
     )
 
     sent_email = False
