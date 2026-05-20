@@ -217,9 +217,6 @@ export default function CampaignsScreen() {
       Alert.alert(t('campaigns.noRecipients'), t('campaigns.selectAtLeastOne'));
       return;
     }
-      Alert.alert(t('campaigns.noRecipients'), t('campaigns.selectAtLeastOne'));
-      return;
-    }
 
     const proceed = async () => {
       try {
