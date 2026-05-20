@@ -1923,10 +1923,12 @@ async def update_client_db(client_id: str, data: ClientUpdate):
 
 @api_router.delete("/clients-db/{client_id}")
 async def delete_client_db(client_id: str):
-    """Delete a stored client"""
+    """Delete a stored client (tombstoned so prod_sync won't re-import it)."""
     res = await db.clients.delete_one({"id": client_id})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Client introuvable")
+    # Tombstone so prod_sync doesn't bring this client back from production
+    await prod_sync_module.add_tombstone(db, "client", client_id)
     return {"message": "Client supprimé", "id": client_id}
 
 
