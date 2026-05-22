@@ -2835,17 +2835,58 @@ async def short_link_resolver(code: str, request: Request):
         if not row or not row.get("target"):
             return HTMLResponse("<h1>Lien expiré ou invalide</h1>", status_code=404)
     target = row["target"]
+    # Build full destination URL using the caller's host (handles preview/prod URLs)
     if target.startswith("http"):
-        return RedirectResponse(url=target, status_code=302)
-    # Build base from request headers (matches caller's host)
-    try:
-        host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
-        proto = request.headers.get("x-forwarded-proto") or "https"
-        host = (host or "").split(",")[0].strip()
-        base_url = f"{proto}://{host}".rstrip("/") if host else (os.environ.get("APP_URL") or "").rstrip("/")
-    except Exception:
-        base_url = (os.environ.get("APP_URL") or "").rstrip("/")
-    return RedirectResponse(url=f"{base_url}{target}", status_code=302)
+        full_url = target
+    else:
+        try:
+            host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+            proto = request.headers.get("x-forwarded-proto") or "https"
+            host = (host or "").split(",")[0].strip()
+            base_url = f"{proto}://{host}".rstrip("/") if host else (os.environ.get("APP_URL") or "").rstrip("/")
+        except Exception:
+            base_url = (os.environ.get("APP_URL") or "").rstrip("/")
+        full_url = f"{base_url}{target}"
+
+    # Return an HTML page with multiple redirect mechanisms instead of a bare 302.
+    # Why: iOS Safari (and the installed PWA's service worker) sometimes fails to
+    # follow 302 redirects from short-link routes — the user lands on a generic
+    # "404 page not found" page. By returning concrete HTML with:
+    #   1. <meta http-equiv="refresh"> (instant, works without JS)
+    #   2. window.location.replace() in JS (instant on modern browsers)
+    #   3. A visible <a> link as a final fallback (user can tap it)
+    # we make the redirect work in every iOS context (Safari, PWA, in-app browsers).
+    safe_url = full_url.replace('"', '%22').replace("<", "%3C").replace(">", "%3E")
+    html = f"""<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="0; url={safe_url}">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Redirection — Gexia360</title>
+<style>
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 40px 24px; background: #F8FAFC; color: #0F172A; text-align: center; }}
+  .card {{ max-width: 420px; margin: 60px auto; background: #FFFFFF; border-radius: 14px; padding: 28px 24px; box-shadow: 0 4px 18px rgba(0,0,0,0.05); border: 1px solid #E2E8F0; }}
+  .spinner {{ width: 38px; height: 38px; border: 3px solid #E2E8F0; border-top-color: #0891B2; border-radius: 50%; margin: 6px auto 18px; animation: spin 0.8s linear infinite; }}
+  @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
+  h1 {{ font-size: 18px; font-weight: 700; margin: 0 0 6px 0; }}
+  p {{ color: #64748B; font-size: 14px; line-height: 1.5; margin: 0 0 18px 0; }}
+  a.btn {{ display: inline-block; padding: 14px 26px; background: #0891B2; color: #FFFFFF; text-decoration: none; border-radius: 10px; font-weight: 700; font-size: 15px; }}
+  a.btn:active {{ opacity: 0.85; }}
+</style>
+</head><body>
+<div class="card">
+  <div class="spinner"></div>
+  <h1>Redirection en cours…</h1>
+  <p>Si la page ne s'ouvre pas automatiquement, appuyez sur le bouton ci-dessous.</p>
+  <a class="btn" href="{safe_url}">Continuer →</a>
+</div>
+<script>
+  // Hard-replace so the destination URL hits the server directly (bypasses any
+  // service-worker route caching from the installed PWA).
+  try {{ window.location.replace("{safe_url}"); }} catch (e) {{ }}
+</script>
+</body></html>"""
+    return HTMLResponse(content=html, status_code=200, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
 
 
 # --- Internal sync endpoint: list short links so prod_sync can pull them ---
