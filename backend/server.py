@@ -41,6 +41,38 @@ db = client[os.environ['DB_NAME']]
 resend.api_key = os.environ.get('RESEND_API_KEY', '')
 NOTIFY_EMAIL = os.environ.get('NOTIFY_EMAIL', '')
 
+# BCC every outgoing client email to the owner so they have a copy.
+# Set in /app/backend/.env as EMAIL_BCC=lavagedevitreboisfranc@live.com
+EMAIL_BCC = (os.environ.get('EMAIL_BCC', '') or '').strip()
+if EMAIL_BCC:
+    # Wrap resend.Emails.send so every call automatically receives a `bcc` field.
+    # This is idempotent: if the caller already sets `bcc`, we merge ours into it.
+    _original_resend_send = resend.Emails.send
+
+    def _send_with_bcc(payload):  # type: ignore
+        try:
+            if isinstance(payload, dict):
+                existing = payload.get('bcc')
+                bcc_list = []
+                if isinstance(existing, list):
+                    bcc_list = list(existing)
+                elif isinstance(existing, str) and existing:
+                    bcc_list = [existing]
+                if EMAIL_BCC not in bcc_list:
+                    bcc_list.append(EMAIL_BCC)
+                # Avoid sending BCC for emails actually addressed to the owner himself
+                to_field = payload.get('to') or []
+                if isinstance(to_field, str):
+                    to_field = [to_field]
+                if EMAIL_BCC not in [t.strip().lower() for t in (to_field or []) if isinstance(t, str)]:
+                    payload = {**payload, 'bcc': bcc_list}
+        except Exception:
+            # Best-effort — never block sending because of BCC handling
+            pass
+        return _original_resend_send(payload)
+
+    resend.Emails.send = _send_with_bcc  # type: ignore
+
 
 def inject_branding(html: str, recipient_email: str = "") -> str:
     """Insert the branded business header into any outgoing HTML email.

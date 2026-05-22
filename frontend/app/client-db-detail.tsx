@@ -234,16 +234,16 @@ export default function ClientDbDetailScreen() {
           <View style={[styles.actionRow, { marginTop: 8 }]}>
             <TouchableOpacity
               testID="propose-appointment-from-client"
-              onPress={() => router.push({
-                pathname: '/create',
-                params: {
+              onPress={() => {
+                const qs = new URLSearchParams({
                   editClient: name || '',
                   editEmail: email || '',
                   editPhone: phone || '',
                   editAddress: address || '',
-                  propose: '1', // tells /create to auto-send portal link after save
-                },
-              } as any)}
+                  propose: '1',
+                }).toString();
+                router.push(`/create?${qs}` as any);
+              }}
               style={[styles.actionBtn, { backgroundColor: '#7C3AED', flex: 1 }]}
               activeOpacity={0.85}
             >
