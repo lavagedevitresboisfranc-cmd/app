@@ -409,8 +409,8 @@ export default function CreateScreen() {
 
         // For NEW appointments: ask if owner wants to send a confirmation
         // email + SMS to the client (with Confirm / Suggest-other buttons).
-        // When opened from "Proposer un RDV" (propose=1), skip the question
-        // and auto-send the portal link — that's the whole point of that flow.
+        // When opened from "Proposer un RDV" (propose=1), ask the user which
+        // channel(s) to use: Courriel only, SMS only, or both.
         if (!isEditing) {
           const created = await res.json().catch(() => null);
           const newId = created?.id;
@@ -430,18 +430,40 @@ export default function CreateScreen() {
                       { cancelable: true }
                     );
                   });
-            const ok = autoPropose
-              ? true
-              : await askConfirm(
-                  `Envoyer un courriel + SMS à ${clientName.trim()} avec les boutons:\n\n✅ Confirmer\n🔄 Proposer un autre créneau\n\n(Vous serez notifié de sa réponse)`
-                );
-            if (ok) {
+
+            // For propose=1: ask which channel(s); for normal new RDV: single yes/no
+            let sendEmail = false;
+            let sendSMS = false;
+            if (autoPropose) {
+              sendEmail = !!clientEmail && await askConfirm(
+                `📧 Envoyer COURRIEL à ${clientName.trim()} (${clientEmail}) avec boutons "Confirmer / Proposer autre créneau" ?`
+              );
+              sendSMS = !!clientPhone && await askConfirm(
+                `📱 Envoyer SMS à ${clientName.trim()} (${clientPhone}) avec boutons "Confirmer / Proposer autre créneau" ?`
+              );
+              if (!sendEmail && !sendSMS) {
+                // User declined both — skip send entirely
+                try { router.replace('/' as any); } catch { router.push('/' as any); }
+                return;
+              }
+            } else {
+              const ok = await askConfirm(
+                `Envoyer un courriel + SMS à ${clientName.trim()} avec les boutons:\n\n✅ Confirmer\n🔄 Proposer un autre créneau\n\n(Vous serez notifié de sa réponse)`
+              );
+              sendEmail = ok && !!clientEmail;
+              sendSMS = ok && !!clientPhone;
+            }
+
+            if (sendEmail || sendSMS) {
               try {
-                const cr = await fetch(`${API_URL}/api/appointments/${newId}/send-client-confirmation`, { method: 'POST' });
+                // Backend endpoint sends email AND returns sms_body; we conditionally
+                // skip the email by passing skip_email=1 if user wants SMS-only.
+                const qs = sendEmail ? '' : '?skip_email=1';
+                const cr = await fetch(`${API_URL}/api/appointments/${newId}/send-client-confirmation${qs}`, { method: 'POST' });
                 const data = await cr.json();
-                // If we have a phone number, open SMS with pre-filled body
+                // If SMS requested and we have a phone + body, open Messages
                 const phone = (clientPhone || '').replace(/\D/g, '');
-                if (phone && data?.sms_body) {
+                if (sendSMS && phone && data?.sms_body) {
                   const url = `sms:${phone}${Platform.OS === 'ios' ? '&' : '?'}body=${encodeURIComponent(data.sms_body)}`;
                   if (Platform.OS === 'web') {
                     window.open(url, '_blank');
@@ -449,11 +471,13 @@ export default function CreateScreen() {
                     Linking.openURL(url).catch(() => {});
                   }
                 }
-                if (Platform.OS === 'web') {
-                  const sentEmail = data?.email_sent ? '✅ Courriel envoyé' : '⚠️ Pas de courriel envoyé (client_email manquant)';
-                  window.alert(`${sentEmail}\n${phone ? '📱 Préparation du SMS dans Messages...' : ''}`);
-                } else if (data?.email_sent) {
-                  Alert.alert('✅ Confirmation envoyée', `Courriel envoyé à ${data.client_email}`);
+                const parts: string[] = [];
+                if (sendEmail && data?.email_sent) parts.push(`✅ Courriel envoyé à ${data.client_email}`);
+                if (sendSMS && phone) parts.push('📱 SMS ouvert dans Messages');
+                if (parts.length > 0) {
+                  const msg = parts.join('\n');
+                  if (Platform.OS === 'web') window.alert(msg);
+                  else Alert.alert('Confirmation', msg);
                 }
               } catch (e) {
                 console.error('send-client-confirmation failed', e);

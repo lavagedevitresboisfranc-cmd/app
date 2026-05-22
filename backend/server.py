@@ -2884,9 +2884,12 @@ async def shorten_url(payload: ShortenReq, request: Request):
 # === Client appointment confirmation flow ===
 
 @api_router.post("/appointments/{appointment_id}/send-client-confirmation")
-async def send_client_confirmation(appointment_id: str, request: Request):
+async def send_client_confirmation(appointment_id: str, request: Request, skip_email: int = 0):
     """Send a confirmation email to the CLIENT with a single short link to a
     customer portal showing 3 buttons: Réservé / Modifier / Facture.
+
+    When `skip_email=1` is passed, the email is NOT sent — only the SMS body
+    and portal URL are returned so the caller can open Messages.
 
     Returns a ready-made SMS body the owner can use to send via iMessage too.
     """
@@ -2926,7 +2929,8 @@ async def send_client_confirmation(appointment_id: str, request: Request):
     )
 
     sent_email = False
-    if email and resend.api_key:
+    # Skip email when caller explicitly requested SMS-only (skip_email=1)
+    if email and resend.api_key and not skip_email:
         html = f"""
 <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;color:#111;">
   <div style="background:#0B5394;color:#FFFFFF;padding:18px;border-radius:8px 8px 0 0;text-align:center;">
