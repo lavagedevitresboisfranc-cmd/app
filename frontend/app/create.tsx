@@ -47,6 +47,7 @@ export default function CreateScreen() {
     editEmail?: string;
     editPhone?: string;
     editAddress?: string;
+    propose?: string;
     editDate?: string;
     editTime?: string;
     editDuration?: string;
@@ -408,9 +409,12 @@ export default function CreateScreen() {
 
         // For NEW appointments: ask if owner wants to send a confirmation
         // email + SMS to the client (with Confirm / Suggest-other buttons).
+        // When opened from "Proposer un RDV" (propose=1), skip the question
+        // and auto-send the portal link — that's the whole point of that flow.
         if (!isEditing) {
           const created = await res.json().catch(() => null);
           const newId = created?.id;
+          const autoPropose = params.propose === '1';
           if (newId) {
             const askConfirm = (msg: string) =>
               Platform.OS === 'web'
@@ -426,9 +430,11 @@ export default function CreateScreen() {
                       { cancelable: true }
                     );
                   });
-            const ok = await askConfirm(
-              `Envoyer un courriel + SMS à ${clientName.trim()} avec les boutons:\n\n✅ Confirmer\n🔄 Proposer un autre créneau\n\n(Vous serez notifié de sa réponse)`
-            );
+            const ok = autoPropose
+              ? true
+              : await askConfirm(
+                  `Envoyer un courriel + SMS à ${clientName.trim()} avec les boutons:\n\n✅ Confirmer\n🔄 Proposer un autre créneau\n\n(Vous serez notifié de sa réponse)`
+                );
             if (ok) {
               try {
                 const cr = await fetch(`${API_URL}/api/appointments/${newId}/send-client-confirmation`, { method: 'POST' });

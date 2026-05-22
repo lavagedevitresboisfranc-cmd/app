@@ -229,6 +229,29 @@ export default function ClientDbDetailScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Propose RDV — creates an appointment and immediately sends a portal link
+              with "Accepter / Proposer un autre créneau / Facture" buttons */}
+          <View style={[styles.actionRow, { marginTop: 8 }]}>
+            <TouchableOpacity
+              testID="propose-appointment-from-client"
+              onPress={() => router.push({
+                pathname: '/create',
+                params: {
+                  editClient: name || '',
+                  editEmail: email || '',
+                  editPhone: phone || '',
+                  editAddress: address || '',
+                  propose: '1', // tells /create to auto-send portal link after save
+                },
+              } as any)}
+              style={[styles.actionBtn, { backgroundColor: '#7C3AED', flex: 1 }]}
+              activeOpacity={0.85}
+            >
+              <Feather name="send" size={18} color="#FFFFFF" />
+              <Text style={styles.actionBtnText}>📨 Proposer un RDV (client confirme)</Text>
+            </TouchableOpacity>
+          </View>
+
           {/* Info block */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
