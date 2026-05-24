@@ -3205,11 +3205,8 @@ textarea.fld{{min-height:80px;resize:vertical;}}
 </body></html>"""
         return HTMLResponse(content=form_html)
 
-    # === DEFAULT — Portal page with 3 buttons (Réservé / Modifier / Facture) ===
-    confirmed_badge = (
-        '<div style="display:inline-block;padding:6px 12px;background:#D1FAE5;color:#065F46;border-radius:99px;font-size:13px;font-weight:700;margin-bottom:14px;">✓ Déjà confirmé</div>'
-        if confirmed else ""
-    )
+    # === DEFAULT — Portal page with 2 buttons (Accepter / Modifier) ===
+    confirmed_badge = ""
     paid_badge = (
         '<div style="display:inline-block;padding:6px 12px;background:#CFFAFE;color:#155E75;border-radius:99px;font-size:13px;font-weight:700;margin-bottom:14px;">💰 Payé</div>'
         if is_paid else ""
