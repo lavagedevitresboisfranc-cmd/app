@@ -3318,7 +3318,7 @@ h1{{font-size:22px;margin:0 0 6px;color:#0F172A;}}
       <a href="{confirm_action_url}" class="btn btn-primary">✅ Accepter</a>
       <a href="{alternative_action_url}" class="btn btn-warn">🔄 Modifier</a>
       <a href="tel:+15145709802" class="btn btn-call">📞 Appeler</a>
-      <a href="{refuse_action_url}" class="btn btn-danger" onclick="return confirm('Êtes-vous certain·e de vouloir refuser ce rendez-vous? Le rendez-vous sera annulé.');">🚫 Refuser</a>
+      <a href="{refuse_action_url}" class="btn btn-danger" onclick="return confirm('Êtes-vous certain·e de vouloir refuser ce rendez-vous? Le rendez-vous sera annulé.');"><span style="display:inline-block;width:24px;height:24px;line-height:24px;background:#FFFFFF;color:#DC2626;border-radius:50%;font-size:16px;font-weight:900;margin-right:6px;vertical-align:middle;">✕</span>Refuser</a>
     </div>
   </div>
 
