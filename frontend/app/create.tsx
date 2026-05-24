@@ -196,6 +196,49 @@ export default function CreateScreen() {
   // on every day that already has at least one booking. ===
   const [bookedDates, setBookedDates] = useState<Set<string>>(new Set());
 
+  // === Autocomplete clients list — loaded once for instant local filtering ===
+  const [allClients, setAllClients] = useState<any[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadClients = async () => {
+      try {
+        const r = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/api/clients-db?limit=2000`);
+        const items = await r.json();
+        if (!Array.isArray(items) || cancelled) return;
+        setAllClients(items);
+      } catch { /* ignore */ }
+    };
+    loadClients();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Compute suggestions: match by name OR phone OR email (case-insensitive)
+  const nameSuggestions = (() => {
+    const q = (clientName || '').trim().toLowerCase();
+    if (q.length < 2) return [];
+    const list: any[] = [];
+    for (const c of allClients) {
+      const n = String(c.name || '').toLowerCase();
+      const p = String(c.phone || '').toLowerCase();
+      const e = String(c.email || '').toLowerCase();
+      if (n.includes(q) || p.includes(q) || e.includes(q)) {
+        list.push(c);
+        if (list.length >= 8) break;
+      }
+    }
+    return list;
+  })();
+
+  const pickClient = (c: any) => {
+    setClientName(String(c.name || ''));
+    setClientPhone(String(c.phone || ''));
+    setClientEmail(String(c.email || ''));
+    setClientAddress(String(c.address || ''));
+    setShowSuggestions(false);
+  };
+
   useEffect(() => {
     let cancelled = false;
     const loadBookedDates = async () => {
@@ -620,10 +663,37 @@ export default function CreateScreen() {
               testID="client-input"
               style={styles.input}
               value={clientName}
-              onChangeText={setClientName}
+              onChangeText={(t) => { setClientName(t); setShowSuggestions(true); }}
+              onFocus={() => setShowSuggestions(true)}
               placeholder="ex. Alice Martin"
               placeholderTextColor="#A3A3A3"
             />
+            {showSuggestions && nameSuggestions.length > 0 && (
+              <View style={styles.suggestBox}>
+                {nameSuggestions.map((c) => (
+                  <TouchableOpacity
+                    key={c.id}
+                    style={styles.suggestRow}
+                    activeOpacity={0.6}
+                    onPress={() => pickClient(c)}
+                  >
+                    <Text style={styles.suggestName} numberOfLines={1}>
+                      {c.name || '—'}
+                    </Text>
+                    <Text style={styles.suggestMeta} numberOfLines={1}>
+                      {[c.phone, c.email, c.address].filter(Boolean).join(' · ')}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+                <TouchableOpacity
+                  style={styles.suggestClose}
+                  activeOpacity={0.6}
+                  onPress={() => setShowSuggestions(false)}
+                >
+                  <Text style={styles.suggestCloseText}>Fermer</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
 
           {/* Phone */}
@@ -1110,6 +1180,40 @@ const styles = StyleSheet.create({
   },
   dayApptDur: {
     fontSize: 11,
+    color: '#6B7280',
+  },
+  suggestBox: {
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: '#0891B2',
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+  },
+  suggestRow: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  suggestName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0A0A0A',
+  },
+  suggestMeta: {
+    fontSize: 12,
+    color: '#737373',
+    marginTop: 2,
+  },
+  suggestClose: {
+    paddingVertical: 8,
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+  },
+  suggestCloseText: {
+    fontSize: 12,
+    fontWeight: '600',
     color: '#6B7280',
   },
 });
