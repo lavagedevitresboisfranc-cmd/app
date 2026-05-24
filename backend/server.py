@@ -2653,7 +2653,7 @@ body{{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;max-width:780px;mar
 </div>
 
 <div class="greeting">
-  Bonjour <span class="name">{appt.get('client_name','')}</span>, voici le détail de votre service. Merci de nous faire confiance! ✨
+  Bonjour <span class="name">{appt.get('client_name','')}</span>, voici le détail de votre service. ✨
 </div>
 
 <div class="card">
