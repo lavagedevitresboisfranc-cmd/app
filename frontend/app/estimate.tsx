@@ -6,6 +6,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import AppHeader from '../components/AppHeader';
+import ClientAutocomplete from '../src/components/ClientAutocomplete';
 import { wrapSms } from '../src/utils/smsTemplate';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -479,13 +480,16 @@ export default function EstimateScreen() {
           <Text style={styles.clientSectionLabel}>📧 COURRIEL AVEC LOGO — INFOS CLIENT</Text>
 
           <Text style={styles.clientInputLabel}>Nom du client</Text>
-          <TextInput
+          <ClientAutocomplete
             testID="client-name"
-            style={styles.clientInput}
-            placeholder="Ex: Jean Tremblay"
-            placeholderTextColor="#A3A3A3"
             value={clientName}
-            onChangeText={setClientName}
+            onChangeName={setClientName}
+            onPickClient={(c) => {
+              setClientName(c.name || '');
+              if (c.email) setClientEmail(c.email);
+            }}
+            inputStyle={styles.clientInput}
+            placeholder="Ex: Jean Tremblay"
           />
 
           <Text style={styles.clientInputLabel}>Courriel du client</Text>

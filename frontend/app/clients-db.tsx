@@ -23,6 +23,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const CAMPAIGN_TARGET_KEY = '@gexia360:campaign_target_emails';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
+import { invalidateClientCache } from '../src/components/ClientAutocomplete';
 import * as Sharing from 'expo-sharing';
 import AppHeader from '../components/AppHeader';
 
@@ -105,6 +106,9 @@ export default function ClientsDbScreen() {
       const res = await fetch(`${API_URL}/api/clients-db?limit=2000`);
       const data = await res.json();
       setClients(Array.isArray(data) ? data : []);
+      // Invalidate the autocomplete cache so other screens get fresh data
+      // next time they mount (covers add/edit/delete/import flows).
+      invalidateClientCache();
     } catch (e) {
       console.error('Failed to fetch clients', e);
     } finally {

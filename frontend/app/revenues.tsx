@@ -9,6 +9,7 @@ import { Feather } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import AppHeader from '../components/AppHeader';
+import ClientAutocomplete from '../src/components/ClientAutocomplete';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -517,7 +518,13 @@ export default function RevenuesScreen() {
                 </>
               )}
               <Text style={styles.label}>Client (optionnel)</Text>
-              <TextInput style={styles.input} value={fClient} onChangeText={setFClient} placeholder="ex: Sophie Dubois" placeholderTextColor="#9CA3AF" />
+              <ClientAutocomplete
+                value={fClient}
+                onChangeName={setFClient}
+                onPickClient={(c) => setFClient(c.name || '')}
+                inputStyle={styles.input}
+                placeholder="ex: Sophie Dubois"
+              />
 
               <Text style={styles.label}>💳 Mode de paiement</Text>
               <View style={styles.catPicker}>
