@@ -189,6 +189,8 @@ export default function CreateScreen() {
 
   // Fetch already-booked slots for the selected date so we can grey them out
   const [busySlots, setBusySlots] = useState<Set<string>>(new Set());
+  // Full appointment objects for the selected date (to display client names)
+  const [dayAppointments, setDayAppointments] = useState<any[]>([]);
 
   // === Fetch ALL upcoming appointments — so the calendar can show a dot
   // on every day that already has at least one booking. ===
@@ -217,19 +219,43 @@ export default function CreateScreen() {
   useEffect(() => {
     let cancelled = false;
     const loadBusy = async () => {
-      if (!date) return;
+      if (!date) {
+        setBusySlots(new Set());
+        setDayAppointments([]);
+        return;
+      }
       try {
         const r = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/api/appointments?date=${date}`);
         const items = await r.json();
         if (!Array.isArray(items)) return;
         const taken = new Set<string>();
+        const dayList: any[] = [];
+        const slotToMin = (s: string) => {
+          const [h, m] = (s || '0:0').split(':').map((n) => parseInt(n, 10) || 0);
+          return h * 60 + m;
+        };
         for (const a of items) {
           if (a.status === 'archived' || a.status === 'cancelled') continue;
           // Skip the current item being edited (if any)
           if (params.editId && a.id === params.editId) continue;
-          if (a.time_slot) taken.add(a.time_slot.slice(0, 5));
+          if (!a.time_slot) continue;
+          const t = a.time_slot.slice(0, 5);
+          // Block ALL 30-min sub-slots that this appointment overlaps
+          const start = slotToMin(t);
+          const dur = Math.max(30, parseInt(a.duration_minutes, 10) || 60);
+          const end = start + dur;
+          for (let m = start; m < end; m += 30) {
+            const hh = String(Math.floor(m / 60)).padStart(2, '0');
+            const mm = String(m % 60).padStart(2, '0');
+            taken.add(`${hh}:${mm}`);
+          }
+          dayList.push(a);
         }
-        if (!cancelled) setBusySlots(taken);
+        dayList.sort((x, y) => (x.time_slot || '').localeCompare(y.time_slot || ''));
+        if (!cancelled) {
+          setBusySlots(taken);
+          setDayAppointments(dayList);
+        }
       } catch { /* ignore */ }
     };
     loadBusy();
@@ -775,6 +801,28 @@ export default function CreateScreen() {
                 ⚠️ Les créneaux en rouge barré sont déjà pris ce jour-là.
               </Text>
             )}
+
+            {/* List of existing appointments for the selected day */}
+            {dayAppointments.length > 0 && (
+              <View style={styles.dayApptList}>
+                <Text style={styles.dayApptListTitle}>
+                  📋 Rendez-vous du jour ({dayAppointments.length})
+                </Text>
+                {dayAppointments.map((a) => (
+                  <View key={a.id} style={styles.dayApptRow}>
+                    <Text style={styles.dayApptTime}>
+                      {(a.time_slot || '').slice(0, 5)}
+                    </Text>
+                    <Text style={styles.dayApptName} numberOfLines={1}>
+                      {a.client_name || a.title || '—'}
+                    </Text>
+                    <Text style={styles.dayApptDur}>
+                      {a.duration_minutes || 60} min
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
           </View>
 
           {/* Duration */}
@@ -1024,5 +1072,44 @@ const styles = StyleSheet.create({
   },
   durationTextActive: {
     color: '#FFFFFF',
+  },
+  dayApptList: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  dayApptListTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#525252',
+    marginBottom: 8,
+    letterSpacing: 0.3,
+  },
+  dayApptRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 6,
+    marginBottom: 4,
+    gap: 10,
+  },
+  dayApptTime: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#92400E',
+    width: 50,
+  },
+  dayApptName: {
+    flex: 1,
+    fontSize: 13,
+    color: '#1F2937',
+    fontWeight: '500',
+  },
+  dayApptDur: {
+    fontSize: 11,
+    color: '#6B7280',
   },
 });
