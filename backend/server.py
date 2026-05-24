@@ -3296,6 +3296,7 @@ h1{{font-size:22px;margin:0 0 6px;color:#0F172A;}}
 .btn-warn{{background:#F59E0B;color:#FFFFFF;}}
 .btn-info{{background:#0B5394;color:#FFFFFF;}}
 .btn-danger{{background:#DC2626;color:#FFFFFF;}}
+.btn-call{{background:#0F172A;color:#FFFFFF;}}
 .brand-foot{{text-align:center;color:#94A3B8;font-size:11px;margin-top:14px;}}
 </style></head>
 <body>
@@ -3316,6 +3317,7 @@ h1{{font-size:22px;margin:0 0 6px;color:#0F172A;}}
     <div class="btns">
       <a href="{confirm_action_url}" class="btn btn-primary">✅ Accepter</a>
       <a href="{alternative_action_url}" class="btn btn-warn">🔄 Modifier</a>
+      <a href="tel:+15145709802" class="btn btn-call">📞 Appeler</a>
       <a href="{refuse_action_url}" class="btn btn-danger" onclick="return confirm('Êtes-vous certain·e de vouloir refuser ce rendez-vous? Le rendez-vous sera annulé.');">❌ Refuser</a>
     </div>
   </div>
