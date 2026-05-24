@@ -2681,6 +2681,15 @@ body{{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;max-width:780px;mar
   </tbody>
 </table>
 
+<div class="card etransfer-card" style="background:#ECFDF5;border-left:4px solid #10B981;padding:14px 16px;border-radius:8px;margin:14px 0;">
+  <div class="card-title" style="font-weight:700;color:#065F46;margin-bottom:6px;">💳 Paiement par e-transfert</div>
+  <p style="margin:0;font-size:13px;color:#0F172A;line-height:1.5;">
+    Envoyez le paiement par virement Interac à&nbsp;:<br>
+    <a href="mailto:lavagedevitreboisfranc@live.com" style="font-weight:700;color:#0891B2;text-decoration:none;font-size:15px;">lavagedevitreboisfranc@live.com</a><br>
+    <span style="font-size:12px;color:#475569;">Aucune question secrète requise (dépôt automatique).</span>
+  </p>
+</div>
+
 {"<div class='notes-card card'><div class='card-title'>📝 Notes</div><p>" + appt.get('notes','') + "</p></div>" if appt.get('notes') else ""}
 
 {promo_banner_html}
@@ -2978,27 +2987,49 @@ async def send_client_confirmation(appointment_id: str, request: Request, skip_e
     addr = appt.get("client_address") or ""
     price = appt.get("price")
 
-    # Format the date nicely in French
+    # Format the date nicely in French — include weekday: "Jeudi 3 juin 2026"
     try:
+        from datetime import date as _date
         y, m, d = [int(x) for x in date.split('-')]
         months = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin',
                   'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
-        date_pretty = f"{d} {months[m-1]} {y}"
+        weekdays = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche']
+        try:
+            wd = weekdays[_date(y, m, d).weekday()]
+            date_pretty = f"{wd} {d} {months[m-1]} {y}"
+        except Exception:
+            date_pretty = f"{d} {months[m-1]} {y}"
     except Exception:
         date_pretty = date
+
+    # Format time as "12h30" (French style)
+    time_pretty = time_slot
+    try:
+        if time_slot and ':' in time_slot:
+            hh, mm = time_slot.split(':')[:2]
+            time_pretty = f"{int(hh)}h{mm}"
+    except Exception:
+        pass
+
+    # Take only the first name for a friendlier greeting
+    first_name = name.split(' ')[0] if name else 'Client'
 
     # ONE short URL → portal page with 3 action buttons (Réservé / Modifier / Facture)
     portal_target = f"/api/appointments/{appointment_id}/client-confirm"
     portal_url = await _make_short_url(portal_target, request=request)
 
     sms_body = (
-        f"Bonjour {name},\n\n"
-        f"Votre rendez-vous Lavage de Vitres Bois-Franc:\n"
-        f"📅 {date_pretty} à {time_slot}\n"
+        f"Bonjour {first_name} 👋\n\n"
+        f"Nous avons réservé une place pour votre lavage de vitres :\n\n"
+        f"📅 {date_pretty}\n"
+        f"🕧 {time_pretty}\n"
         f"📍 {addr}\n\n"
-        f"👉 Voir / Confirmer / Modifier / Facture:\n{portal_url}\n\n"
-        f"Merci!\n\n"
-        f"— Powered by Gexia360"
+        f"✅ Cliquez ici pour accepter ou modifier votre rendez-vous :\n"
+        f"{portal_url}\n\n"
+        f"Au plaisir de vous servir!\n\n"
+        f"— Louis-Philippe\n"
+        f"Lavage de Vitres Bois-Franc\n"
+        f"Service propulsé par Gexia360"
     )
 
     sent_email = False
