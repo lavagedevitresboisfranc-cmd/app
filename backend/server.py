@@ -3131,6 +3131,7 @@ async def client_confirm_page(appointment_id: str, request: Request, action: str
 
     confirm_action_url = f"{host_base}/api/appointments/{appointment_id}/client-confirm?action=confirm"
     alternative_action_url = f"{host_base}/api/appointments/{appointment_id}/client-confirm?action=alternative"
+    refuse_action_url = f"{host_base}/api/appointments/{appointment_id}/client-confirm?action=refuse"
     invoice_url = f"{host_base}/api/invoice/{appointment_id}"
 
     # === ACTION = CONFIRM ===
@@ -3144,6 +3145,63 @@ async def client_confirm_page(appointment_id: str, request: Request, action: str
             color="#10B981",
             message=f"Merci {name}! Votre rendez-vous du <strong>{date_pretty} à {time_slot}</strong> est confirmé.",
             back_url=f"{host_base}/api/appointments/{appointment_id}/client-confirm",
+        ))
+
+    # === ACTION = REFUSE — client declines the appointment ===
+    if action == "refuse":
+        now_iso = datetime.now(timezone.utc).isoformat()
+        await db.appointments.update_one(
+            {"id": appointment_id},
+            {"$set": {
+                "client_refused": True,
+                "client_refused_at": now_iso,
+                "status": "cancelled",
+            }},
+        )
+        # Notify the owner by email
+        owner_email = (NOTIFY_EMAIL or "").strip()
+        if resend.api_key and owner_email:
+            try:
+                client_phone = appt.get("client_phone") or ""
+                html_body = f"""
+<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;color:#0F172A;">
+  <div style="background:#DC2626;color:#FFFFFF;padding:16px 18px;border-radius:8px 8px 0 0;">
+    <h2 style="margin:0;font-size:18px;">❌ Le client a refusé le rendez-vous</h2>
+  </div>
+  <div style="background:#FFFFFF;border:1px solid #E5E7EB;border-top:none;padding:20px;border-radius:0 0 8px 8px;">
+    <p style="margin:0 0 10px 0;"><strong>{name}</strong>{f' — 📞 {client_phone}' if client_phone else ''}</p>
+    <p style="margin:0 0 6px 0;color:#64748B;font-size:13px;">RDV refusé :</p>
+    <p style="margin:0 0 14px 0;font-size:18px;font-weight:700;color:#991B1B;"><s>{date_pretty} à {time_slot}</s></p>
+    <p style="margin:0 0 6px 0;color:#64748B;font-size:13px;">Adresse :</p>
+    <p style="margin:0 0 14px 0;">{addr}</p>
+    <p style="font-size:13px;color:#475569;margin-top:14px;">Le rendez-vous a été automatiquement annulé. Contactez le client si nécessaire.</p>
+  </div>
+</div>"""
+                await asyncio.to_thread(resend.Emails.send, {
+                    "from": os.environ.get("RESEND_FROM") or "onboarding@resend.dev",
+                    "to": [owner_email],
+                    "subject": f"❌ {name} a refusé le RDV du {date_pretty}",
+                    "html": html_body,
+                })
+                logger.info(f"Client refusal email sent to owner ({owner_email}) for appt {appointment_id}")
+            except Exception as e:
+                logger.warning(f"client refuse owner notify failed: {e}")
+        # PWA push notification to owner
+        try:
+            push_title = "❌ Client a refusé le RDV"
+            push_body = f"{name} → {date_pretty} {time_slot}"
+            push_url = f"/appointments?filter=cancelled"
+            asyncio.create_task(_notify_owner_push(push_title, push_body, push_url, tag=f"refuse-{appointment_id}"))
+        except Exception as _e:
+            logger.warning(f"push trigger (client refuse) failed: {_e}")
+        return HTMLResponse(_render_status_page(
+            title="Rendez-vous annulé",
+            color="#DC2626",
+            message=(
+                f"Bien noté {name}. Votre rendez-vous du <strong>{date_pretty} à {time_slot}</strong> a été annulé.<br><br>"
+                "Nous restons disponibles si vous souhaitez le replanifier plus tard."
+            ),
+            back_url=None,
         ))
 
     # === ACTION = ALTERNATIVE — show form to let client pick a new date/time ===
@@ -3237,6 +3295,7 @@ h1{{font-size:22px;margin:0 0 6px;color:#0F172A;}}
 .btn-primary{{background:#10B981;color:#FFFFFF;}}
 .btn-warn{{background:#F59E0B;color:#FFFFFF;}}
 .btn-info{{background:#0B5394;color:#FFFFFF;}}
+.btn-danger{{background:#DC2626;color:#FFFFFF;}}
 .brand-foot{{text-align:center;color:#94A3B8;font-size:11px;margin-top:14px;}}
 </style></head>
 <body>
@@ -3257,6 +3316,7 @@ h1{{font-size:22px;margin:0 0 6px;color:#0F172A;}}
     <div class="btns">
       <a href="{confirm_action_url}" class="btn btn-primary">✅ Accepter</a>
       <a href="{alternative_action_url}" class="btn btn-warn">🔄 Modifier</a>
+      <a href="{refuse_action_url}" class="btn btn-danger" onclick="return confirm('Êtes-vous certain·e de vouloir refuser ce rendez-vous? Le rendez-vous sera annulé.');">❌ Refuser</a>
     </div>
   </div>
 
